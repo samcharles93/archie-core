@@ -352,7 +352,7 @@ func registerTaskRPCServers(nc *natsio.Conn, forgeClient forge.Forge, trees *wor
 	}
 
 	registerForge := func(fg forge.Forge, identity string) error {
-		srv := &forgerpc.Server{Forge: fg, Log: log.With("rpc_identity", identity)}
+		srv := &forgerpc.Server{Forge: fg, Runs: runs, Log: log.With("rpc_identity", identity)}
 		u, err := srv.RegisterFor(nc, identity)
 		if err != nil {
 			return fmt.Errorf("register forgerpc%s: %w", identitySuffix(identity), err)

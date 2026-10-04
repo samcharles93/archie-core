@@ -125,8 +125,8 @@ type RemoteTrees interface {
 }
 
 // Forger constructs the identity-scoped forge RPC client.
-func (t *Transport) Forger(identity string, timeout time.Duration) workflow.Forger {
-	return &forgerpc.Client{Conn: t.conn, Timeout: timeout, Identity: identity}
+func (t *Transport) Forger(identity, credential string, timeout time.Duration) workflow.Forger {
+	return &forgerpc.Client{Conn: t.conn, Timeout: timeout, Identity: identity, Credential: credential}
 }
 
 // Store returns the State Store client, bounding each call by timeout when

@@ -1648,7 +1648,7 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo conf
 		Cfg:                taskCfg,
 		Providers:          agentexec.ProvidersFromConfig(cfg.Providers),
 		MCPServers:         cfg.Tools.MCPServers,
-		WorktreeGrant:      credential,
+		RunCredential:      credential,
 		KindWorkflows:      d.KindWorkflows,
 		LabelWorkflows:     d.LabelWorkflows,
 		WorkflowDefinition: task.WorkflowDefinitionYAML,

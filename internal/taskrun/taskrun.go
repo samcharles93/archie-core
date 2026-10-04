@@ -26,10 +26,10 @@ type Request struct {
 	// Nil means defaults.
 	KindWorkflows  workflow.KindWorkflows  `json:"kind_workflows,omitempty"`
 	LabelWorkflows workflow.LabelWorkflows `json:"label_workflows,omitempty"`
-	// WorktreeGrant is an opaque, per-dispatch capability authorizing the
-	// daemon to publish this task's already-prepared branch. Repository
+	// RunCredential is the task's run credential: it authorizes the push of
+	// this task's branch and forge calls on its own repository. Repository
 	// coordinates never cross back from the sandbox as authority.
-	WorktreeGrant string `json:"worktree_grant,omitempty"`
+	RunCredential string `json:"run_credential,omitempty"`
 	// WorkflowDefinition is the exact YAML pinned on Task before dispatch.
 	WorkflowDefinition string `json:"workflow_definition"`
 	// Tools is the agent profile's tool allowlist; empty allows every tool.
@@ -48,8 +48,8 @@ func (r Request) Validate() error {
 	if r.Task.ID <= 0 {
 		return fmt.Errorf("task ID must be positive, got %d", r.Task.ID)
 	}
-	if r.WorktreeGrant == "" && r.Task.HasRepository() {
-		return errors.New("worktree grant is required")
+	if r.RunCredential == "" && r.Task.HasRepository() {
+		return errors.New("run credential is required")
 	}
 	if r.WorkflowDefinition == "" {
 		return errors.New("workflow definition is required")

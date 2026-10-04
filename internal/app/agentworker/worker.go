@@ -48,7 +48,7 @@ type workerTransport interface {
 	LogPublisher() agentexec.LogPublisher
 	EventPublisher() agentexec.EventPublisher
 	SubscribeTasks(context.Context, int64, agentnats.TaskHandler, *slog.Logger) (agentnats.Subscription, error)
-	Forger(string, time.Duration) workflow.Forger
+	Forger(identity, credential string, timeout time.Duration) workflow.Forger
 	Store(time.Duration) workflow.Store
 	Calls(time.Duration) task.Caller
 	Trees(string, string, time.Duration) agentnats.RemoteTrees
@@ -152,7 +152,7 @@ func run(ctx context.Context, settings Settings, log *slog.Logger, dependencies 
 }
 
 type taskServiceTransport interface {
-	Forger(string, time.Duration) workflow.Forger
+	Forger(identity, credential string, timeout time.Duration) workflow.Forger
 	Store(time.Duration) workflow.Store
 	Calls(time.Duration) task.Caller
 	Trees(string, string, time.Duration) agentnats.RemoteTrees
@@ -162,10 +162,10 @@ type taskServiceTransport interface {
 func executeTaskRequest(ctx context.Context, request taskrun.Request, transport taskServiceTransport, workDir string, log *slog.Logger, steps *workflow.Manager, guardrails *tools.GuardrailEngine) (*taskrun.Response, error) {
 	log.Info("running task", "task", request.Task.ID, "repo", request.Repo.FullName(), "issue", request.Task.IssueNumber)
 	dependencies := taskDependencies{
-		forge:      transport.Forger(request.Task.Identity, rpcTimeout),
+		forge:      transport.Forger(request.Task.Identity, request.RunCredential, rpcTimeout),
 		store:      transport.Store(rpcTimeout),
 		calls:      transport.Calls(rpcTimeout),
-		trees:      transport.Trees(request.Task.Identity, request.WorktreeGrant, rpcTimeout),
+		trees:      transport.Trees(request.Task.Identity, request.RunCredential, rpcTimeout),
 		events:     transport.EventPublisher(),
 		steps:      steps,
 		guardrails: guardrails,
