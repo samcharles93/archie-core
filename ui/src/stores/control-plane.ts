@@ -500,8 +500,19 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
     }
   }
 
+  /** Where issues are routed by label, served beside the step types. */
+  function intakeRoutes(): Record<string, string> {
+    const schema = catalog.value.find((resource) => resource.kind === "workflow-definitions")?.schema_json;
+    try {
+      return (schema ? JSON.parse(schema)["x-intake-routes"] : undefined) ?? {};
+    } catch {
+      return {};
+    }
+  }
+
   return {
     stepTypes,
+    intakeRoutes,
     applyStatusFor,
     changesFor,
     changeFor,

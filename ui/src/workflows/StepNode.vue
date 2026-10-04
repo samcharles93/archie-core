@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { Handle, Position } from "@vue-flow/core";
-import { Flag, GitBranch, Play, Repeat, SkipForward } from "@lucide/vue";
+import { Flag, GitBranch, Play, Repeat, SkipForward, Webhook, CircleDot, BookOpen, Workflow } from "@lucide/vue";
 
 import type { StepNodeData } from "./workflow-graph";
 
@@ -18,6 +18,8 @@ const stateClass = computed(() => {
   if (props.data.kind === "start") return "border-primary/60";
   return STATE_CLASSES[props.data.run?.status ?? ""] ?? "border-border";
 });
+
+const TRIGGER_ICONS = { issue: CircleDot, event: Webhook, playbook: BookOpen, workflow: Workflow };
 
 const STATE_LABELS: Record<string, string> = {
   ok: "Done",
@@ -49,7 +51,15 @@ function duration(ms?: number): string {
       </span>
     </div>
     <div v-if="data.type && data.type !== data.title" class="truncate font-mono text-[11px] text-fg-subtle">{{ data.type }}</div>
-    <div v-if="data.detail" class="mt-0.5 truncate text-xs text-muted-foreground" :title="data.detail">{{ data.detail }}</div>
+    <ul v-if="data.kind === 'start' && data.triggers?.length" class="mt-1 space-y-0.5">
+      <li v-for="trigger in data.triggers" :key="trigger.kind + trigger.label" class="flex items-center gap-1.5 text-xs" :title="trigger.detail">
+        <component :is="TRIGGER_ICONS[trigger.kind]" class="size-3 shrink-0 text-primary" aria-hidden="true" />
+        <span class="truncate">{{ trigger.label }}</span>
+        <span v-if="trigger.detail" class="truncate text-fg-subtle">{{ trigger.detail }}</span>
+      </li>
+    </ul>
+    <div v-else-if="data.kind === 'start'" class="mt-0.5 text-xs text-muted-foreground">Nothing starts it yet; run it by hand or bind an event to it.</div>
+    <div v-else-if="data.detail" class="mt-0.5 truncate text-xs text-muted-foreground" :title="data.detail">{{ data.detail }}</div>
     <div v-if="data.when || data.retry || data.continues" class="mt-1 flex flex-wrap gap-1 text-[11px]">
       <span v-if="data.when" class="flex max-w-full min-w-0 items-center gap-0.5 rounded bg-secondary px-1 font-mono" :title="`Runs only when ${data.when}`">
         <Flag class="size-3 shrink-0" aria-hidden="true" /><span class="truncate">{{ data.when }}</span>

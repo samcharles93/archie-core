@@ -1,5 +1,7 @@
 import { parseDocument } from "yaml";
 
+import type { WorkflowTrigger } from "./workflow-triggers";
+
 /**
  * A workflow definition laid out as a graph: a start node, each step as a
  * node in run order, parallel branches side by side, and a dashed edge from
@@ -25,6 +27,7 @@ export interface StepNodeData {
   /** Where the step lives in the YAML document, for editing it. */
   path?: (string | number)[];
   selected?: boolean;
+  triggers?: WorkflowTrigger[];
 }
 
 /** One recorded run of a step, from the task's attempts view. */
@@ -152,7 +155,7 @@ export function workflowGraph(source: string): WorkflowGraph {
     id: start,
     type: "step",
     position: { x: 0, y: 0 },
-    data: { kind: "start", key: "start", title: "Start", type: "", detail: "an event or a task starts the run" },
+    data: { kind: "start", key: "start", title: "Starts when", type: "", detail: "" },
   });
 
   let previous = [start];

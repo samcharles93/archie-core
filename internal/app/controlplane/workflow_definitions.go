@@ -37,7 +37,7 @@ func workflowDefinitionsDefinition(steps workflow.StepRegistry, settings map[str
 			_, err := workflow.DecodeDefinitionCollection(input, steps)
 			return err
 		},
-		SchemaExtensions: map[string]any{"x-step-types": stepTypeVocabulary(steps, settings)},
+		SchemaExtensions: map[string]any{"x-step-types": stepTypeVocabulary(steps, settings), "x-intake-routes": workflow.IntakeRoutes()},
 	}
 }
 

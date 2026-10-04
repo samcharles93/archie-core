@@ -12,6 +12,7 @@ import StepPanel from "./StepPanel.vue";
 import WorkflowCanvas from "./WorkflowCanvas.vue";
 import type { StepPath } from "./workflow-edit";
 import { useWorkflowRuns } from "./workflow-runs";
+import { useWorkflowTriggers } from "./workflow-triggers";
 import {
   cloneControlPlaneValue,
   removeWorkflowDefinition,
@@ -44,6 +45,7 @@ const selectedStep = ref<StepPath | null>(null);
 const localError = ref("");
 
 const { runs, watched, stages, pick } = useWorkflowRuns(selected);
+const triggers = useWorkflowTriggers(selected);
 
 const shippedEntry = computed(() =>
   shipped.value.definitions.find((entry) => entry.id === id.value),
@@ -162,7 +164,7 @@ function syncScroll(event: Event): void {
           <span v-if="!runs.length" class="text-xs text-fg-subtle">This workflow has not run yet.</span>
         </label>
         <div class="grid gap-3 lg:grid-cols-[1fr_20rem]">
-          <WorkflowCanvas :yaml="yaml" :stages="stages" :selected="selectedStep" @select="selectedStep = $event" />
+          <WorkflowCanvas :yaml="yaml" :stages="stages" :selected="selectedStep" :triggers="triggers" @select="selectedStep = $event" />
           <StepPanel v-model:yaml="yaml" :path="selectedStep" :vocabulary="vocabulary" @select="selectedStep = $event" />
         </div>
       </TabsContent>

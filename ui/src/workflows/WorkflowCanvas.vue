@@ -8,8 +8,14 @@ import "@vue-flow/controls/dist/style.css";
 
 import StepNode from "./StepNode.vue";
 import { withRuns, workflowGraph, type StageRun } from "./workflow-graph";
+import type { WorkflowTrigger } from "./workflow-triggers";
 
-const props = defineProps<{ yaml: string; stages?: StageRun[]; selected?: (string | number)[] | null }>();
+const props = defineProps<{
+  yaml: string;
+  stages?: StageRun[];
+  selected?: (string | number)[] | null;
+  triggers?: WorkflowTrigger[];
+}>();
 const emit = defineEmits<{ select: [(string | number)[] | null] }>();
 
 const NODE_WIDTH = 240;
@@ -18,11 +24,15 @@ const container = ref<HTMLElement | null>(null);
 const graph = computed(() => withRuns(workflowGraph(props.yaml), props.stages ?? []));
 const selectedKey = computed(() => JSON.stringify(props.selected ?? null));
 const nodes = computed(() =>
-  graph.value.nodes.map((node) =>
-    JSON.stringify(node.data.path ?? null) === selectedKey.value && props.selected
+  graph.value.nodes.map((node) => {
+    if (node.data.kind === "start") return { ...node, data: { ...node.data, triggers: props.triggers ?? [] } };
+    // Each trigger past the second makes the start node a line taller.
+    const drop = Math.max(0, (props.triggers?.length ?? 0) - 2) * 18;
+    if (drop) node = { ...node, position: { ...node.position, y: node.position.y + drop } };
+    return JSON.stringify(node.data.path ?? null) === selectedKey.value && props.selected
       ? { ...node, data: { ...node.data, selected: true } }
-      : node,
-  ),
+      : node;
+  }),
 );
 const edges = computed(() =>
   graph.value.edges.map(({ label, offset, ...edge }) => ({

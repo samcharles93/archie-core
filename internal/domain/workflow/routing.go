@@ -24,6 +24,17 @@ var defaultKindWorkflows = KindWorkflows{
 	workintake.KindFeature: "feasibility",
 }
 
+// IntakeRoutes is where an issue goes by its label, as a dashboard shows it:
+// each kind's default workflow, and "default" for an issue with no
+// recognised label, which goes to triage to be classified.
+func IntakeRoutes() map[string]string {
+	routes := map[string]string{string(workintake.KindDefault): "triage"}
+	for kind, workflow := range defaultKindWorkflows {
+		routes[string(kind)] = workflow
+	}
+	return routes
+}
+
 // activeKindWorkflows overrides defaultKindWorkflows. Set once at startup by
 // SetKindWorkflows; nil uses the defaults.
 var activeKindWorkflows KindWorkflows
