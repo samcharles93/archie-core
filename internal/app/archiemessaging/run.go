@@ -12,6 +12,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/presence"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
+	"github.com/samcharles93/archie-core/internal/infrastructure/extension"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/secretengine"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
@@ -36,7 +37,6 @@ func Run(ctx context.Context, o Options) error {
 	secrets := secret.NewRegistry()
 	health := newReadinessRegistry(cfg.Options, chat)
 	var settings *messaging.SettingsCommand
-	var closeStateStore func()
 	// channelStatusStore is the same client, held where compose can reach it: the
 	// channel report is published to the store this process already dials.
 	var channelStatusStore storecontract.ChannelStatusStore
@@ -48,18 +48,17 @@ func Run(ctx context.Context, o Options) error {
 	var settingsSource chatSettingsSource
 	var applyReporter *applystatus.Reporter
 	var appliedVersion int64
+	var extensionChannels []*channelInstance
 	if cfg.Options.StateStore.Target != "" {
 		stateStore, closeClient, dialErr := staterpc.Dial(cfg.Options.StateStore.Target, presence.Messaging, cfg.Options.StateStore.Token, staterpc.WaitForPeer)
 		if dialErr != nil {
 			return fmt.Errorf("dial state store control plane (%s): %w", cfg.Options.StateStore.Target, dialErr)
 		}
-		closeStateStore = closeClient
-		defer closeStateStore()
+		defer closeClient()
 		controlPlaneClient := controlplanerpc.NewRPCClient(stateStore.ControlPlane())
 		reporter := applystatus.New(applystatus.Messaging, stateStore, log)
-		defer secretengine.Supervise(ctx, secrets, secretengine.Source{Query: controlPlaneClient, Packages: stateStore}, applystatus.Messaging, func(ctx context.Context, version int64, err error) {
-			reporter.Report(ctx, controlplanerpc.ExtensionSettingsKind, version, err)
-		}, log).Close()
+		extensions := extension.Source{Query: controlPlaneClient, Packages: stateStore}
+		defer superviseSecretEngines(ctx, extensions, secrets, reporter, log)()
 		chatSettings, channelVersion, settingsErr := controlPlaneClient.RuntimeChatConfig(ctx, config.ChatConfig{
 			Telegram: cfg.Telegram, Email: cfg.Email, Webhook: cfg.Webhook, WebhookAddr: cfg.WebhookAddr, ShowToolCalls: cfg.ShowToolCalls,
 		})
@@ -78,6 +77,7 @@ func Run(ctx context.Context, o Options) error {
 		if settingsErr != nil {
 			return fmt.Errorf("resolve database webhook secret: %w", settingsErr)
 		}
+		extensionChannels = openExtensionChannels(ctx, extensions, secrets, log)
 		settings = messaging.NewSettingsCommand(messagingControlPlane{client: stateStore.ControlPlane()}).WithIdentities(stateStore)
 		channelStatusStore, presenceStore = stateStore, stateStore
 		settingsSource, applyReporter, appliedVersion = controlPlaneClient, reporter, channelVersion
@@ -89,21 +89,30 @@ func Run(ctx context.Context, o Options) error {
 		}
 	}
 	srv, err := compose(ctx, deps{
-		Secrets:        secrets,
-		ChannelStatus:  channelStatusStore,
-		Presence:       presenceStore,
-		Config:         cfg,
-		Log:            log,
-		Chat:           chat,
-		Health:         health,
-		Settings:       settings,
-		SettingsSource: settingsSource,
-		ApplyReporter:  applyReporter,
-		AppliedVersion: appliedVersion,
+		Secrets:           secrets,
+		ChannelStatus:     channelStatusStore,
+		Presence:          presenceStore,
+		Config:            cfg,
+		ExtensionChannels: extensionChannels,
+		Log:               log,
+		Chat:              chat,
+		Health:            health,
+		Settings:          settings,
+		SettingsSource:    settingsSource,
+		ApplyReporter:     applyReporter,
+		AppliedVersion:    appliedVersion,
 	})
 	if err != nil {
 		return err
 	}
 
 	return srv.Start(ctx)
+}
+
+// superviseSecretEngines runs the secret-engine extensions and reports their
+// settings outcome; the returned function stops them.
+func superviseSecretEngines(ctx context.Context, source extension.Source, secrets *secret.Registry, reporter *applystatus.Reporter, log *slog.Logger) func() {
+	return secretengine.Supervise(ctx, secrets, source, applystatus.Messaging, func(ctx context.Context, version int64, err error) {
+		reporter.Report(ctx, controlplanerpc.ExtensionSettingsKind, version, err)
+	}, log).Close
 }

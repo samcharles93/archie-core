@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -31,11 +32,13 @@ type deps struct {
 	// Presence reads which version each service reports for itself, to verify
 	// update reports. Nil leaves them unverified.
 	Presence storecontract.PresenceStore
-	Config        ResolvedConfig
-	Log           *slog.Logger
-	Chat          messaging.ChatContract
-	Health        *health.Registry
-	Settings      *messaging.SettingsCommand
+	Config   ResolvedConfig
+	// ExtensionChannels are channels served by installed channel extensions.
+	ExtensionChannels []*channelInstance
+	Log               *slog.Logger
+	Chat              messaging.ChatContract
+	Health            *health.Registry
+	Settings          *messaging.SettingsCommand
 	// Secrets resolves channel credential references, including those naming an
 	// extension engine.
 	Secrets *secret.Registry
@@ -166,6 +169,13 @@ func composeChannels(ctx context.Context, d deps) ([]*channelInstance, error) {
 		instance, err := composeWebhook(d)
 		if err != nil {
 			return nil, err
+		}
+		instances = append(instances, instance)
+	}
+	for _, instance := range d.ExtensionChannels {
+		if slices.ContainsFunc(instances, func(have *channelInstance) bool { return have.name == instance.name }) {
+			d.Log.Warn("channel extension skipped: a built-in channel has the same name", "channel", instance.name)
+			continue
 		}
 		instances = append(instances, instance)
 	}

@@ -54,10 +54,11 @@ type Extension struct {
 const (
 	SurfaceSecretEngine = "secretengine"
 	SurfaceForge        = "forge"
+	SurfaceChannel      = "channel"
 )
 
 func validSurface(surface string) bool {
-	return surface == SurfaceSecretEngine || surface == SurfaceForge
+	return surface == SurfaceSecretEngine || surface == SurfaceForge || surface == SurfaceChannel
 }
 
 // PackageRef identifies a required package or Kit. References are pinned to

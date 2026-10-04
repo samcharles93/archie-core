@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package channel.v1;
+
+// ChannelService is the surface a chat channel extension serves. The host
+// launches one plugin process per enabled channel and serves the gateway
+// ChatService back to it over the plugin broker, so a channel carries messages
+// in and out through that service and never dials the gateway itself.
+service ChannelService {
+  // Run starts the channel and keeps it running until the call is cancelled or
+  // the channel fails. The stream reports lifecycle: STARTING before each
+  // launch attempt, RUNNING once the channel can receive. A stream that ends
+  // with an error is a failed channel; the host restarts it.
+  rpc Run(RunRequest) returns (stream RunResponse);
+}
+
+message RunRequest {
+  // settings are the operator's values for this channel from extension
+  // settings. A key ending in _ref holds an "engine:key" secret reference the
+  // host resolves; the plugin receives the value in secrets, under the key
+  // without the suffix.
+  map<string, string> settings = 1;
+  map<string, string> secrets = 2;
+  // chat_broker_id is the plugin broker stream the host serves
+  // gateway.v1.ChatService on.
+  uint32 chat_broker_id = 3;
+}
+
+message RunResponse {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    STATE_STARTING = 1;
+    STATE_RUNNING = 2;
+  }
+  State state = 1;
+}
