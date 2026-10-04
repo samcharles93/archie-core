@@ -13,6 +13,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 
+	domainidentity "github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/natsrpc"
@@ -34,7 +35,9 @@ func SubjectFor(identity, base string) string {
 	if identity == "" {
 		return base
 	}
-	return "archie.forge." + identity + "." + strings.TrimPrefix(base, "archie.forge.")
+	// Keyed by the identity's ID, not its name: a name may hold characters a
+	// subject cannot, and both ends derive the same ID from the name.
+	return "archie.forge." + string(domainidentity.StableID(identity)) + "." + strings.TrimPrefix(base, "archie.forge.")
 }
 
 // Target is what every request acts on and the credential that authorizes

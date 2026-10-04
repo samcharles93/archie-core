@@ -13,6 +13,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 
+	domainidentity "github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/natsrpc"
 	"github.com/samcharles93/archie-core/internal/worktree"
@@ -28,7 +29,8 @@ func SubjectFor(identity, base string) string {
 	if identity == "" {
 		return base
 	}
-	return "archie.worktree." + identity + "." + strings.TrimPrefix(base, "archie.worktree.")
+	// Keyed by the identity's ID, as forgerpc.SubjectFor is.
+	return "archie.worktree." + string(domainidentity.StableID(identity)) + "." + strings.TrimPrefix(base, "archie.worktree.")
 }
 
 type PushRequest struct {
