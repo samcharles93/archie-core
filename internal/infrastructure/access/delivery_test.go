@@ -10,8 +10,10 @@ import (
 func TestAuthorizeDelivery(t *testing.T) {
 	permitAll := access.Policy{ID: "all", Level: access.LevelInstance, Text: `permit(principal, action, resource);`}
 	lanOnly := access.Policy{ID: "lan-only", Level: access.LevelInstance, Text: `forbid(principal, action == Archie::Action::"deliver", resource) unless { context.addr.isInRange(ip("10.0.0.0/8")) };`}
-	sourceOnly := access.Policy{ID: "github-only", Level: access.LevelObject, OrgID: org.DefaultOrgID, ObjectKind: access.KindSource, ObjectID: "github",
-		Text: `permit(principal, action == Archie::Action::"deliver", resource) when { context.addr.isInRange(ip("140.82.112.0/20")) };`}
+	sourceOnly := access.Policy{
+		ID: "github-only", Level: access.LevelObject, OrgID: org.DefaultOrgID, ObjectKind: access.KindSource, ObjectID: "github",
+		Text: `permit(principal, action == Archie::Action::"deliver", resource) when { context.addr.isInRange(ip("140.82.112.0/20")) };`,
+	}
 	shipped := access.ShippedOrgPolicies(org.DefaultOrgID)
 
 	tests := []struct {
