@@ -56,6 +56,7 @@ type Options struct {
 	ReviewModel   string
 	ClassifyModel string
 	GitHubToken   string
+	ForgePlugin   string
 	Resume        string
 	Out           string
 	Problems      []string
@@ -81,7 +82,7 @@ func Run(ctx context.Context, opts Options, w io.Writer) (bench.Summary, error) 
 		return bench.Summary{}, fmt.Errorf("%s configures no providers for the judge", opts.Config)
 	}
 	judge := &modelJudge{runtime: rt, modelRef: opts.JudgeModel}
-	reviewer, err := newBenchmarkReviewer(opts, doc.Config, rt)
+	reviewer, err := newBenchmarkReviewer(ctx, opts, doc.Config, rt)
 	if err != nil {
 		return bench.Summary{}, err
 	}

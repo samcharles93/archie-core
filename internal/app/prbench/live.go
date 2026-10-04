@@ -2,13 +2,17 @@ package prbench
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
 
+	"github.com/hashicorp/go-hclog"
 	"github.com/samcharles93/ai-sdk/runtime"
 
 	"github.com/samcharles93/archie-core/internal/agentexec/modelloop"
@@ -18,17 +22,19 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workflow/prreview"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/prreview/bench"
 	"github.com/samcharles93/archie-core/internal/forge"
+	"github.com/samcharles93/archie-core/internal/infrastructure/extension"
+	"github.com/samcharles93/archie-core/internal/infrastructure/forgeext"
 	"github.com/samcharles93/archie-core/internal/infrastructure/prsource"
 )
 
-func newBenchmarkReviewer(opts Options, cfg config.Config, rt *runtime.Runtime) (bench.Reviewer, error) {
+func newBenchmarkReviewer(ctx context.Context, opts Options, cfg config.Config, rt *runtime.Runtime) (bench.Reviewer, error) {
 	if opts.Fixtures != "" {
 		return fixtureReviewer{dir: opts.Fixtures}, nil
 	}
 	if opts.ReviewModel == "" || opts.ClassifyModel == "" {
 		return nil, fmt.Errorf("live review requires both -review-model and -classification-model")
 	}
-	client, err := forge.NewGitHub(opts.GitHubToken, "https://github.com", slog.Default())
+	client, err := openGitHubPlugin(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -45,6 +51,24 @@ func newBenchmarkReviewer(opts Options, cfg config.Config, rt *runtime.Runtime) 
 		cfg: cfg, agent: modelloop.NewLoopRunner(rt, slog.Default()),
 		source: prsource.New(forgeSource{PullRequestReader: prReader, PullRequestDiffReader: diffReader, RepoArchiveReader: archiveReader}),
 	}, nil
+}
+
+// openGitHubPlugin runs the GitHub forge extension binary named by
+// opts.ForgePlugin for the live review's pull request reads.
+func openGitHubPlugin(ctx context.Context, opts Options) (forge.Forge, error) {
+	if opts.ForgePlugin == "" {
+		return nil, fmt.Errorf("live review requires -forge-plugin, the GitHub forge extension binary")
+	}
+	binary, err := os.ReadFile(opts.ForgePlugin)
+	if err != nil {
+		return nil, fmt.Errorf("read forge plugin: %w", err)
+	}
+	sum := sha256.Sum256(binary)
+	return forgeext.Open(ctx, extension.NewHost(hclog.NewNullLogger()), forgeext.Instance{
+		Spec:  extension.Spec{Name: "prbench-github", Path: opts.ForgePlugin, SHA256: hex.EncodeToString(sum[:]), Env: nil},
+		Host:  "https://github.com",
+		Token: opts.GitHubToken,
+	}, slog.Default())
 }
 
 type liveReviewer struct {

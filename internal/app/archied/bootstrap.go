@@ -679,6 +679,11 @@ func (b *boot) setupForgeWebhook() {
 		log.Error("forge webhook disabled: multi-identity deployments are not supported yet (each identity's own poll loop is unaffected)")
 		return
 	}
+	parser, ok := b.forgeClient.(forge.WebhookParser)
+	if !ok {
+		log.Error("forge webhook disabled: the forge cannot parse webhooks", "forge_type", cfg.Forge.Type)
+		return
+	}
 	secretValue, err := b.secrets.Resolve(cfg.Forge.WebhookSecret)
 	if err != nil || secretValue == "" {
 		log.Error("forge webhook disabled: secret unavailable",
@@ -686,7 +691,7 @@ func (b *boot) setupForgeWebhook() {
 		return
 	}
 
-	receiver := forgewebhook.New(secretValue, cfg.Dispatch.Trigger, cfg.Label, cfg.BotUser, b.d.PublishTask, b.d.PublishReaction, log)
+	receiver := forgewebhook.New(secretValue, parser, cfg.Dispatch.Trigger, cfg.Label, cfg.BotUser, b.d.PublishTask, b.d.PublishReaction, log)
 	host, port := parseListenAddr(cfg.Forge.WebhookAddr, "0.0.0.0", 8645)
 	addr := fmt.Sprintf("%s:%d", host, port)
 	srv := &http.Server{Addr: addr, Handler: receiver, ReadHeaderTimeout: 5 * time.Second}

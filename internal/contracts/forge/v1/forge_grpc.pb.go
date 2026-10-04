@@ -37,6 +37,7 @@ const (
 	ForgeService_AcceptInvitations_FullMethodName    = "/forge.v1.ForgeService/AcceptInvitations"
 	ForgeService_VerifyPush_FullMethodName           = "/forge.v1.ForgeService/VerifyPush"
 	ForgeService_LinkBranch_FullMethodName           = "/forge.v1.ForgeService/LinkBranch"
+	ForgeService_ParseWebhook_FullMethodName         = "/forge.v1.ForgeService/ParseWebhook"
 	ForgeService_GetRepoArchive_FullMethodName       = "/forge.v1.ForgeService/GetRepoArchive"
 )
 
@@ -71,6 +72,10 @@ type ForgeServiceClient interface {
 	AcceptInvitations(ctx context.Context, in *AcceptInvitationsRequest, opts ...grpc.CallOption) (*AcceptInvitationsResponse, error)
 	VerifyPush(ctx context.Context, in *VerifyPushRequest, opts ...grpc.CallOption) (*VerifyPushResponse, error)
 	LinkBranch(ctx context.Context, in *LinkBranchRequest, opts ...grpc.CallOption) (*LinkBranchResponse, error)
+	// ParseWebhook decodes one webhook delivery the host has already
+	// authenticated. A delivery that is not an event the host acts on returns no
+	// event; an undecodable body is INVALID_ARGUMENT.
+	ParseWebhook(ctx context.Context, in *ParseWebhookRequest, opts ...grpc.CallOption) (*ParseWebhookResponse, error)
 	// GetRepoArchive streams a gzipped tar of the repository at a ref.
 	GetRepoArchive(ctx context.Context, in *GetRepoArchiveRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GetRepoArchiveResponse], error)
 }
@@ -263,6 +268,16 @@ func (c *forgeServiceClient) LinkBranch(ctx context.Context, in *LinkBranchReque
 	return out, nil
 }
 
+func (c *forgeServiceClient) ParseWebhook(ctx context.Context, in *ParseWebhookRequest, opts ...grpc.CallOption) (*ParseWebhookResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ParseWebhookResponse)
+	err := c.cc.Invoke(ctx, ForgeService_ParseWebhook_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *forgeServiceClient) GetRepoArchive(ctx context.Context, in *GetRepoArchiveRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GetRepoArchiveResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &ForgeService_ServiceDesc.Streams[0], ForgeService_GetRepoArchive_FullMethodName, cOpts...)
@@ -313,6 +328,10 @@ type ForgeServiceServer interface {
 	AcceptInvitations(context.Context, *AcceptInvitationsRequest) (*AcceptInvitationsResponse, error)
 	VerifyPush(context.Context, *VerifyPushRequest) (*VerifyPushResponse, error)
 	LinkBranch(context.Context, *LinkBranchRequest) (*LinkBranchResponse, error)
+	// ParseWebhook decodes one webhook delivery the host has already
+	// authenticated. A delivery that is not an event the host acts on returns no
+	// event; an undecodable body is INVALID_ARGUMENT.
+	ParseWebhook(context.Context, *ParseWebhookRequest) (*ParseWebhookResponse, error)
 	// GetRepoArchive streams a gzipped tar of the repository at a ref.
 	GetRepoArchive(*GetRepoArchiveRequest, grpc.ServerStreamingServer[GetRepoArchiveResponse]) error
 	mustEmbedUnimplementedForgeServiceServer()
@@ -378,6 +397,9 @@ func (UnimplementedForgeServiceServer) VerifyPush(context.Context, *VerifyPushRe
 }
 func (UnimplementedForgeServiceServer) LinkBranch(context.Context, *LinkBranchRequest) (*LinkBranchResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method LinkBranch not implemented")
+}
+func (UnimplementedForgeServiceServer) ParseWebhook(context.Context, *ParseWebhookRequest) (*ParseWebhookResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ParseWebhook not implemented")
 }
 func (UnimplementedForgeServiceServer) GetRepoArchive(*GetRepoArchiveRequest, grpc.ServerStreamingServer[GetRepoArchiveResponse]) error {
 	return status.Error(codes.Unimplemented, "method GetRepoArchive not implemented")
@@ -727,6 +749,24 @@ func _ForgeService_LinkBranch_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ForgeService_ParseWebhook_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ParseWebhookRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ForgeServiceServer).ParseWebhook(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ForgeService_ParseWebhook_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ForgeServiceServer).ParseWebhook(ctx, req.(*ParseWebhookRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ForgeService_GetRepoArchive_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(GetRepoArchiveRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -816,6 +856,10 @@ var ForgeService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "LinkBranch",
 			Handler:    _ForgeService_LinkBranch_Handler,
+		},
+		{
+			MethodName: "ParseWebhook",
+			Handler:    _ForgeService_ParseWebhook_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

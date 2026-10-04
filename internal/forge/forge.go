@@ -1,30 +1,14 @@
 // Package forge defines the interface archie uses to interact with a git
-// host  --  polling issues, managing labels, opening PRs, and reacting to
-// comments. GitHub and Gitea are the supported implementations.
+// host: polling issues, managing labels, opening PRs, and reacting to
+// comments. Forge extensions implement it over the forge.v1 surface.
 package forge
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"io"
-	"log/slog"
-	"strings"
 	"time"
 )
-
-// New creates a Forge implementation for the given type.
-func New(forgeType, token, host string, log *slog.Logger) (Forge, error) {
-	switch forgeType {
-	case "github":
-		return NewGitHub(token, host, log)
-	case "gitea":
-		return NewGitea(token, host, log)
-	case "none", "off", "disabled", "":
-		return NewNoop(log), nil
-	default:
-		return nil, fmt.Errorf("unsupported forge type %q (want github, gitea, or none)", forgeType)
-	}
-}
 
 // Issue is a forge-neutral representation of an issue (not a PR).
 type Issue struct {
@@ -185,31 +169,55 @@ type ReviewCommentWriter interface {
 	CreateReviewComments(ctx context.Context, owner, repo string, number int, reviewedHeadSHA string, comments []InlineReviewComment) error
 }
 
-// reviewHeadDrift returns an error when head is no longer reviewedHeadSHA.
-// Empty reviewedHeadSHA returns nil.
-func reviewHeadDrift(owner, repo string, number int, head, reviewedHeadSHA string) error {
-	if reviewedHeadSHA == "" || strings.EqualFold(head, reviewedHeadSHA) {
-		return nil
-	}
-	return fmt.Errorf(
-		"pull request %s/%s#%d has moved off the reviewed revision (%s): head is now %s, so the line-anchored comments would land on lines they were not measured against",
-		owner, repo, number, reviewedHeadSHA, head,
-	)
+// WebhookEvent is one decoded webhook delivery. At most one field is set; none
+// means a delivery the host does not act on.
+type WebhookEvent struct {
+	Issue         *IssueEvent
+	Review        *ReviewEvent
+	ReviewComment *ReviewCommentEvent
 }
 
-// normalizeReviewState maps a GitHub review state string onto the neutral
-// ReviewState* constants. Unknown states pass through lowercased.
-func normalizeReviewState(s string) string {
-	switch s {
-	case "APPROVED":
-		return ReviewStateApproved
-	case "CHANGES_REQUESTED":
-		return ReviewStateRequestedChanges
-	case "COMMENTED":
-		return ReviewStateCommented
-	case "DISMISSED":
-		return ReviewStateDismissed
-	default:
-		return strings.ToLower(s)
-	}
+// IssueEvent is an issue webhook, carrying what eligibility needs.
+type IssueEvent struct {
+	Action      string
+	State       string
+	PullRequest bool
+	Owner, Repo string
+	Number      int
+	Title, Body string
+	Labels      []string
+	Assignees   []string
+}
+
+// ReviewEvent is a submitted pull request review.
+type ReviewEvent struct {
+	Action      string
+	Owner, Repo string
+	PRNumber    int
+	ReviewID    int64
+	Author      string
+	State       string
+	Body        string
+}
+
+// ReviewCommentEvent is an inline pull request review comment.
+type ReviewCommentEvent struct {
+	Action      string
+	Owner, Repo string
+	PRNumber    int
+	ReviewID    int64
+	CommentID   int64
+	Author      string
+	Body        string
+	Path        string
+	Line        int
+}
+
+// ErrBadWebhook marks a delivery body the forge could not decode.
+var ErrBadWebhook = errors.New("undecodable webhook payload")
+
+// WebhookParser decodes webhook deliveries. Callers verify the delivery's
+// signature first; implementations parse only what is authenticated.
+type WebhookParser interface {
+	ParseWebhook(ctx context.Context, headers map[string]string, body []byte) (WebhookEvent, error)
 }

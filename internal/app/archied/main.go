@@ -69,13 +69,9 @@ func resolveForge(ctx context.Context, cfg config.Forge, instance string, secret
 	if client, handled := extensions.open(ctx, cfg.Type, instance, cfg.Host, token); handled {
 		return client, token
 	}
-	client, err := forge.New(cfg.Type, token, cfg.Host, log)
-	if err != nil {
-		log.Warn("forge disabled: client construction failed",
-			"forge_type", cfg.Type, "err", err)
-		return forge.NewNoop(log), ""
-	}
-	return client, token
+	log.Warn("forge disabled: no enabled forge extension of that name",
+		"forge_type", cfg.Type, "instance", instance)
+	return forge.NewNoop(log), ""
 }
 
 func manualRequeueTask(ctx context.Context, st storecontract.TaskStore, taskID int64) error {

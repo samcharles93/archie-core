@@ -1,20 +1,21 @@
-// Package webhook receives GitHub issue and review webhooks, verifies their
-// HMAC and publishes them through the poller's publish path. Only
+// Package webhook receives forge issue and review webhooks, verifies their
+// HMAC, has the forge's parser decode them and publishes them through the
+// poller's publish path. Only
 // application/json payloads are accepted. A GET returns delivery Status.
 package webhook
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"sync"
 	"time"
 
-	"github.com/google/go-github/v78/github"
-
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
+	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/webhookguard"
 )
 
@@ -45,6 +46,7 @@ const (
 // matched issues.
 type Receiver struct {
 	secret          string
+	parser          forge.WebhookParser
 	trigger         string
 	label           string
 	botUser         string
@@ -69,12 +71,13 @@ type reactionWindow struct {
 }
 
 // New returns an unstarted Receiver.
-func New(secret, trigger, label, botUser string, publish PublishFunc, reactionPublish ReactionPublishFunc, log *slog.Logger) *Receiver {
+func New(secret string, parser forge.WebhookParser, trigger, label, botUser string, publish PublishFunc, reactionPublish ReactionPublishFunc, log *slog.Logger) *Receiver {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
 	return &Receiver{
 		secret:          secret,
+		parser:          parser,
 		trigger:         trigger,
 		label:           label,
 		botUser:         botUser,
@@ -169,23 +172,32 @@ func (r *Receiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	event, err := github.ParseWebHook(req.Header.Get("X-GitHub-Event"), body)
-	if err != nil {
+	headers := make(map[string]string, len(req.Header))
+	for name := range req.Header {
+		headers[name] = req.Header.Get(name)
+	}
+	event, err := r.parser.ParseWebhook(req.Context(), headers, body)
+	if errors.Is(err, forge.ErrBadWebhook) {
 		r.log.Warn("parse webhook", "err", err)
 		http.Error(w, "bad payload", http.StatusBadRequest)
 		return
 	}
-	// Authenticated and parseable: this is a genuine GitHub delivery,
+	if err != nil {
+		r.log.Error("parse webhook", "err", err)
+		http.Error(w, "parse unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	// Authenticated and parseable: this is a genuine forge delivery,
 	// independent of whether it turns out to be dispatch-eligible.
 	r.recordDelivery()
 
-	switch e := event.(type) {
-	case *github.IssuesEvent:
-		r.serveIssueEvent(w, req, e)
-	case *github.PullRequestReviewEvent:
-		r.serveReviewEvent(w, req, e)
-	case *github.PullRequestReviewCommentEvent:
-		r.serveReviewCommentEvent(w, req, e)
+	switch {
+	case event.Issue != nil:
+		r.serveIssueEvent(w, req, event.Issue)
+	case event.Review != nil:
+		r.serveReviewEvent(w, req, event.Review)
+	case event.ReviewComment != nil:
+		r.serveReviewCommentEvent(w, req, event.ReviewComment)
 	default:
 		// Not an event this receiver decodes (ping, push, etc.).
 		// Acknowledge and ignore.
@@ -195,7 +207,7 @@ func (r *Receiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 // serveIssueEvent is the receiver's original contract: an eligible issue
 // event becomes a task envelope on the task path.
-func (r *Receiver) serveIssueEvent(w http.ResponseWriter, req *http.Request, issueEvent *github.IssuesEvent) {
+func (r *Receiver) serveIssueEvent(w http.ResponseWriter, req *http.Request, issueEvent *forge.IssueEvent) {
 	task, ok := r.taskFromEvent(issueEvent)
 	if !ok {
 		// Delivered but not eligible work (PR, closed, unrelated action,
@@ -218,8 +230,8 @@ func (r *Receiver) serveIssueEvent(w http.ResponseWriter, req *http.Request, iss
 // half of decision 2: the same typed reaction the poller produces, so
 // PublishUnique dedups the two sources. Only "submitted" carries a verdict
 // or summary to remediate; edited and dismissed restate or withdraw one.
-func (r *Receiver) serveReviewEvent(w http.ResponseWriter, req *http.Request, e *github.PullRequestReviewEvent) {
-	if e.GetAction() != "submitted" || e.GetReview() == nil {
+func (r *Receiver) serveReviewEvent(w http.ResponseWriter, req *http.Request, e *forge.ReviewEvent) {
+	if e.Action != "submitted" {
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
@@ -232,16 +244,15 @@ func (r *Receiver) serveReviewEvent(w http.ResponseWriter, req *http.Request, e 
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
-	review := e.GetReview()
 	reaction := workintake.ReviewCommentEnvelope{
-		Owner:    e.GetRepo().GetOwner().GetLogin(),
-		Repo:     e.GetRepo().GetName(),
-		PRNumber: e.GetPullRequest().GetNumber(),
+		Owner:    e.Owner,
+		Repo:     e.Repo,
+		PRNumber: e.PRNumber,
 		Kind:     workintake.ReviewReactionReview,
-		ReviewID: review.GetID(),
-		Author:   review.GetUser().GetLogin(),
-		State:    review.GetState(),
-		Body:     review.GetBody(),
+		ReviewID: e.ReviewID,
+		Author:   e.Author,
+		State:    e.State,
+		Body:     e.Body,
 	}
 	r.deliverReaction(w, req, reaction)
 }
@@ -250,8 +261,8 @@ func (r *Receiver) serveReviewEvent(w http.ResponseWriter, req *http.Request, e 
 // comment carries its parent review's ID, so the consumer can collect it
 // into that review's unit (decision 5) rather than starting a round of its
 // own.
-func (r *Receiver) serveReviewCommentEvent(w http.ResponseWriter, req *http.Request, e *github.PullRequestReviewCommentEvent) {
-	if e.GetAction() != "created" || e.GetComment() == nil {
+func (r *Receiver) serveReviewCommentEvent(w http.ResponseWriter, req *http.Request, e *forge.ReviewCommentEvent) {
+	if e.Action != "created" {
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
@@ -264,18 +275,17 @@ func (r *Receiver) serveReviewCommentEvent(w http.ResponseWriter, req *http.Requ
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
-	comment := e.GetComment()
 	reaction := workintake.ReviewCommentEnvelope{
-		Owner:     e.GetRepo().GetOwner().GetLogin(),
-		Repo:      e.GetRepo().GetName(),
-		PRNumber:  e.GetPullRequest().GetNumber(),
+		Owner:     e.Owner,
+		Repo:      e.Repo,
+		PRNumber:  e.PRNumber,
 		Kind:      workintake.ReviewReactionComment,
-		ReviewID:  comment.GetPullRequestReviewID(),
-		CommentID: comment.GetID(),
-		Author:    comment.GetUser().GetLogin(),
-		Body:      comment.GetBody(),
-		Path:      comment.GetPath(),
-		Line:      comment.GetLine(),
+		ReviewID:  e.ReviewID,
+		CommentID: e.CommentID,
+		Author:    e.Author,
+		Body:      e.Body,
+		Path:      e.Path,
+		Line:      e.Line,
 	}
 	r.deliverReaction(w, req, reaction)
 }
@@ -311,76 +321,36 @@ func (r *Receiver) allowReactionDelivery(remote string) bool {
 	return w.count <= reactionRateLimit
 }
 
-// taskFromEvent decodes a GitHub issues event into a task envelope, or
-// reports (zero, false) when the event is not eligible work.
-func (r *Receiver) taskFromEvent(event *github.IssuesEvent) (workintake.TaskEnvelope, bool) {
-	issue := event.GetIssue()
-	if issue == nil || issue.IsPullRequest() {
+// taskFromEvent reports the task an issues event makes eligible, or
+// (zero, false) when it is not eligible work.
+func (r *Receiver) taskFromEvent(event *forge.IssueEvent) (workintake.TaskEnvelope, bool) {
+	if event.PullRequest {
 		return workintake.TaskEnvelope{}, false
 	}
 	// Only events that could newly make an issue eligible. unlabeled,
 	// unassigned, closed, and edited never queue work.
-	switch event.GetAction() {
+	switch event.Action {
 	case "opened", "reopened", "labeled", "assigned":
 	default:
 		return workintake.TaskEnvelope{}, false
 	}
-	if issue.GetState() != "open" {
+	if event.State != "open" {
 		return workintake.TaskEnvelope{}, false
 	}
-
-	labels := labelNames(issue.Labels)
-	assignees := assigneeLogins(issue.Assignees, issue.Assignee, event.GetAssignee())
-	if !workintake.MatchesDispatch(r.trigger, r.label, r.botUser, labels, assignees) {
+	if !workintake.MatchesDispatch(r.trigger, r.label, r.botUser, event.Labels, event.Assignees) {
 		return workintake.TaskEnvelope{}, false
 	}
-
-	repo := event.GetRepo()
-	if repo == nil || repo.GetOwner().GetLogin() == "" || repo.GetName() == "" {
-		r.log.Warn("event missing repository", "action", event.GetAction())
+	if event.Owner == "" || event.Repo == "" {
+		r.log.Warn("event missing repository", "action", event.Action)
 		return workintake.TaskEnvelope{}, false
 	}
-
 	return workintake.TaskEnvelope{
-		Owner:  repo.GetOwner().GetLogin(),
-		Repo:   repo.GetName(),
-		Number: issue.GetNumber(),
-		Title:  issue.GetTitle(),
-		Body:   issue.GetBody(),
-		Labels: labels,
-		Kind:   workintake.KindForLabels(labels),
+		Owner:  event.Owner,
+		Repo:   event.Repo,
+		Number: event.Number,
+		Title:  event.Title,
+		Body:   event.Body,
+		Labels: event.Labels,
+		Kind:   workintake.KindForLabels(event.Labels),
 	}, true
-}
-
-func labelNames(labels []*github.Label) []string {
-	var out []string
-	for _, l := range labels {
-		if name := l.GetName(); name != "" {
-			out = append(out, name)
-		}
-	}
-	return out
-}
-
-func assigneeLogins(assignees []*github.User, extra ...*github.User) []string {
-	seen := map[string]bool{}
-	var out []string
-	add := func(u *github.User) {
-		if u == nil {
-			return
-		}
-		login := u.GetLogin()
-		if login == "" || seen[login] {
-			return
-		}
-		seen[login] = true
-		out = append(out, login)
-	}
-	for _, a := range assignees {
-		add(a)
-	}
-	for _, a := range extra {
-		add(a)
-	}
-	return out
 }

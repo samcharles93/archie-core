@@ -68,6 +68,7 @@ var (
 	_ forge.RepoArchiveReader       = (*Forge)(nil)
 	_ forge.PullRequestReviewReader = (*Forge)(nil)
 	_ forge.ReviewCommentWriter     = (*Forge)(nil)
+	_ forge.WebhookParser           = (*Forge)(nil)
 )
 
 // Open starts the instance's extension process and configures it. The process
@@ -302,6 +303,42 @@ func (f *Forge) LinkBranch(ctx context.Context, owner, repo string, issueNumber 
 		return c.LinkBranch(ctx, &forgev1.LinkBranchRequest{Repo: ref(owner, repo), IssueNumber: int32(issueNumber), Branch: branch}) //nolint:gosec // issue numbers fit int32
 	})
 	return err
+}
+
+// ParseWebhook has the extension decode an authenticated delivery.
+func (f *Forge) ParseWebhook(ctx context.Context, headers map[string]string, body []byte) (forge.WebhookEvent, error) {
+	resp, err := call(ctx, f, "parse webhook", func(c forgev1.ForgeServiceClient) (*forgev1.ParseWebhookResponse, error) {
+		return c.ParseWebhook(ctx, &forgev1.ParseWebhookRequest{Headers: headers, Body: body})
+	})
+	if status.Code(errors.Unwrap(err)) == codes.InvalidArgument {
+		return forge.WebhookEvent{}, fmt.Errorf("%w: %w", forge.ErrBadWebhook, err)
+	}
+	if err != nil {
+		return forge.WebhookEvent{}, err
+	}
+	switch e := resp.GetEvent().(type) {
+	case *forgev1.ParseWebhookResponse_Issue:
+		i := e.Issue
+		return forge.WebhookEvent{Issue: &forge.IssueEvent{
+			Action: i.GetAction(), State: i.GetState(), PullRequest: i.GetIsPullRequest(),
+			Owner: i.GetRepo().GetOwner(), Repo: i.GetRepo().GetRepo(), Number: int(i.GetNumber()),
+			Title: i.GetTitle(), Body: i.GetBody(), Labels: i.GetLabels(), Assignees: i.GetAssignees(),
+		}}, nil
+	case *forgev1.ParseWebhookResponse_Review:
+		r := e.Review
+		return forge.WebhookEvent{Review: &forge.ReviewEvent{
+			Action: r.GetAction(), Owner: r.GetRepo().GetOwner(), Repo: r.GetRepo().GetRepo(), PRNumber: int(r.GetPrNumber()),
+			ReviewID: r.GetReviewId(), Author: r.GetAuthor(), State: r.GetState(), Body: r.GetBody(),
+		}}, nil
+	case *forgev1.ParseWebhookResponse_ReviewComment:
+		c := e.ReviewComment
+		return forge.WebhookEvent{ReviewComment: &forge.ReviewCommentEvent{
+			Action: c.GetAction(), Owner: c.GetRepo().GetOwner(), Repo: c.GetRepo().GetRepo(), PRNumber: int(c.GetPrNumber()),
+			ReviewID: c.GetReviewId(), CommentID: c.GetCommentId(), Author: c.GetAuthor(), Body: c.GetBody(),
+			Path: c.GetPath(), Line: int(c.GetLine()),
+		}}, nil
+	}
+	return forge.WebhookEvent{}, nil
 }
 
 // GetRepoArchive streams the archive. The first chunk is read before

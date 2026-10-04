@@ -2354,6 +2354,464 @@ func (x *GetRepoArchiveResponse) GetData() []byte {
 	return nil
 }
 
+type ParseWebhookRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Headers       map[string]string      `protobuf:"bytes,1,rep,name=headers,proto3" json:"headers,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Body          []byte                 `protobuf:"bytes,2,opt,name=body,proto3" json:"body,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ParseWebhookRequest) Reset() {
+	*x = ParseWebhookRequest{}
+	mi := &file_forge_v1_forge_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ParseWebhookRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ParseWebhookRequest) ProtoMessage() {}
+
+func (x *ParseWebhookRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_forge_v1_forge_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ParseWebhookRequest.ProtoReflect.Descriptor instead.
+func (*ParseWebhookRequest) Descriptor() ([]byte, []int) {
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *ParseWebhookRequest) GetHeaders() map[string]string {
+	if x != nil {
+		return x.Headers
+	}
+	return nil
+}
+
+func (x *ParseWebhookRequest) GetBody() []byte {
+	if x != nil {
+		return x.Body
+	}
+	return nil
+}
+
+type ParseWebhookResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Event:
+	//
+	//	*ParseWebhookResponse_Issue
+	//	*ParseWebhookResponse_Review
+	//	*ParseWebhookResponse_ReviewComment
+	Event         isParseWebhookResponse_Event `protobuf_oneof:"event"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ParseWebhookResponse) Reset() {
+	*x = ParseWebhookResponse{}
+	mi := &file_forge_v1_forge_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ParseWebhookResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ParseWebhookResponse) ProtoMessage() {}
+
+func (x *ParseWebhookResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_forge_v1_forge_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ParseWebhookResponse.ProtoReflect.Descriptor instead.
+func (*ParseWebhookResponse) Descriptor() ([]byte, []int) {
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *ParseWebhookResponse) GetEvent() isParseWebhookResponse_Event {
+	if x != nil {
+		return x.Event
+	}
+	return nil
+}
+
+func (x *ParseWebhookResponse) GetIssue() *IssueEvent {
+	if x != nil {
+		if x, ok := x.Event.(*ParseWebhookResponse_Issue); ok {
+			return x.Issue
+		}
+	}
+	return nil
+}
+
+func (x *ParseWebhookResponse) GetReview() *ReviewEvent {
+	if x != nil {
+		if x, ok := x.Event.(*ParseWebhookResponse_Review); ok {
+			return x.Review
+		}
+	}
+	return nil
+}
+
+func (x *ParseWebhookResponse) GetReviewComment() *ReviewCommentEvent {
+	if x != nil {
+		if x, ok := x.Event.(*ParseWebhookResponse_ReviewComment); ok {
+			return x.ReviewComment
+		}
+	}
+	return nil
+}
+
+type isParseWebhookResponse_Event interface {
+	isParseWebhookResponse_Event()
+}
+
+type ParseWebhookResponse_Issue struct {
+	Issue *IssueEvent `protobuf:"bytes,1,opt,name=issue,proto3,oneof"`
+}
+
+type ParseWebhookResponse_Review struct {
+	Review *ReviewEvent `protobuf:"bytes,2,opt,name=review,proto3,oneof"`
+}
+
+type ParseWebhookResponse_ReviewComment struct {
+	ReviewComment *ReviewCommentEvent `protobuf:"bytes,3,opt,name=review_comment,json=reviewComment,proto3,oneof"`
+}
+
+func (*ParseWebhookResponse_Issue) isParseWebhookResponse_Event() {}
+
+func (*ParseWebhookResponse_Review) isParseWebhookResponse_Event() {}
+
+func (*ParseWebhookResponse_ReviewComment) isParseWebhookResponse_Event() {}
+
+type IssueEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Action        string                 `protobuf:"bytes,1,opt,name=action,proto3" json:"action,omitempty"`
+	State         string                 `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
+	IsPullRequest bool                   `protobuf:"varint,3,opt,name=is_pull_request,json=isPullRequest,proto3" json:"is_pull_request,omitempty"`
+	Repo          *RepoRef               `protobuf:"bytes,4,opt,name=repo,proto3" json:"repo,omitempty"`
+	Number        int32                  `protobuf:"varint,5,opt,name=number,proto3" json:"number,omitempty"`
+	Title         string                 `protobuf:"bytes,6,opt,name=title,proto3" json:"title,omitempty"`
+	Body          string                 `protobuf:"bytes,7,opt,name=body,proto3" json:"body,omitempty"`
+	Labels        []string               `protobuf:"bytes,8,rep,name=labels,proto3" json:"labels,omitempty"`
+	Assignees     []string               `protobuf:"bytes,9,rep,name=assignees,proto3" json:"assignees,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IssueEvent) Reset() {
+	*x = IssueEvent{}
+	mi := &file_forge_v1_forge_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IssueEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IssueEvent) ProtoMessage() {}
+
+func (x *IssueEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_forge_v1_forge_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IssueEvent.ProtoReflect.Descriptor instead.
+func (*IssueEvent) Descriptor() ([]byte, []int) {
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *IssueEvent) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *IssueEvent) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *IssueEvent) GetIsPullRequest() bool {
+	if x != nil {
+		return x.IsPullRequest
+	}
+	return false
+}
+
+func (x *IssueEvent) GetRepo() *RepoRef {
+	if x != nil {
+		return x.Repo
+	}
+	return nil
+}
+
+func (x *IssueEvent) GetNumber() int32 {
+	if x != nil {
+		return x.Number
+	}
+	return 0
+}
+
+func (x *IssueEvent) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *IssueEvent) GetBody() string {
+	if x != nil {
+		return x.Body
+	}
+	return ""
+}
+
+func (x *IssueEvent) GetLabels() []string {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
+}
+
+func (x *IssueEvent) GetAssignees() []string {
+	if x != nil {
+		return x.Assignees
+	}
+	return nil
+}
+
+type ReviewEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Action        string                 `protobuf:"bytes,1,opt,name=action,proto3" json:"action,omitempty"`
+	Repo          *RepoRef               `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
+	PrNumber      int32                  `protobuf:"varint,3,opt,name=pr_number,json=prNumber,proto3" json:"pr_number,omitempty"`
+	ReviewId      int64                  `protobuf:"varint,4,opt,name=review_id,json=reviewId,proto3" json:"review_id,omitempty"`
+	Author        string                 `protobuf:"bytes,5,opt,name=author,proto3" json:"author,omitempty"`
+	State         string                 `protobuf:"bytes,6,opt,name=state,proto3" json:"state,omitempty"`
+	Body          string                 `protobuf:"bytes,7,opt,name=body,proto3" json:"body,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReviewEvent) Reset() {
+	*x = ReviewEvent{}
+	mi := &file_forge_v1_forge_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReviewEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReviewEvent) ProtoMessage() {}
+
+func (x *ReviewEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_forge_v1_forge_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReviewEvent.ProtoReflect.Descriptor instead.
+func (*ReviewEvent) Descriptor() ([]byte, []int) {
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *ReviewEvent) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *ReviewEvent) GetRepo() *RepoRef {
+	if x != nil {
+		return x.Repo
+	}
+	return nil
+}
+
+func (x *ReviewEvent) GetPrNumber() int32 {
+	if x != nil {
+		return x.PrNumber
+	}
+	return 0
+}
+
+func (x *ReviewEvent) GetReviewId() int64 {
+	if x != nil {
+		return x.ReviewId
+	}
+	return 0
+}
+
+func (x *ReviewEvent) GetAuthor() string {
+	if x != nil {
+		return x.Author
+	}
+	return ""
+}
+
+func (x *ReviewEvent) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *ReviewEvent) GetBody() string {
+	if x != nil {
+		return x.Body
+	}
+	return ""
+}
+
+type ReviewCommentEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Action        string                 `protobuf:"bytes,1,opt,name=action,proto3" json:"action,omitempty"`
+	Repo          *RepoRef               `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
+	PrNumber      int32                  `protobuf:"varint,3,opt,name=pr_number,json=prNumber,proto3" json:"pr_number,omitempty"`
+	ReviewId      int64                  `protobuf:"varint,4,opt,name=review_id,json=reviewId,proto3" json:"review_id,omitempty"`
+	CommentId     int64                  `protobuf:"varint,5,opt,name=comment_id,json=commentId,proto3" json:"comment_id,omitempty"`
+	Author        string                 `protobuf:"bytes,6,opt,name=author,proto3" json:"author,omitempty"`
+	Body          string                 `protobuf:"bytes,7,opt,name=body,proto3" json:"body,omitempty"`
+	Path          string                 `protobuf:"bytes,8,opt,name=path,proto3" json:"path,omitempty"`
+	Line          int32                  `protobuf:"varint,9,opt,name=line,proto3" json:"line,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReviewCommentEvent) Reset() {
+	*x = ReviewCommentEvent{}
+	mi := &file_forge_v1_forge_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReviewCommentEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReviewCommentEvent) ProtoMessage() {}
+
+func (x *ReviewCommentEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_forge_v1_forge_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReviewCommentEvent.ProtoReflect.Descriptor instead.
+func (*ReviewCommentEvent) Descriptor() ([]byte, []int) {
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *ReviewCommentEvent) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *ReviewCommentEvent) GetRepo() *RepoRef {
+	if x != nil {
+		return x.Repo
+	}
+	return nil
+}
+
+func (x *ReviewCommentEvent) GetPrNumber() int32 {
+	if x != nil {
+		return x.PrNumber
+	}
+	return 0
+}
+
+func (x *ReviewCommentEvent) GetReviewId() int64 {
+	if x != nil {
+		return x.ReviewId
+	}
+	return 0
+}
+
+func (x *ReviewCommentEvent) GetCommentId() int64 {
+	if x != nil {
+		return x.CommentId
+	}
+	return 0
+}
+
+func (x *ReviewCommentEvent) GetAuthor() string {
+	if x != nil {
+		return x.Author
+	}
+	return ""
+}
+
+func (x *ReviewCommentEvent) GetBody() string {
+	if x != nil {
+		return x.Body
+	}
+	return ""
+}
+
+func (x *ReviewCommentEvent) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *ReviewCommentEvent) GetLine() int32 {
+	if x != nil {
+		return x.Line
+	}
+	return 0
+}
+
 var File_forge_v1_forge_proto protoreflect.FileDescriptor
 
 const file_forge_v1_forge_proto_rawDesc = "" +
@@ -2497,7 +2955,48 @@ const file_forge_v1_forge_proto_rawDesc = "" +
 	"\x04repo\x18\x01 \x01(\v2\x11.forge.v1.RepoRefR\x04repo\x12\x10\n" +
 	"\x03ref\x18\x02 \x01(\tR\x03ref\",\n" +
 	"\x16GetRepoArchiveResponse\x12\x12\n" +
-	"\x04data\x18\x01 \x01(\fR\x04data2\xfc\v\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data\"\xab\x01\n" +
+	"\x13ParseWebhookRequest\x12D\n" +
+	"\aheaders\x18\x01 \x03(\v2*.forge.v1.ParseWebhookRequest.HeadersEntryR\aheaders\x12\x12\n" +
+	"\x04body\x18\x02 \x01(\fR\x04body\x1a:\n" +
+	"\fHeadersEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc5\x01\n" +
+	"\x14ParseWebhookResponse\x12,\n" +
+	"\x05issue\x18\x01 \x01(\v2\x14.forge.v1.IssueEventH\x00R\x05issue\x12/\n" +
+	"\x06review\x18\x02 \x01(\v2\x15.forge.v1.ReviewEventH\x00R\x06review\x12E\n" +
+	"\x0ereview_comment\x18\x03 \x01(\v2\x1c.forge.v1.ReviewCommentEventH\x00R\rreviewCommentB\a\n" +
+	"\x05event\"\x81\x02\n" +
+	"\n" +
+	"IssueEvent\x12\x16\n" +
+	"\x06action\x18\x01 \x01(\tR\x06action\x12\x14\n" +
+	"\x05state\x18\x02 \x01(\tR\x05state\x12&\n" +
+	"\x0fis_pull_request\x18\x03 \x01(\bR\risPullRequest\x12%\n" +
+	"\x04repo\x18\x04 \x01(\v2\x11.forge.v1.RepoRefR\x04repo\x12\x16\n" +
+	"\x06number\x18\x05 \x01(\x05R\x06number\x12\x14\n" +
+	"\x05title\x18\x06 \x01(\tR\x05title\x12\x12\n" +
+	"\x04body\x18\a \x01(\tR\x04body\x12\x16\n" +
+	"\x06labels\x18\b \x03(\tR\x06labels\x12\x1c\n" +
+	"\tassignees\x18\t \x03(\tR\tassignees\"\xc8\x01\n" +
+	"\vReviewEvent\x12\x16\n" +
+	"\x06action\x18\x01 \x01(\tR\x06action\x12%\n" +
+	"\x04repo\x18\x02 \x01(\v2\x11.forge.v1.RepoRefR\x04repo\x12\x1b\n" +
+	"\tpr_number\x18\x03 \x01(\x05R\bprNumber\x12\x1b\n" +
+	"\treview_id\x18\x04 \x01(\x03R\breviewId\x12\x16\n" +
+	"\x06author\x18\x05 \x01(\tR\x06author\x12\x14\n" +
+	"\x05state\x18\x06 \x01(\tR\x05state\x12\x12\n" +
+	"\x04body\x18\a \x01(\tR\x04body\"\x80\x02\n" +
+	"\x12ReviewCommentEvent\x12\x16\n" +
+	"\x06action\x18\x01 \x01(\tR\x06action\x12%\n" +
+	"\x04repo\x18\x02 \x01(\v2\x11.forge.v1.RepoRefR\x04repo\x12\x1b\n" +
+	"\tpr_number\x18\x03 \x01(\x05R\bprNumber\x12\x1b\n" +
+	"\treview_id\x18\x04 \x01(\x03R\breviewId\x12\x1d\n" +
+	"\n" +
+	"comment_id\x18\x05 \x01(\x03R\tcommentId\x12\x16\n" +
+	"\x06author\x18\x06 \x01(\tR\x06author\x12\x12\n" +
+	"\x04body\x18\a \x01(\tR\x04body\x12\x12\n" +
+	"\x04path\x18\b \x01(\tR\x04path\x12\x12\n" +
+	"\x04line\x18\t \x01(\x05R\x04line2\xcb\f\n" +
 	"\fForgeService\x12D\n" +
 	"\tConfigure\x12\x1a.forge.v1.ConfigureRequest\x1a\x1b.forge.v1.ConfigureResponse\x12S\n" +
 	"\x0eAssignedIssues\x12\x1f.forge.v1.AssignedIssuesRequest\x1a .forge.v1.AssignedIssuesResponse\x12V\n" +
@@ -2519,7 +3018,8 @@ const file_forge_v1_forge_proto_rawDesc = "" +
 	"\n" +
 	"VerifyPush\x12\x1b.forge.v1.VerifyPushRequest\x1a\x1c.forge.v1.VerifyPushResponse\x12G\n" +
 	"\n" +
-	"LinkBranch\x12\x1b.forge.v1.LinkBranchRequest\x1a\x1c.forge.v1.LinkBranchResponse\x12U\n" +
+	"LinkBranch\x12\x1b.forge.v1.LinkBranchRequest\x1a\x1c.forge.v1.LinkBranchResponse\x12M\n" +
+	"\fParseWebhook\x12\x1d.forge.v1.ParseWebhookRequest\x1a\x1e.forge.v1.ParseWebhookResponse\x12U\n" +
 	"\x0eGetRepoArchive\x12\x1f.forge.v1.GetRepoArchiveRequest\x1a .forge.v1.GetRepoArchiveResponse0\x01B\xa4\x01\n" +
 	"\fcom.forge.v1B\n" +
 	"ForgeProtoP\x01ZGgithub.com/samcharles93/archie-core/internal/contracts/forge/v1;forgev1\xa2\x02\x03FXX\xaa\x02\bForge.V1\xca\x02\bForge\\V1\xe2\x02\x14Forge\\V1\\GPBMetadata\xea\x02\tForge::V1b\x06proto3"
@@ -2536,7 +3036,7 @@ func file_forge_v1_forge_proto_rawDescGZIP() []byte {
 	return file_forge_v1_forge_proto_rawDescData
 }
 
-var file_forge_v1_forge_proto_msgTypes = make([]protoimpl.MessageInfo, 46)
+var file_forge_v1_forge_proto_msgTypes = make([]protoimpl.MessageInfo, 52)
 var file_forge_v1_forge_proto_goTypes = []any{
 	(*ConfigureRequest)(nil),             // 0: forge.v1.ConfigureRequest
 	(*ConfigureResponse)(nil),            // 1: forge.v1.ConfigureResponse
@@ -2583,11 +3083,17 @@ var file_forge_v1_forge_proto_goTypes = []any{
 	(*VerifyPushResponse)(nil),           // 42: forge.v1.VerifyPushResponse
 	(*GetRepoArchiveRequest)(nil),        // 43: forge.v1.GetRepoArchiveRequest
 	(*GetRepoArchiveResponse)(nil),       // 44: forge.v1.GetRepoArchiveResponse
-	nil,                                  // 45: forge.v1.ConfigureRequest.SettingsEntry
-	(*timestamppb.Timestamp)(nil),        // 46: google.protobuf.Timestamp
+	(*ParseWebhookRequest)(nil),          // 45: forge.v1.ParseWebhookRequest
+	(*ParseWebhookResponse)(nil),         // 46: forge.v1.ParseWebhookResponse
+	(*IssueEvent)(nil),                   // 47: forge.v1.IssueEvent
+	(*ReviewEvent)(nil),                  // 48: forge.v1.ReviewEvent
+	(*ReviewCommentEvent)(nil),           // 49: forge.v1.ReviewCommentEvent
+	nil,                                  // 50: forge.v1.ConfigureRequest.SettingsEntry
+	nil,                                  // 51: forge.v1.ParseWebhookRequest.HeadersEntry
+	(*timestamppb.Timestamp)(nil),        // 52: google.protobuf.Timestamp
 }
 var file_forge_v1_forge_proto_depIdxs = []int32{
-	45, // 0: forge.v1.ConfigureRequest.settings:type_name -> forge.v1.ConfigureRequest.SettingsEntry
+	50, // 0: forge.v1.ConfigureRequest.settings:type_name -> forge.v1.ConfigureRequest.SettingsEntry
 	2,  // 1: forge.v1.PullRequestRef.repo:type_name -> forge.v1.RepoRef
 	4,  // 2: forge.v1.AssignedIssuesResponse.issues:type_name -> forge.v1.Issue
 	4,  // 3: forge.v1.IssuesWithLabelResponse.issues:type_name -> forge.v1.Issue
@@ -2603,9 +3109,9 @@ var file_forge_v1_forge_proto_depIdxs = []int32{
 	21, // 13: forge.v1.GetPullRequestResponse.pull_request:type_name -> forge.v1.PullRequest
 	2,  // 14: forge.v1.GetPullRequestDiffRequest.repo:type_name -> forge.v1.RepoRef
 	3,  // 15: forge.v1.ListReviewsRequest.pull_request:type_name -> forge.v1.PullRequestRef
-	46, // 16: forge.v1.Review.submitted_at:type_name -> google.protobuf.Timestamp
+	52, // 16: forge.v1.Review.submitted_at:type_name -> google.protobuf.Timestamp
 	27, // 17: forge.v1.ListReviewsResponse.reviews:type_name -> forge.v1.Review
-	46, // 18: forge.v1.ReviewComment.created_at:type_name -> google.protobuf.Timestamp
+	52, // 18: forge.v1.ReviewComment.created_at:type_name -> google.protobuf.Timestamp
 	3,  // 19: forge.v1.ListReviewCommentsRequest.pull_request:type_name -> forge.v1.PullRequestRef
 	29, // 20: forge.v1.ListReviewCommentsResponse.comments:type_name -> forge.v1.ReviewComment
 	3,  // 21: forge.v1.ReplyToReviewRequest.pull_request:type_name -> forge.v1.PullRequestRef
@@ -2614,49 +3120,58 @@ var file_forge_v1_forge_proto_depIdxs = []int32{
 	2,  // 24: forge.v1.LinkBranchRequest.repo:type_name -> forge.v1.RepoRef
 	2,  // 25: forge.v1.VerifyPushRequest.repo:type_name -> forge.v1.RepoRef
 	2,  // 26: forge.v1.GetRepoArchiveRequest.repo:type_name -> forge.v1.RepoRef
-	0,  // 27: forge.v1.ForgeService.Configure:input_type -> forge.v1.ConfigureRequest
-	7,  // 28: forge.v1.ForgeService.AssignedIssues:input_type -> forge.v1.AssignedIssuesRequest
-	8,  // 29: forge.v1.ForgeService.IssuesWithLabel:input_type -> forge.v1.IssuesWithLabelRequest
-	9,  // 30: forge.v1.ForgeService.Comment:input_type -> forge.v1.CommentRequest
-	11, // 31: forge.v1.ForgeService.CloseIssue:input_type -> forge.v1.CloseIssueRequest
-	13, // 32: forge.v1.ForgeService.React:input_type -> forge.v1.ReactRequest
-	15, // 33: forge.v1.ForgeService.SetStateLabel:input_type -> forge.v1.SetStateLabelRequest
-	17, // 34: forge.v1.ForgeService.CreatePR:input_type -> forge.v1.CreatePRRequest
-	19, // 35: forge.v1.ForgeService.PRState:input_type -> forge.v1.PRStateRequest
-	22, // 36: forge.v1.ForgeService.GetPullRequest:input_type -> forge.v1.GetPullRequestRequest
-	24, // 37: forge.v1.ForgeService.GetPullRequestDiff:input_type -> forge.v1.GetPullRequestDiffRequest
-	26, // 38: forge.v1.ForgeService.ListReviews:input_type -> forge.v1.ListReviewsRequest
-	30, // 39: forge.v1.ForgeService.ListReviewComments:input_type -> forge.v1.ListReviewCommentsRequest
-	32, // 40: forge.v1.ForgeService.ReplyToReview:input_type -> forge.v1.ReplyToReviewRequest
-	35, // 41: forge.v1.ForgeService.CreateReviewComments:input_type -> forge.v1.CreateReviewCommentsRequest
-	39, // 42: forge.v1.ForgeService.AcceptInvitations:input_type -> forge.v1.AcceptInvitationsRequest
-	41, // 43: forge.v1.ForgeService.VerifyPush:input_type -> forge.v1.VerifyPushRequest
-	37, // 44: forge.v1.ForgeService.LinkBranch:input_type -> forge.v1.LinkBranchRequest
-	43, // 45: forge.v1.ForgeService.GetRepoArchive:input_type -> forge.v1.GetRepoArchiveRequest
-	1,  // 46: forge.v1.ForgeService.Configure:output_type -> forge.v1.ConfigureResponse
-	5,  // 47: forge.v1.ForgeService.AssignedIssues:output_type -> forge.v1.AssignedIssuesResponse
-	6,  // 48: forge.v1.ForgeService.IssuesWithLabel:output_type -> forge.v1.IssuesWithLabelResponse
-	10, // 49: forge.v1.ForgeService.Comment:output_type -> forge.v1.CommentResponse
-	12, // 50: forge.v1.ForgeService.CloseIssue:output_type -> forge.v1.CloseIssueResponse
-	14, // 51: forge.v1.ForgeService.React:output_type -> forge.v1.ReactResponse
-	16, // 52: forge.v1.ForgeService.SetStateLabel:output_type -> forge.v1.SetStateLabelResponse
-	18, // 53: forge.v1.ForgeService.CreatePR:output_type -> forge.v1.CreatePRResponse
-	20, // 54: forge.v1.ForgeService.PRState:output_type -> forge.v1.PRStateResponse
-	23, // 55: forge.v1.ForgeService.GetPullRequest:output_type -> forge.v1.GetPullRequestResponse
-	25, // 56: forge.v1.ForgeService.GetPullRequestDiff:output_type -> forge.v1.GetPullRequestDiffResponse
-	28, // 57: forge.v1.ForgeService.ListReviews:output_type -> forge.v1.ListReviewsResponse
-	31, // 58: forge.v1.ForgeService.ListReviewComments:output_type -> forge.v1.ListReviewCommentsResponse
-	33, // 59: forge.v1.ForgeService.ReplyToReview:output_type -> forge.v1.ReplyToReviewResponse
-	36, // 60: forge.v1.ForgeService.CreateReviewComments:output_type -> forge.v1.CreateReviewCommentsResponse
-	40, // 61: forge.v1.ForgeService.AcceptInvitations:output_type -> forge.v1.AcceptInvitationsResponse
-	42, // 62: forge.v1.ForgeService.VerifyPush:output_type -> forge.v1.VerifyPushResponse
-	38, // 63: forge.v1.ForgeService.LinkBranch:output_type -> forge.v1.LinkBranchResponse
-	44, // 64: forge.v1.ForgeService.GetRepoArchive:output_type -> forge.v1.GetRepoArchiveResponse
-	46, // [46:65] is the sub-list for method output_type
-	27, // [27:46] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	51, // 27: forge.v1.ParseWebhookRequest.headers:type_name -> forge.v1.ParseWebhookRequest.HeadersEntry
+	47, // 28: forge.v1.ParseWebhookResponse.issue:type_name -> forge.v1.IssueEvent
+	48, // 29: forge.v1.ParseWebhookResponse.review:type_name -> forge.v1.ReviewEvent
+	49, // 30: forge.v1.ParseWebhookResponse.review_comment:type_name -> forge.v1.ReviewCommentEvent
+	2,  // 31: forge.v1.IssueEvent.repo:type_name -> forge.v1.RepoRef
+	2,  // 32: forge.v1.ReviewEvent.repo:type_name -> forge.v1.RepoRef
+	2,  // 33: forge.v1.ReviewCommentEvent.repo:type_name -> forge.v1.RepoRef
+	0,  // 34: forge.v1.ForgeService.Configure:input_type -> forge.v1.ConfigureRequest
+	7,  // 35: forge.v1.ForgeService.AssignedIssues:input_type -> forge.v1.AssignedIssuesRequest
+	8,  // 36: forge.v1.ForgeService.IssuesWithLabel:input_type -> forge.v1.IssuesWithLabelRequest
+	9,  // 37: forge.v1.ForgeService.Comment:input_type -> forge.v1.CommentRequest
+	11, // 38: forge.v1.ForgeService.CloseIssue:input_type -> forge.v1.CloseIssueRequest
+	13, // 39: forge.v1.ForgeService.React:input_type -> forge.v1.ReactRequest
+	15, // 40: forge.v1.ForgeService.SetStateLabel:input_type -> forge.v1.SetStateLabelRequest
+	17, // 41: forge.v1.ForgeService.CreatePR:input_type -> forge.v1.CreatePRRequest
+	19, // 42: forge.v1.ForgeService.PRState:input_type -> forge.v1.PRStateRequest
+	22, // 43: forge.v1.ForgeService.GetPullRequest:input_type -> forge.v1.GetPullRequestRequest
+	24, // 44: forge.v1.ForgeService.GetPullRequestDiff:input_type -> forge.v1.GetPullRequestDiffRequest
+	26, // 45: forge.v1.ForgeService.ListReviews:input_type -> forge.v1.ListReviewsRequest
+	30, // 46: forge.v1.ForgeService.ListReviewComments:input_type -> forge.v1.ListReviewCommentsRequest
+	32, // 47: forge.v1.ForgeService.ReplyToReview:input_type -> forge.v1.ReplyToReviewRequest
+	35, // 48: forge.v1.ForgeService.CreateReviewComments:input_type -> forge.v1.CreateReviewCommentsRequest
+	39, // 49: forge.v1.ForgeService.AcceptInvitations:input_type -> forge.v1.AcceptInvitationsRequest
+	41, // 50: forge.v1.ForgeService.VerifyPush:input_type -> forge.v1.VerifyPushRequest
+	37, // 51: forge.v1.ForgeService.LinkBranch:input_type -> forge.v1.LinkBranchRequest
+	45, // 52: forge.v1.ForgeService.ParseWebhook:input_type -> forge.v1.ParseWebhookRequest
+	43, // 53: forge.v1.ForgeService.GetRepoArchive:input_type -> forge.v1.GetRepoArchiveRequest
+	1,  // 54: forge.v1.ForgeService.Configure:output_type -> forge.v1.ConfigureResponse
+	5,  // 55: forge.v1.ForgeService.AssignedIssues:output_type -> forge.v1.AssignedIssuesResponse
+	6,  // 56: forge.v1.ForgeService.IssuesWithLabel:output_type -> forge.v1.IssuesWithLabelResponse
+	10, // 57: forge.v1.ForgeService.Comment:output_type -> forge.v1.CommentResponse
+	12, // 58: forge.v1.ForgeService.CloseIssue:output_type -> forge.v1.CloseIssueResponse
+	14, // 59: forge.v1.ForgeService.React:output_type -> forge.v1.ReactResponse
+	16, // 60: forge.v1.ForgeService.SetStateLabel:output_type -> forge.v1.SetStateLabelResponse
+	18, // 61: forge.v1.ForgeService.CreatePR:output_type -> forge.v1.CreatePRResponse
+	20, // 62: forge.v1.ForgeService.PRState:output_type -> forge.v1.PRStateResponse
+	23, // 63: forge.v1.ForgeService.GetPullRequest:output_type -> forge.v1.GetPullRequestResponse
+	25, // 64: forge.v1.ForgeService.GetPullRequestDiff:output_type -> forge.v1.GetPullRequestDiffResponse
+	28, // 65: forge.v1.ForgeService.ListReviews:output_type -> forge.v1.ListReviewsResponse
+	31, // 66: forge.v1.ForgeService.ListReviewComments:output_type -> forge.v1.ListReviewCommentsResponse
+	33, // 67: forge.v1.ForgeService.ReplyToReview:output_type -> forge.v1.ReplyToReviewResponse
+	36, // 68: forge.v1.ForgeService.CreateReviewComments:output_type -> forge.v1.CreateReviewCommentsResponse
+	40, // 69: forge.v1.ForgeService.AcceptInvitations:output_type -> forge.v1.AcceptInvitationsResponse
+	42, // 70: forge.v1.ForgeService.VerifyPush:output_type -> forge.v1.VerifyPushResponse
+	38, // 71: forge.v1.ForgeService.LinkBranch:output_type -> forge.v1.LinkBranchResponse
+	46, // 72: forge.v1.ForgeService.ParseWebhook:output_type -> forge.v1.ParseWebhookResponse
+	44, // 73: forge.v1.ForgeService.GetRepoArchive:output_type -> forge.v1.GetRepoArchiveResponse
+	54, // [54:74] is the sub-list for method output_type
+	34, // [34:54] is the sub-list for method input_type
+	34, // [34:34] is the sub-list for extension type_name
+	34, // [34:34] is the sub-list for extension extendee
+	0,  // [0:34] is the sub-list for field type_name
 }
 
 func init() { file_forge_v1_forge_proto_init() }
@@ -2664,13 +3179,18 @@ func file_forge_v1_forge_proto_init() {
 	if File_forge_v1_forge_proto != nil {
 		return
 	}
+	file_forge_v1_forge_proto_msgTypes[46].OneofWrappers = []any{
+		(*ParseWebhookResponse_Issue)(nil),
+		(*ParseWebhookResponse_Review)(nil),
+		(*ParseWebhookResponse_ReviewComment)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_forge_v1_forge_proto_rawDesc), len(file_forge_v1_forge_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   46,
+			NumMessages:   52,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

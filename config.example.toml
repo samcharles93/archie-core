@@ -35,6 +35,8 @@ diff_cap_lines = 400
 # max_retries = 3  
 
 [forge]
+# The name of an installed, enabled forge package (archipelago: forge/github, forge/gitea), or "none".
+# Install and enable it from the Extensions page, then restart archied.
 type = "github"
 host = "https://github.com"
 token = { engine = "env", key = "ARCHIE_GITHUB_TOKEN" }

@@ -34,6 +34,10 @@ service ForgeService {
   rpc AcceptInvitations(AcceptInvitationsRequest) returns (AcceptInvitationsResponse);
   rpc VerifyPush(VerifyPushRequest) returns (VerifyPushResponse);
   rpc LinkBranch(LinkBranchRequest) returns (LinkBranchResponse);
+  // ParseWebhook decodes one webhook delivery the host has already
+  // authenticated. A delivery that is not an event the host acts on returns no
+  // event; an undecodable body is INVALID_ARGUMENT.
+  rpc ParseWebhook(ParseWebhookRequest) returns (ParseWebhookResponse);
   // GetRepoArchive streams a gzipped tar of the repository at a ref.
   rpc GetRepoArchive(GetRepoArchiveRequest) returns (stream GetRepoArchiveResponse);
 }
@@ -207,3 +211,49 @@ message GetRepoArchiveRequest {
   string ref = 2;
 }
 message GetRepoArchiveResponse { bytes data = 1; }
+
+message ParseWebhookRequest {
+  map<string, string> headers = 1;
+  bytes body = 2;
+}
+message ParseWebhookResponse {
+  oneof event {
+    IssueEvent issue = 1;
+    ReviewEvent review = 2;
+    ReviewCommentEvent review_comment = 3;
+  }
+}
+
+message IssueEvent {
+  string action = 1;
+  string state = 2;
+  bool is_pull_request = 3;
+  RepoRef repo = 4;
+  int32 number = 5;
+  string title = 6;
+  string body = 7;
+  repeated string labels = 8;
+  repeated string assignees = 9;
+}
+
+message ReviewEvent {
+  string action = 1;
+  RepoRef repo = 2;
+  int32 pr_number = 3;
+  int64 review_id = 4;
+  string author = 5;
+  string state = 6;
+  string body = 7;
+}
+
+message ReviewCommentEvent {
+  string action = 1;
+  RepoRef repo = 2;
+  int32 pr_number = 3;
+  int64 review_id = 4;
+  int64 comment_id = 5;
+  string author = 6;
+  string body = 7;
+  string path = 8;
+  int32 line = 9;
+}
