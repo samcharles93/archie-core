@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { Handle, Position } from "@vue-flow/core";
 import { Flag, GitBranch, Play, Repeat, SkipForward, Webhook, CircleDot, BookOpen, Workflow } from "@lucide/vue";
 
+import { stepIcon } from "./step-icons";
 import type { StepNodeData } from "./workflow-graph";
 
 const props = defineProps<{ data: StepNodeData }>();
@@ -39,12 +40,13 @@ function duration(ms?: number): string {
 <template>
   <div
     class="w-60 rounded-lg border bg-card px-3 py-2 text-left shadow-sm"
-    :class="[stateClass, data.selected && 'ring-2 ring-ring', data.kind === 'step' && 'cursor-pointer']"
+    :class="[stateClass, data.selected && 'ring-2 ring-ring', data.kind === 'step' && 'cursor-pointer transition-colors hover:border-muted-foreground']"
   >
     <Handle v-if="data.kind !== 'start'" type="target" :position="Position.Top" />
     <Handle id="data-in" type="target" :position="Position.Right" class="!opacity-0" />
     <div class="flex items-center gap-1.5">
       <Play v-if="data.kind === 'start'" class="size-3.5 text-primary" aria-hidden="true" />
+      <component :is="stepIcon(data.type)" v-else class="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
       <span class="truncate text-sm font-medium" :title="data.title">{{ data.title }}</span>
       <span v-if="data.branch" class="ml-auto flex items-center gap-0.5 text-[11px] text-fg-subtle">
         <GitBranch class="size-3" aria-hidden="true" />{{ data.branch }}
@@ -60,6 +62,7 @@ function duration(ms?: number): string {
     </ul>
     <div v-else-if="data.kind === 'start'" class="mt-0.5 text-xs text-muted-foreground">Nothing starts it yet; run it by hand or bind an event to it.</div>
     <div v-else-if="data.detail" class="mt-0.5 truncate text-xs text-muted-foreground" :title="data.detail">{{ data.detail }}</div>
+    <p v-if="data.summary" class="mt-1 line-clamp-2 text-xs leading-snug text-foreground/80" :title="data.summary">{{ data.summary }}</p>
     <div v-if="data.when || data.retry || data.continues" class="mt-1 flex flex-wrap gap-1 text-[11px]">
       <span v-if="data.when" class="flex max-w-full min-w-0 items-center gap-0.5 rounded bg-secondary px-1 font-mono" :title="`Runs only when ${data.when}`">
         <Flag class="size-3 shrink-0" aria-hidden="true" /><span class="truncate">{{ data.when }}</span>

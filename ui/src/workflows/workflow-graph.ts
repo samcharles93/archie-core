@@ -15,6 +15,8 @@ export interface StepNodeData {
   title: string;
   type: string;
   detail: string;
+  /** The first line of what the step is told to do, if it says. */
+  summary?: string;
   when?: string;
   retry?: number;
   continues?: boolean;
@@ -54,7 +56,7 @@ export function withRuns(graph: WorkflowGraph, stages: StageRun[]): WorkflowGrap
 
 export interface GraphNode {
   id: string;
-  type: "step";
+  type: "step" | "add";
   position: { x: number; y: number };
   data: StepNodeData;
 }
@@ -69,6 +71,9 @@ export interface GraphEdge {
   sourceHandle?: string;
   targetHandle?: string;
   offset?: number;
+  /** A step inserted on this edge goes after the top-level step at this
+   * index (-1: first). Absent inside parallel branches. */
+  insertAfter?: number;
 }
 
 export interface WorkflowGraph {
@@ -76,7 +81,7 @@ export interface WorkflowGraph {
   edges: GraphEdge[];
 }
 
-const ROW = 120;
+const ROW = 140;
 const COLUMN = 280;
 
 const TYPE_TITLES: Record<string, string> = {
@@ -136,6 +141,20 @@ function stepDetail(type: string, settings: Mapping): string {
   return "";
 }
 
+/** The first line of a step's main text setting, references shown by name. */
+function stepSummary(settings: Mapping): string | undefined {
+  for (const key of ["mission", "message", "body", "plan", "detail"]) {
+    const value = settings[key];
+    if (typeof value !== "string" || !value.trim()) continue;
+    return value
+      .replace(/\{\{\s*([^}]+?)\s*\}\}/g, "‹$1›")
+      .split("\n")
+      .find((line) => line.trim())
+      ?.trim();
+  }
+  return undefined;
+}
+
 /** Every step id a step's settings reference. */
 function referencedSteps(settings: unknown, when: unknown): string[] {
   const text = JSON.stringify(settings ?? {}) + " " + (typeof when === "string" ? `{{ ${when.replace(/^!/, "")} }}` : "");
@@ -190,6 +209,7 @@ export function workflowGraph(source: string): WorkflowGraph {
         title: stepID || stepTitle(type),
         type,
         detail: stepDetail(type, settings),
+        summary: stepSummary(settings),
         when: typeof record.when === "string" ? record.when : undefined,
         retry: isMapping(record.retry) && typeof record.retry.attempts === "number" ? record.retry.attempts : undefined,
         continues: record.on_failure === "continue",
@@ -202,8 +222,17 @@ export function workflowGraph(source: string): WorkflowGraph {
     for (const ref of referencedSteps(record.settings, record.when)) pendingData.push({ from: ref, to: id });
     return id;
   };
-  const link = (from: string[], to: string) => {
-    for (const source of from) edges.push({ id: `flow-${source}-${to}`, source, target: to, kind: "flow" });
+  const link = (from: string[], to: string, insertAfter?: number) => {
+    // Several edges joining into one step share one insertion point.
+    from.forEach((source, n) =>
+      edges.push({
+        id: `flow-${source}-${to}`,
+        source,
+        target: to,
+        kind: "flow",
+        insertAfter: n === from.length - 1 ? insertAfter : undefined,
+      }),
+    );
   };
 
   for (const [i, step] of steps.entries()) {
@@ -217,9 +246,10 @@ export function workflowGraph(source: string): WorkflowGraph {
       branches.forEach(([name, branchSteps], column) => {
         const x = (column - (branches.length - 1) / 2) * COLUMN;
         let tail = previous;
+        const entry = previous;
         (Array.isArray(branchSteps) ? branchSteps : []).forEach((branchStep, j) => {
           const id = addStep(branchStep, `${i + 1}-${name}-${j + 1}`, x, (row + j) * ROW, name, recorded, ["steps", i, "parallel", name, j]);
-          link(tail, id);
+          link(tail, id, tail === entry && column === branches.length - 1 ? i - 1 : undefined);
           tail = [id];
           depth = Math.max(depth, j + 1);
         });
@@ -230,10 +260,19 @@ export function workflowGraph(source: string): WorkflowGraph {
       continue;
     }
     const id = addStep(step, String(i + 1), 0, row * ROW, undefined, undefined, ["steps", i]);
-    link(previous, id);
+    link(previous, id, i - 1);
     previous = [id];
     row++;
   }
+
+  // The end of the run, where a new last step is added.
+  nodes.push({
+    id: "add-end",
+    type: "add",
+    position: { x: 104, y: row * ROW - 24 },
+    data: { kind: "step", key: "add", title: "", type: "", detail: "" },
+  });
+  link(previous, "add-end");
 
   for (const { from, to } of pendingData) {
     const source = byStepID.get(from);

@@ -8,9 +8,9 @@ import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import StepPanel from "./StepPanel.vue";
+import StepEditor from "./StepEditor.vue";
 import WorkflowCanvas from "./WorkflowCanvas.vue";
-import type { StepPath } from "./workflow-edit";
+import { deleteStep, duplicateStep, insertStep, moveStep, type StepPath } from "./workflow-edit";
 import { useWorkflowRuns } from "./workflow-runs";
 import { useWorkflowTriggers } from "./workflow-triggers";
 import {
@@ -46,6 +46,28 @@ const localError = ref("");
 
 const { runs, watched, stages, pick } = useWorkflowRuns(selected);
 const triggers = useWorkflowTriggers(selected);
+
+// Canvas edits are edits to the YAML; a newly placed step opens for editing.
+const stepTypeNames = computed(() => vocabulary.value.map((info) => info.name));
+function insertAt(after: number, type: string): void {
+  const inserted = insertStep(yaml.value, after, type);
+  yaml.value = inserted.source;
+  selectedStep.value = inserted.path;
+}
+function duplicateAt(path: StepPath): void {
+  const copied = duplicateStep(yaml.value, path);
+  yaml.value = copied.source;
+  selectedStep.value = copied.path;
+}
+function moveAt(path: StepPath, delta: -1 | 1): void {
+  const moved = moveStep(yaml.value, path, delta);
+  yaml.value = moved.source;
+  if (selectedStep.value) selectedStep.value = moved.path;
+}
+function removeAt(path: StepPath): void {
+  yaml.value = deleteStep(yaml.value, path);
+  selectedStep.value = null;
+}
 
 const shippedEntry = computed(() =>
   shipped.value.definitions.find((entry) => entry.id === id.value),
@@ -163,9 +185,36 @@ function syncScroll(event: Event): void {
           </select>
           <span v-if="!runs.length" class="text-xs text-fg-subtle">This workflow has not run yet.</span>
         </label>
-        <div class="grid gap-3 lg:grid-cols-[1fr_20rem]">
-          <WorkflowCanvas :yaml="yaml" :stages="stages" :selected="selectedStep" :triggers="triggers" @select="selectedStep = $event" />
-          <StepPanel v-model:yaml="yaml" :path="selectedStep" :vocabulary="vocabulary" @select="selectedStep = $event" />
+        <div class="relative">
+          <WorkflowCanvas
+            :yaml="yaml"
+            :stages="stages"
+            :selected="selectedStep"
+            :triggers="triggers"
+            :types="stepTypeNames"
+            @edit="selectedStep = $event"
+            @insert="insertAt"
+            @duplicate="duplicateAt"
+            @move="moveAt"
+            @remove="removeAt"
+          />
+          <Transition
+            enter-from-class="translate-x-full opacity-0"
+            leave-to-class="translate-x-full opacity-0"
+            enter-active-class="transition duration-200"
+            leave-active-class="transition duration-150"
+          >
+            <div v-if="selectedStep" class="absolute inset-y-0 right-0 overflow-hidden rounded-r-lg">
+              <StepEditor
+                :key="JSON.stringify(selectedStep)"
+                v-model:yaml="yaml"
+                :path="selectedStep"
+                :vocabulary="vocabulary"
+                @close="selectedStep = null"
+                @remove="removeAt(selectedStep)"
+              />
+            </div>
+          </Transition>
         </div>
       </TabsContent>
       <TabsContent value="yaml">

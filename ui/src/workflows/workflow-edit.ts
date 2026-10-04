@@ -43,6 +43,19 @@ export function insertStep(source: string, after: number, type: string): { sourc
   return { source: document.toString(), path: ["steps", index] };
 }
 
+/** Copies a step to just after itself. The copy drops the id, which must stay
+ * unique. Returns the new source and the copy's path. */
+export function duplicateStep(source: string, path: StepPath): { source: string; path: StepPath } {
+  const document = parseDocument(source);
+  const list = document.getIn(path.slice(0, -1), true);
+  const index = path.at(-1);
+  if (!isSeq(list) || typeof index !== "number") return { source, path };
+  const copy = document.createNode(document.getIn(path));
+  if (isMap(copy)) copy.delete("id");
+  list.items.splice(index + 1, 0, copy);
+  return { source: document.toString(), path: [...path.slice(0, -1), index + 1] };
+}
+
 /** Removes a step. A branch left empty is removed with it. */
 export function deleteStep(source: string, path: StepPath): string {
   const document = parseDocument(source);
