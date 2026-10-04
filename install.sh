@@ -401,11 +401,6 @@ fi
 # 6. Seed skills, personas, memories, and onboarding tasks
 echo "==> Seeding skills and templates..."
 
-# Copy built-in skills from examples/skills
-if [ -d "${SRC_DIR}/examples/skills" ]; then
-  cp -rn "${SRC_DIR}/examples/skills/"* "${ARCHIE_CONFIG_DIR}/skills/" 2>/dev/null || true
-fi
-
 # Seed example personas without overwriting existing files
 if [ -d "${SRC_DIR}/examples/persona" ]; then
   cp -rn "${SRC_DIR}/examples/persona/"* "${ARCHIE_CONFIG_DIR}/persona/" 2>/dev/null || true

@@ -49,6 +49,7 @@ func (b *server) startGatewayRuntime(ctx context.Context, actor gateway.ChatTask
 		return nil, err
 	}
 	b.registerStandaloneTools()
+	b.serveSkills(ctx)
 	b.addCleanup(shutdownCapabilityHost(ctx, b.capabilityHost, b.log))
 	if err := b.capabilityHost.Start(ctx); err != nil {
 		return nil, fmt.Errorf("start gateway tool providers: %w", err)

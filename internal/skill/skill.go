@@ -37,6 +37,25 @@ type CatalogEntry struct {
 	Workflow    string // from metadata.archie.workflow  --  which workflow this skill handles
 	Dir         string // skill directory name
 	Root        string // catalog root containing.agents/skills
+	// Body is the skill's instructions when they are held in memory rather
+	// than in Dir under Root.
+	Body string
+}
+
+// EntryFromContent builds a catalog entry for a SKILL.md held in memory.
+func EntryFromContent(content []byte) (CatalogEntry, error) {
+	fm, body, err := Parse(content)
+	if err != nil {
+		return CatalogEntry{}, err
+	}
+	if fm.Name == "" {
+		return CatalogEntry{}, fmt.Errorf("SKILL.md has no name")
+	}
+	entry := CatalogEntry{Name: fm.Name, Description: fm.Description, Body: body}
+	if fm.Metadata.Archie != nil {
+		entry.Workflow = fm.Metadata.Archie.Workflow
+	}
+	return entry, nil
 }
 
 // Only the frontmatter is parsed -- full bodies are not loaded. Missing

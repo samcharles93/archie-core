@@ -11,7 +11,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec/modelloop"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/plugin"
-	"github.com/samcharles93/archie-core/internal/skill"
 	"github.com/samcharles93/archie-core/internal/tools/mcp"
 	"github.com/samcharles93/archie-core/internal/tools/minimax"
 	toolprovider "github.com/samcharles93/archie-core/internal/tools/provider"
@@ -63,16 +62,6 @@ func (b *server) registerTools() error {
 
 func (b *server) registerStandaloneTools() {
 	cfg, log := b.cfg, b.log
-
-	if catalog, err := skill.CatalogRoots(skill.DefaultRoots(cfg.WorkDir, cfg.SkillsDir)...); err != nil {
-		log.Warn("skill catalog load failed", "err", err)
-	} else if entry := skill.ActivateTool(cfg.WorkDir, catalog); entry != nil {
-		if err := b.toolReg.Register(*entry); err != nil {
-			log.Warn("skill_activate registration failed", "err", err)
-		} else {
-			log.Info("skill catalog registered", "skills", len(catalog))
-		}
-	}
 
 	if spillDir := cfg.Tools.Policy.SpillDir; spillDir != "" {
 		if err := toolLimits(cfg).EnsureSpillDir(); err != nil {

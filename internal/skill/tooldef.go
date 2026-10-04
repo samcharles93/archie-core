@@ -18,7 +18,9 @@ func ActivateTool(dir string, catalog []CatalogEntry) *tools.ToolEntry {
 	descByName := make(map[string]string, len(catalog))
 	dirByName := make(map[string]string, len(catalog))
 	rootByName := make(map[string]string, len(catalog))
+	bodyByName := make(map[string]string, len(catalog))
 	for i, e := range catalog {
+		bodyByName[e.Name] = e.Body
 		names[i] = e.Name
 		descByName[e.Name] = e.Description
 		dirByName[e.Name] = e.Dir
@@ -50,6 +52,9 @@ func ActivateTool(dir string, catalog []CatalogEntry) *tools.ToolEntry {
 			skillDir, ok := dirByName[name]
 			if !ok {
 				return nil, fmt.Errorf("skill_activate: unknown skill %q", name)
+			}
+			if body := bodyByName[name]; body != "" {
+				return body, nil
 			}
 			root := dir
 			if catalogRoot := rootByName[name]; catalogRoot != "" {

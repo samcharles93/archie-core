@@ -510,7 +510,7 @@ func stateStoreServerOpts(listen, token string, grants *staterpc.TaskGrants, cal
 }
 
 // newPackageProjections builds the family projectors an installed package's
-// contributions apply through: workflows, playbooks and agent profiles become
+// contributions apply through: workflows, playbooks, skills and agent profiles become
 // the org resources the runtime reads live. The step vocabulary
 // (stepVocabulary) is the same one this process's control plane validates
 // dashboard edits with, so a definition the projector admits is compilable
@@ -534,8 +534,13 @@ func newPackageProjections(pool *pgxpool.Pool) (map[string]storepkg.FamilyProjec
 	if err != nil {
 		return nil, fmt.Errorf("build profile package projector: %w", err)
 	}
+	skills, err := controlplane.NewSkillPackageProjector(resources, ledger)
+	if err != nil {
+		return nil, fmt.Errorf("build skill package projector: %w", err)
+	}
 	return map[string]storepkg.FamilyProjector{
 		storepkg.FamilyWorkflows: workflows,
+		storepkg.FamilySkills:    skills,
 		storepkg.FamilyPlaybooks: playbooks,
 		storepkg.FamilyProfiles:  profiles,
 	}, nil
