@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -30,8 +31,11 @@ const (
 	memoryEngineBuiltin = "builtin"
 )
 
+// forgeTypePattern is a package name: forge.type names the installed forge
+// package that serves the instance, or disables the forge.
+var forgeTypePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+
 var (
-	forgeTypes       = []string{forgeTypeGitHub, forgeTypeGitea, forgeTypeNone, forgeTypeOff, forgeTypeDisabled}
 	dispatchTriggers = []string{dispatchTriggerAssignee, dispatchTriggerLabel, dispatchTriggerEither}
 	natsModes        = []string{config.NATSModeEmbedded, config.NATSModeExternal}
 	forgeIntakes     = []string{config.ForgeIntakePoll, config.ForgeIntakeWebhook, config.ForgeIntakeBoth}
@@ -264,8 +268,8 @@ func validateIdentities(identities []config.IdentityConfig) error {
 		if len(id.Repos) == 0 {
 			return fmt.Errorf("%w: identities[%d] has no [[identities.repos]] entries -- at least one is required", ErrInvalidInput, i)
 		}
-		if !oneOf(id.Forge.Type, forgeTypes) {
-			return fmt.Errorf("%w: identities[%d].forge.type %q (want %s)", ErrInvalidInput, i, id.Forge.Type, list(forgeTypes))
+		if !forgeTypePattern.MatchString(id.Forge.Type) {
+			return fmt.Errorf("%w: identities[%d].forge.type %q (want none or the name of an installed forge package)", ErrInvalidInput, i, id.Forge.Type)
 		}
 		if !ForgeDisabled(id.Forge.Type) && id.Forge.Token == (config.SecretRef{}) {
 			return fmt.Errorf("%w: identities[%d].forge.token is required (each identity needs its own secret reference; unlike the top-level [forge], there is no default)", ErrInvalidInput, i)
@@ -286,8 +290,8 @@ func validateSingleIdentity(cfg *config.Config) error {
 	if !identity.ValidDisplayName(cfg.BotUser) {
 		return fmt.Errorf("%w: bot_user is required (or define [[identities]])", ErrInvalidInput)
 	}
-	if !oneOf(cfg.Forge.Type, forgeTypes) {
-		return fmt.Errorf("%w: forge.type %q (want %s)", ErrInvalidInput, cfg.Forge.Type, list(forgeTypes))
+	if !forgeTypePattern.MatchString(cfg.Forge.Type) {
+		return fmt.Errorf("%w: forge.type %q (want none or the name of an installed forge package)", ErrInvalidInput, cfg.Forge.Type)
 	}
 	return nil
 }

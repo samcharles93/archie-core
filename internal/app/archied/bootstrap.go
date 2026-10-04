@@ -47,6 +47,7 @@ import (
 	infraaccess "github.com/samcharles93/archie-core/internal/infrastructure/access"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
+	"github.com/samcharles93/archie-core/internal/infrastructure/extension"
 	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
@@ -84,6 +85,7 @@ type boot struct {
 
 	secrets     *secret.Registry
 	forgeClient forge.Forge
+	forgeExt    *forgeExtensions
 	token       string
 
 	// stateStore is the State Store contract adapter every daemon and gateway
@@ -251,8 +253,12 @@ func (b *boot) openStores(ctx context.Context) error {
 
 // openForge builds the forge client. It runs after the runtime settings are
 // layered, so a token held by an extension engine can resolve.
-func (b *boot) openForge() {
-	b.forgeClient, b.token = resolveForge(b.cfg.Forge, b.secrets, b.log)
+func (b *boot) openForge(ctx context.Context) {
+	if packages, ok := b.stateStore.(extension.Packages); ok {
+		b.forgeExt = newForgeExtensions(extension.Source{Query: b.controlPlane, Packages: packages}, b.log)
+		b.addCleanup(b.forgeExt.close)
+	}
+	b.forgeClient, b.token = resolveForge(ctx, b.cfg.Forge, "default", b.secrets, b.forgeExt, b.log)
 }
 
 func (b *boot) openStateStoreAdapter(ctx context.Context) error {
@@ -530,7 +536,7 @@ func (b *boot) buildTreesAndIdentities(ctx context.Context) error {
 	b.buildWorktreeManager()
 
 	for _, idCfg := range cfg.Identities {
-		idForge, idToken := resolveForge(idCfg.Forge, b.secrets, log.With("identity", idCfg.Name))
+		idForge, idToken := resolveForge(ctx, idCfg.Forge, idCfg.Name, b.secrets, b.forgeExt, log.With("identity", idCfg.Name))
 		idTrees := &worktree.Manager{
 			WorkDir:  filepath.Join(cfg.WorkDir, "identity-"+idCfg.Name),
 			Token:    idToken,

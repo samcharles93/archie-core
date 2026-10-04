@@ -51,9 +51,14 @@ type Extension struct {
 }
 
 // Surfaces are the extension surfaces the host defines a contract for.
-const SurfaceSecretEngine = "secretengine"
+const (
+	SurfaceSecretEngine = "secretengine"
+	SurfaceForge        = "forge"
+)
 
-func validSurface(surface string) bool { return surface == SurfaceSecretEngine }
+func validSurface(surface string) bool {
+	return surface == SurfaceSecretEngine || surface == SurfaceForge
+}
 
 // PackageRef identifies a required package or Kit. References are pinned to
 // immutable content digests so dependency resolution cannot drift by tag.

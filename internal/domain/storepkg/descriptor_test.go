@@ -37,7 +37,7 @@ func TestDescriptorExecutableOnlyForExtensions(t *testing.T) {
 			d.Contributes.Extensions[0].Path = "bin/other"
 		}, wantErr: "not a declared package file"},
 		{name: "an unknown surface is refused", mutate: func(d *Descriptor) {
-			d.Contributes.Extensions[0].Surface = "forge"
+			d.Contributes.Extensions[0].Surface = "issue-tracker"
 		}, wantErr: "unknown surface"},
 	}
 	for _, tt := range tests {

@@ -53,7 +53,7 @@ import (
 // becomes a crash loop where the error scrolls past unread. A malformed
 // configuration is a different matter and still fails fast in validation, well
 // before this point.
-func resolveForge(cfg config.Forge, secrets *secret.Registry, log *slog.Logger) (forge.Forge, string) {
+func resolveForge(ctx context.Context, cfg config.Forge, instance string, secrets *secret.Registry, extensions *forgeExtensions, log *slog.Logger) (forge.Forge, string) {
 	if configuration.ForgeDisabled(cfg.Type) {
 		return forge.NewNoop(log), ""
 	}
@@ -65,6 +65,9 @@ func resolveForge(cfg config.Forge, secrets *secret.Registry, log *slog.Logger) 
 			"key", cfg.Token.Key,
 			"err", err)
 		return forge.NewNoop(log), ""
+	}
+	if client, handled := extensions.open(ctx, cfg.Type, instance, cfg.Host, token); handled {
+		return client, token
 	}
 	client, err := forge.New(cfg.Type, token, cfg.Host, log)
 	if err != nil {
@@ -157,7 +160,7 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 		b.log.Error("runtime settings unavailable", "err", err)
 		return 1
 	}
-	b.openForge()
+	b.openForge(ctx)
 	if err := b.startLiveSettings(ctx); err != nil {
 		b.log.Error("live settings unavailable", "err", err)
 		return 1

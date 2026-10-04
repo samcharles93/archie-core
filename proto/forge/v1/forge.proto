@@ -1,0 +1,209 @@
+syntax = "proto3";
+
+package forge.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// ForgeService is the surface a forge extension serves. The host launches one
+// plugin process per configured forge instance and routes every issue, pull
+// request and repository call of that instance through it. The calls follow
+// the host's forge interfaces; a capability the forge lacks answers
+// UNIMPLEMENTED.
+service ForgeService {
+  // Configure hands the plugin its instance once, right after launch and
+  // before any other call. The token is the instance's resolved credential;
+  // the plugin process does not inherit the host environment.
+  rpc Configure(ConfigureRequest) returns (ConfigureResponse);
+
+  rpc AssignedIssues(AssignedIssuesRequest) returns (AssignedIssuesResponse);
+  rpc IssuesWithLabel(IssuesWithLabelRequest) returns (IssuesWithLabelResponse);
+  rpc Comment(CommentRequest) returns (CommentResponse);
+  rpc CloseIssue(CloseIssueRequest) returns (CloseIssueResponse);
+  rpc React(ReactRequest) returns (ReactResponse);
+  rpc SetStateLabel(SetStateLabelRequest) returns (SetStateLabelResponse);
+
+  rpc CreatePR(CreatePRRequest) returns (CreatePRResponse);
+  rpc PRState(PRStateRequest) returns (PRStateResponse);
+  rpc GetPullRequest(GetPullRequestRequest) returns (GetPullRequestResponse);
+  rpc GetPullRequestDiff(GetPullRequestDiffRequest) returns (GetPullRequestDiffResponse);
+  rpc ListReviews(ListReviewsRequest) returns (ListReviewsResponse);
+  rpc ListReviewComments(ListReviewCommentsRequest) returns (ListReviewCommentsResponse);
+  rpc ReplyToReview(ReplyToReviewRequest) returns (ReplyToReviewResponse);
+  rpc CreateReviewComments(CreateReviewCommentsRequest) returns (CreateReviewCommentsResponse);
+
+  rpc AcceptInvitations(AcceptInvitationsRequest) returns (AcceptInvitationsResponse);
+  rpc VerifyPush(VerifyPushRequest) returns (VerifyPushResponse);
+  rpc LinkBranch(LinkBranchRequest) returns (LinkBranchResponse);
+  // GetRepoArchive streams a gzipped tar of the repository at a ref.
+  rpc GetRepoArchive(GetRepoArchiveRequest) returns (stream GetRepoArchiveResponse);
+}
+
+message ConfigureRequest {
+  string host = 1;
+  string token = 2;
+  map<string, string> settings = 3;
+}
+message ConfigureResponse {}
+
+message RepoRef {
+  string owner = 1;
+  string repo = 2;
+}
+
+message PullRequestRef {
+  RepoRef repo = 1;
+  int32 number = 2;
+}
+
+message Issue {
+  int32 number = 1;
+  string title = 2;
+  string body = 3;
+  repeated string labels = 4;
+}
+message AssignedIssuesResponse { repeated Issue issues = 1; }
+message IssuesWithLabelResponse { repeated Issue issues = 1; }
+
+message AssignedIssuesRequest {
+  RepoRef repo = 1;
+  string assignee = 2;
+}
+message IssuesWithLabelRequest {
+  RepoRef repo = 1;
+  string label = 2;
+}
+
+message CommentRequest {
+  RepoRef repo = 1;
+  int32 number = 2;
+  string body = 3;
+}
+message CommentResponse { int64 id = 1; }
+
+message CloseIssueRequest {
+  RepoRef repo = 1;
+  int32 number = 2;
+  string comment = 3;
+}
+message CloseIssueResponse {}
+
+message ReactRequest {
+  RepoRef repo = 1;
+  int32 number = 2;
+  string reaction = 3;
+}
+message ReactResponse {}
+
+message SetStateLabelRequest {
+  RepoRef repo = 1;
+  int32 number = 2;
+  string label = 3;
+  repeated string known_labels = 4;
+}
+message SetStateLabelResponse {}
+
+message CreatePRRequest {
+  RepoRef repo = 1;
+  string title = 2;
+  string head = 3;
+  string base = 4;
+  string body = 5;
+}
+message CreatePRResponse { int32 number = 1; }
+
+message PRStateRequest {
+  RepoRef repo = 1;
+  int32 number = 2;
+}
+message PRStateResponse { string state = 1; }
+
+message PullRequest {
+  int32 number = 1;
+  string title = 2;
+  string body = 3;
+  string head_ref = 4;
+  string base_ref = 5;
+  string head_sha = 6;
+  string base_sha = 7;
+  string state = 8;
+}
+
+message GetPullRequestRequest {
+  RepoRef repo = 1;
+  int32 number = 2;
+}
+message GetPullRequestResponse { PullRequest pull_request = 1; }
+
+message GetPullRequestDiffRequest {
+  RepoRef repo = 1;
+  int32 number = 2;
+}
+message GetPullRequestDiffResponse { string diff = 1; }
+
+message ListReviewsRequest {
+  PullRequestRef pull_request = 1;
+  int64 since_id = 2;
+}
+
+message Review {
+  int64 id = 1;
+  string author = 2;
+  string state = 3;
+  string body = 4;
+  google.protobuf.Timestamp submitted_at = 5;
+}
+message ListReviewsResponse { repeated Review reviews = 1; }
+
+message ReviewComment {
+  int64 id = 1;
+  int64 review_id = 2;
+  string author = 3;
+  string body = 4;
+  string path = 5;
+  int32 line = 6;
+  int64 in_reply_to = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+message ListReviewCommentsRequest {
+  PullRequestRef pull_request = 1;
+  int64 since_id = 2;
+}
+message ListReviewCommentsResponse { repeated ReviewComment comments = 1; }
+
+message ReplyToReviewRequest {
+  PullRequestRef pull_request = 1;
+  int64 comment_id = 2;
+  string body = 3;
+}
+message ReplyToReviewResponse {}
+
+message InlineReviewComment {
+  string path = 1;
+  int32 line = 2;
+  string body = 3;
+}
+message CreateReviewCommentsRequest {
+  PullRequestRef pull_request = 1;
+  string reviewed_head_sha = 2;
+  repeated InlineReviewComment comments = 3;
+}
+message CreateReviewCommentsResponse {}
+
+message LinkBranchRequest {
+  RepoRef repo = 1;
+  int32 issue_number = 2;
+  string branch = 3;
+}
+message LinkBranchResponse {}
+
+message AcceptInvitationsRequest {}
+message AcceptInvitationsResponse {}
+
+message VerifyPushRequest { RepoRef repo = 1; }
+message VerifyPushResponse {}
+
+message GetRepoArchiveRequest {
+  RepoRef repo = 1;
+  string ref = 2;
+}
+message GetRepoArchiveResponse { bytes data = 1; }

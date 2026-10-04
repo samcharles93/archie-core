@@ -2,14 +2,11 @@ package secretengine
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
-	"path"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -24,20 +21,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/secret"
 )
 
-// orgID is the single-operator install's org, the one packages are installed in.
-const orgID = "default"
-
-// Source is what the runner reads: the extension-settings resource and the
-// installed packages.
-type Source struct {
-	// Query reads a control-plane resource, as *controlplanerpc.Client does.
-	Query controlplanerpc.ResourceReader
-	// Packages reads installed packages, as *staterpc.Client does.
-	Packages interface {
-		ListInstalled(ctx context.Context, orgID string) ([]storepkg.Installed, error)
-		GetInstalled(ctx context.Context, orgID, name string) (storepkg.Installed, error)
-	}
-}
+// Source is what the runner reads.
+type Source = extension.Source
 
 // Runner keeps the enabled secret-engine extensions running and registered.
 // An extension runs when its package is installed, its authority is accepted
@@ -94,7 +79,7 @@ func (r *Runner) Run(ctx context.Context, interval time.Duration) {
 // package, settings or process changed, and stops the rest. It returns the
 // problems it met; a failed engine does not stop the others.
 func (r *Runner) Sync(ctx context.Context) error {
-	settings, version, err := r.enabled(ctx)
+	settings, version, err := r.source.Enabled(ctx)
 	if err == nil {
 		err = r.apply(ctx, settings)
 	}
@@ -105,7 +90,7 @@ func (r *Runner) Sync(ctx context.Context) error {
 }
 
 func (r *Runner) apply(ctx context.Context, settings map[string]controlplanerpc.ExtensionSetting) error {
-	installed, err := r.source.Packages.ListInstalled(ctx, orgID)
+	installed, err := r.source.Packages.ListInstalled(ctx, extension.OrgID)
 	if err != nil {
 		return fmt.Errorf("list installed packages: %w", err)
 	}
@@ -136,24 +121,6 @@ func (r *Runner) apply(ctx context.Context, settings map[string]controlplanerpc.
 	return errors.Join(problems...)
 }
 
-func (r *Runner) enabled(ctx context.Context) (map[string]controlplanerpc.ExtensionSetting, int64, error) {
-	byName := make(map[string]controlplanerpc.ExtensionSetting)
-	version, _, err := r.source.Query.Query(ctx, controlplanerpc.ExtensionSettingsKind, func(value []byte) error {
-		var doc controlplanerpc.ExtensionSettings
-		if err := json.Unmarshal(value, &doc); err != nil {
-			return err
-		}
-		for _, setting := range doc.Extensions {
-			byName[setting.Name] = setting
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, 0, fmt.Errorf("read extension settings: %w", err)
-	}
-	return byName, version, nil
-}
-
 func secretEngines(d storepkg.Descriptor) []storepkg.Extension {
 	var out []storepkg.Extension
 	for _, extension := range d.Contributes.Extensions {
@@ -178,7 +145,7 @@ func (r *Runner) ensure(ctx context.Context, pkg storepkg.Installed, setting con
 	if len(engines) != 1 {
 		return fmt.Errorf("a package serves one secret engine, this one declares %d", len(engines))
 	}
-	binary, sum, err := r.materialize(ctx, pkg, engines[0].Path)
+	binary, sum, err := extension.Materialize(ctx, r.source.Packages, r.cacheDir, pkg, engines[0].Path)
 	if err != nil {
 		return err
 	}
@@ -190,53 +157,6 @@ func (r *Runner) ensure(ctx context.Context, pkg storepkg.Installed, setting con
 	r.registry.Register(engine)
 	r.running[pkg.Name] = runningEngine{digest: pkg.Digest, settings: string(encoded)}
 	return nil
-}
-
-// materialize writes the package's extension binary under the cache, keyed by
-// package digest, and returns its path and sha256. A binary already there for
-// this digest is reused.
-func (r *Runner) materialize(ctx context.Context, pkg storepkg.Installed, file string) (string, string, error) {
-	full, err := r.source.Packages.GetInstalled(ctx, orgID, pkg.Name)
-	if err != nil {
-		return "", "", fmt.Errorf("get installed package: %w", err)
-	}
-	files, err := storepkg.FilesFromLayer(full.Layer)
-	if err != nil {
-		return "", "", err
-	}
-	content, ok := files[file]
-	if !ok {
-		return "", "", fmt.Errorf("package layer has no %q", file)
-	}
-	sum := sha256.Sum256(content)
-	dir := filepath.Join(r.cacheDir, pkg.Name, hex.EncodeToString(sum[:8]))
-	target := filepath.Join(dir, path.Base(file))
-	if existing, err := os.ReadFile(target); err == nil && sha256.Sum256(existing) == sum {
-		return target, hex.EncodeToString(sum[:]), nil
-	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", "", err
-	}
-	tmp, err := os.CreateTemp(dir, ".extract-*")
-	if err != nil {
-		return "", "", err
-	}
-	defer func() { _ = os.Remove(tmp.Name()) }()
-	if _, err := tmp.Write(content); err != nil {
-		_ = tmp.Close()
-		return "", "", err
-	}
-	if err := tmp.Chmod(0o700); err != nil {
-		_ = tmp.Close()
-		return "", "", err
-	}
-	if err := tmp.Close(); err != nil {
-		return "", "", err
-	}
-	if err := os.Rename(tmp.Name(), target); err != nil {
-		return "", "", err
-	}
-	return target, hex.EncodeToString(sum[:]), nil
 }
 
 // Close stops every running engine.
