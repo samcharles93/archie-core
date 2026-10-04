@@ -654,7 +654,7 @@ func (b *boot) buildDaemon() {
 		if principals, ok := b.stateStore.(access.PrincipalSource); ok {
 			b.d.Principals = principals
 		}
-		if denials, ok := b.stateStore.(access.DenialStore); ok {
+		if denials, ok := b.stateStore.(access.DenialRecorder); ok {
 			b.d.Denials = denials
 		}
 	}

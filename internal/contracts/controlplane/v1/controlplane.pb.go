@@ -283,12 +283,11 @@ func (x *Resource) GetOrgId() string {
 	return ""
 }
 
-// Every request that names a resource acts in one org's copy of it. An empty
-// org_id is the default org.
+// Every request that names a resource acts in one org's copy of it: the org
+// the State Store derives from the caller's principal, else the default org.
 type QueryRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
-	OrgId         string                 `protobuf:"bytes,2,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -326,13 +325,6 @@ func (*QueryRequest) Descriptor() ([]byte, []int) {
 func (x *QueryRequest) GetKind() string {
 	if x != nil {
 		return x.Kind
-	}
-	return ""
-}
-
-func (x *QueryRequest) GetOrgId() string {
-	if x != nil {
-		return x.OrgId
 	}
 	return ""
 }
@@ -472,8 +464,7 @@ type HistoryRequest struct {
 	Kind  string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
 	// Limit caps the revisions returned, newest first. Zero means the server's
 	// own default.
-	Limit         int32  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
-	OrgId         string `protobuf:"bytes,3,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	Limit         int32 `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -520,13 +511,6 @@ func (x *HistoryRequest) GetLimit() int32 {
 		return x.Limit
 	}
 	return 0
-}
-
-func (x *HistoryRequest) GetOrgId() string {
-	if x != nil {
-		return x.OrgId
-	}
-	return ""
 }
 
 type HistoryResponse struct {
@@ -810,7 +794,6 @@ type CommandRequest struct {
 	// from browser/request JSON.
 	Actor         string `protobuf:"bytes,6,opt,name=actor,proto3" json:"actor,omitempty"`
 	Source        string `protobuf:"bytes,7,opt,name=source,proto3" json:"source,omitempty"`
-	OrgId         string `protobuf:"bytes,8,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -894,13 +877,6 @@ func (x *CommandRequest) GetSource() string {
 	return ""
 }
 
-func (x *CommandRequest) GetOrgId() string {
-	if x != nil {
-		return x.OrgId
-	}
-	return ""
-}
-
 type CommandResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Resource      *Resource              `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
@@ -949,7 +925,6 @@ type WatchRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
 	AfterVersion  int64                  `protobuf:"varint,2,opt,name=after_version,json=afterVersion,proto3" json:"after_version,omitempty"`
-	OrgId         string                 `protobuf:"bytes,3,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -996,13 +971,6 @@ func (x *WatchRequest) GetAfterVersion() int64 {
 		return x.AfterVersion
 	}
 	return 0
-}
-
-func (x *WatchRequest) GetOrgId() string {
-	if x != nil {
-		return x.OrgId
-	}
-	return ""
 }
 
 type WatchResponse struct {
@@ -1083,10 +1051,9 @@ const file_controlplane_v1_controlplane_proto_rawDesc = "" +
 	"value_json\x18\x03 \x01(\fR\tvalueJson\x129\n" +
 	"\n" +
 	"updated_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x15\n" +
-	"\x06org_id\x18\x05 \x01(\tR\x05orgId\"9\n" +
+	"\x06org_id\x18\x05 \x01(\tR\x05orgId\"0\n" +
 	"\fQueryRequest\x12\x12\n" +
-	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x15\n" +
-	"\x06org_id\x18\x02 \x01(\tR\x05orgId\"F\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kindJ\x04\b\x02\x10\x03R\x06org_id\"F\n" +
 	"\rQueryResponse\x125\n" +
 	"\bresource\x18\x01 \x01(\v2\x19.controlplane.v1.ResourceR\bresource\"\xbc\x01\n" +
 	"\bRevision\x12\x18\n" +
@@ -1097,11 +1064,10 @@ const file_controlplane_v1_controlplane_proto_rawDesc = "" +
 	"\x06source\x18\x04 \x01(\tR\x06source\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x05 \x01(\tR\trequestId\x12*\n" +
-	"\x02at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\"Q\n" +
+	"\x02at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\"H\n" +
 	"\x0eHistoryRequest\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x14\n" +
-	"\x05limit\x18\x02 \x01(\x05R\x05limit\x12\x15\n" +
-	"\x06org_id\x18\x03 \x01(\tR\x05orgId\"J\n" +
+	"\x05limit\x18\x02 \x01(\x05R\x05limitJ\x04\b\x03\x10\x04R\x06org_id\"J\n" +
 	"\x0fHistoryResponse\x127\n" +
 	"\trevisions\x18\x01 \x03(\v2\x19.controlplane.v1.RevisionR\trevisions\"\xc6\x02\n" +
 	"\n" +
@@ -1124,7 +1090,7 @@ const file_controlplane_v1_controlplane_proto_rawDesc = "" +
 	"\x05kinds\x18\x04 \x03(\tR\x05kinds\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limitJ\x04\b\x01\x10\x02J\x04\b\x02\x10\x03R\x05tableR\vrecord_keys\"F\n" +
 	"\rAuditResponse\x125\n" +
-	"\aentries\x18\x01 \x03(\v2\x1b.controlplane.v1.AuditEntryR\aentries\"\xec\x01\n" +
+	"\aentries\x18\x01 \x03(\v2\x1b.controlplane.v1.AuditEntryR\aentries\"\xe3\x01\n" +
 	"\x0eCommandRequest\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x18\n" +
 	"\acommand\x18\x02 \x01(\tR\acommand\x12\x1d\n" +
@@ -1134,14 +1100,12 @@ const file_controlplane_v1_controlplane_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x05 \x01(\tR\trequestId\x12\x14\n" +
 	"\x05actor\x18\x06 \x01(\tR\x05actor\x12\x16\n" +
-	"\x06source\x18\a \x01(\tR\x06source\x12\x15\n" +
-	"\x06org_id\x18\b \x01(\tR\x05orgId\"H\n" +
+	"\x06source\x18\a \x01(\tR\x06sourceJ\x04\b\b\x10\tR\x06org_id\"H\n" +
 	"\x0fCommandResponse\x125\n" +
-	"\bresource\x18\x01 \x01(\v2\x19.controlplane.v1.ResourceR\bresource\"^\n" +
+	"\bresource\x18\x01 \x01(\v2\x19.controlplane.v1.ResourceR\bresource\"U\n" +
 	"\fWatchRequest\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12#\n" +
-	"\rafter_version\x18\x02 \x01(\x03R\fafterVersion\x12\x15\n" +
-	"\x06org_id\x18\x03 \x01(\tR\x05orgId\"\\\n" +
+	"\rafter_version\x18\x02 \x01(\x03R\fafterVersionJ\x04\b\x03\x10\x04R\x06org_id\"\\\n" +
 	"\rWatchResponse\x125\n" +
 	"\bresource\x18\x01 \x01(\v2\x19.controlplane.v1.ResourceR\bresource\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error2\xd9\x03\n" +

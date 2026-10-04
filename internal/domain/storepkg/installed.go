@@ -62,6 +62,16 @@ type Manager interface {
 	AcceptPackageAuthority(ctx context.Context, orgID, name string, accepted Authority) (Installed, error)
 }
 
+// Installations is Manager as a remote caller sees it: the State Store acts
+// in the caller's org, so no method names one.
+type Installations interface {
+	InstallPackage(ctx context.Context, name, reference, digest string) (Installed, error)
+	GetInstalled(ctx context.Context, name string) (Installed, error)
+	ListInstalled(ctx context.Context) ([]Installed, error)
+	RemoveInstalled(ctx context.Context, name string) error
+	AcceptPackageAuthority(ctx context.Context, name string, accepted Authority) (Installed, error)
+}
+
 // Service validates the registry content before persisting an installation.
 type Service struct {
 	Registry Registry

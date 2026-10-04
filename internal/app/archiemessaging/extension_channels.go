@@ -36,7 +36,7 @@ func openExtensionChannels(ctx context.Context, source extension.Source, secrets
 		log.Warn("channel extensions unavailable: extension settings", "err", err)
 		return nil
 	}
-	installed, err := source.Packages.ListInstalled(ctx, extension.OrgID)
+	installed, err := source.Packages.ListInstalled(ctx)
 	if err != nil {
 		log.Warn("channel extensions unavailable: installed packages", "err", err)
 		return nil

@@ -126,13 +126,13 @@ func (f *fakeSource) Query(_ context.Context, _ string, decode func([]byte) erro
 	return 1, true, decode(raw)
 }
 
-func (f *fakeSource) ListInstalled(context.Context, string) ([]storepkg.Installed, error) {
+func (f *fakeSource) ListInstalled(context.Context) ([]storepkg.Installed, error) {
 	listed := f.pkg
 	listed.Layer = nil
 	return []storepkg.Installed{listed}, nil
 }
 
-func (f *fakeSource) GetInstalled(context.Context, string, string) (storepkg.Installed, error) {
+func (f *fakeSource) GetInstalled(context.Context, string) (storepkg.Installed, error) {
 	return f.pkg, nil
 }
 

@@ -70,24 +70,24 @@ func (s *server) RemoveInstalledPackage(ctx context.Context, request *pb.RemoveI
 	return &pb.RemoveInstalledPackageResponse{}, nil
 }
 
-func (c *Client) InstallPackage(ctx context.Context, orgID, name, reference, digest string) (storepkg.Installed, error) {
-	response, err := c.client.InstallPackage(ctx, &pb.InstallPackageRequest{OrgId: orgID, Name: name, Reference: reference, Digest: digest})
+func (c *Client) InstallPackage(ctx context.Context, name, reference, digest string) (storepkg.Installed, error) {
+	response, err := c.client.InstallPackage(ctx, &pb.InstallPackageRequest{Name: name, Reference: reference, Digest: digest})
 	if err != nil {
 		return storepkg.Installed{}, unmapError(err)
 	}
 	return packageValue(response.GetPackage())
 }
 
-func (c *Client) GetInstalled(ctx context.Context, orgID, name string) (storepkg.Installed, error) {
-	response, err := c.client.GetInstalledPackage(ctx, &pb.GetInstalledPackageRequest{OrgId: orgID, Name: name})
+func (c *Client) GetInstalled(ctx context.Context, name string) (storepkg.Installed, error) {
+	response, err := c.client.GetInstalledPackage(ctx, &pb.GetInstalledPackageRequest{Name: name})
 	if err != nil {
 		return storepkg.Installed{}, unmapError(err)
 	}
 	return packageValue(response.GetPackage())
 }
 
-func (c *Client) ListInstalled(ctx context.Context, orgID string) ([]storepkg.Installed, error) {
-	response, err := c.client.ListInstalledPackages(ctx, &pb.ListInstalledPackagesRequest{OrgId: orgID})
+func (c *Client) ListInstalled(ctx context.Context) ([]storepkg.Installed, error) {
+	response, err := c.client.ListInstalledPackages(ctx, &pb.ListInstalledPackagesRequest{})
 	if err != nil {
 		return nil, unmapError(err)
 	}
@@ -102,14 +102,14 @@ func (c *Client) ListInstalled(ctx context.Context, orgID string) ([]storepkg.In
 	return packages, nil
 }
 
-func (c *Client) RemoveInstalled(ctx context.Context, orgID, name string) error {
-	_, err := c.client.RemoveInstalledPackage(ctx, &pb.RemoveInstalledPackageRequest{OrgId: orgID, Name: name})
+func (c *Client) RemoveInstalled(ctx context.Context, name string) error {
+	_, err := c.client.RemoveInstalledPackage(ctx, &pb.RemoveInstalledPackageRequest{Name: name})
 	return unmapError(err)
 }
 
-func (c *Client) AcceptPackageAuthority(ctx context.Context, orgID, name string, accepted storepkg.Authority) (storepkg.Installed, error) {
+func (c *Client) AcceptPackageAuthority(ctx context.Context, name string, accepted storepkg.Authority) (storepkg.Installed, error) {
 	response, err := c.client.AcceptPackageAuthority(ctx, &pb.AcceptPackageAuthorityRequest{
-		OrgId: orgID, Name: name, Accepted: authorityProto(accepted),
+		Name: name, Accepted: authorityProto(accepted),
 	})
 	if err != nil {
 		return storepkg.Installed{}, unmapError(err)

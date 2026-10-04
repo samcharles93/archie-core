@@ -82,7 +82,7 @@ type Server struct {
 
 	// Packages is the State Store's installed-package surface, behind the
 	// extensions page. Nil answers 503.
-	Packages storepkg.Manager
+	Packages storepkg.Installations
 
 	// ApplyStatus reports which control-plane resource version each process
 	// is running. Optional: nil renders an empty page rather than failing the
@@ -123,7 +123,7 @@ type Server struct {
 	// check as the only gate.
 	Access     access.Authorizer
 	Principals access.PrincipalSource
-	Denials    access.DenialStore
+	Denials    access.DenialRecorder
 
 	// Events publishes operator actions so they reach the task timeline and
 	// the live activity stream. Optional: nil means the action is recorded

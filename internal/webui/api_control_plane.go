@@ -11,7 +11,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
-	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 )
 
 type controlPlaneCommandRequest struct {
@@ -64,7 +63,7 @@ func (s *Server) handleControlPlaneQuery(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "control plane unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	response, err := s.ControlPlane.Query(r.Context(), controlplanerpc.QueryRequest(r.Context(), r.PathValue("kind")))
+	response, err := s.ControlPlane.Query(r.Context(), &controlpb.QueryRequest{Kind: r.PathValue("kind")})
 	if err != nil {
 		writeControlPlaneError(w, err)
 		return
@@ -77,7 +76,7 @@ func (s *Server) handleControlPlaneHistory(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "control plane unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	response, err := s.ControlPlane.History(r.Context(), controlplanerpc.HistoryRequest(r.Context(), r.PathValue("kind")))
+	response, err := s.ControlPlane.History(r.Context(), &controlpb.HistoryRequest{Kind: r.PathValue("kind")})
 	if err != nil {
 		writeControlPlaneError(w, err)
 		return
@@ -112,11 +111,11 @@ func (s *Server) handleControlPlaneCommand(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "cannot create request ID", http.StatusInternalServerError)
 		return
 	}
-	response, err := s.ControlPlane.Command(r.Context(), controlplanerpc.CommandRequest(r.Context(), &controlpb.CommandRequest{
+	response, err := s.ControlPlane.Command(r.Context(), &controlpb.CommandRequest{
 		Kind: r.PathValue("kind"), Command: r.PathValue("command"), ValueJson: request.Value,
 		ExpectedVersion: request.ExpectedVersion, Actor: string(audit.ActorID),
 		Source: audit.Source, RequestId: audit.RequestID,
-	}))
+	})
 	if err != nil {
 		writeControlPlaneError(w, err)
 		return

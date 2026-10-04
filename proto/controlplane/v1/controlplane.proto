@@ -38,11 +38,12 @@ message Resource {
   google.protobuf.Timestamp updated_at = 4;
   string org_id = 5;
 }
-// Every request that names a resource acts in one org's copy of it. An empty
-// org_id is the default org.
+// Every request that names a resource acts in one org's copy of it: the org
+// the State Store derives from the caller's principal, else the default org.
 message QueryRequest {
   string kind = 1;
-  string org_id = 2;
+  reserved 2;
+  reserved "org_id";
 }
 message QueryResponse { Resource resource = 1; }
 
@@ -61,7 +62,8 @@ message HistoryRequest {
   // Limit caps the revisions returned, newest first. Zero means the server's
   // own default.
   int32 limit = 2;
-  string org_id = 3;
+  reserved 3;
+  reserved "org_id";
 }
 message HistoryResponse { repeated Revision revisions = 1; }
 
@@ -102,14 +104,16 @@ message CommandRequest {
   // from browser/request JSON.
   string actor = 6;
   string source = 7;
-  string org_id = 8;
+  reserved 8;
+  reserved "org_id";
 }
 message CommandResponse { Resource resource = 1; }
 
 message WatchRequest {
   string kind = 1;
   int64 after_version = 2;
-  string org_id = 3;
+  reserved 3;
+  reserved "org_id";
 }
 message WatchResponse {
   Resource resource = 1;

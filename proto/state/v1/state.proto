@@ -1163,24 +1163,39 @@ message PackageAuthority {
   repeated string tools = 5;
   repeated string env = 6;
 }
+// Package and denial requests act in the org the State Store derives from the
+// caller's principal, else the default org.
 message InstallPackageRequest {
-  string org_id = 1;
+  reserved 1;
+  reserved "org_id";
   string name = 2;
   string reference = 3;
   string digest = 4;
 }
 message InstallPackageResponse { InstalledPackage package = 1; }
-message GetInstalledPackageRequest { string org_id = 1; string name = 2; }
+message GetInstalledPackageRequest {
+  reserved 1;
+  reserved "org_id";
+  string name = 2;
+}
 message GetInstalledPackageResponse { InstalledPackage package = 1; }
-message ListInstalledPackagesRequest { string org_id = 1; }
+message ListInstalledPackagesRequest {
+  reserved 1;
+  reserved "org_id";
+}
 message ListInstalledPackagesResponse { repeated InstalledPackage packages = 1; }
 message AcceptPackageAuthorityRequest {
-  string org_id = 1;
+  reserved 1;
+  reserved "org_id";
   string name = 2;
   PackageAuthority accepted = 3;
 }
 message AcceptPackageAuthorityResponse { InstalledPackage package = 1; }
-message RemoveInstalledPackageRequest { string org_id = 1; string name = 2; }
+message RemoveInstalledPackageRequest {
+  reserved 1;
+  reserved "org_id";
+  string name = 2;
+}
 message RemoveInstalledPackageResponse {}
 
 // Task mirrors internal/domain/workflow.Task.
@@ -1235,5 +1250,9 @@ message AccessDenial {
 }
 message RecordDenialRequest { AccessDenial denial = 1; }
 message RecordDenialResponse {}
-message ListDenialsRequest { string org_id = 1; int32 limit = 2; }
+message ListDenialsRequest {
+  reserved 1;
+  reserved "org_id";
+  int32 limit = 2;
+}
 message ListDenialsResponse { repeated AccessDenial denials = 1; }

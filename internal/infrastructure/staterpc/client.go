@@ -64,7 +64,7 @@ var (
 	_ storecontract.CaptureRefusalStore  = (*Client)(nil)
 	_ storecontract.ExecutionCanceller   = (*Client)(nil)
 	_ identity.Repository                = (*Client)(nil)
-	_ storepkg.Manager                   = (*Client)(nil)
+	_ storepkg.Installations             = (*Client)(nil)
 )
 
 // Lifecycle

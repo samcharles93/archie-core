@@ -9,7 +9,6 @@ import (
 	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
-	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 )
 
 const workflowEnablementKind = "workflow-enablement"
@@ -20,7 +19,7 @@ func (s *Server) workflowEnablement(ctx context.Context) (task.WorkflowEnablemen
 	if s.ControlPlane == nil {
 		return task.WorkflowEnablement{}, 0, nil
 	}
-	response, err := s.ControlPlane.Query(ctx, controlplanerpc.QueryRequest(ctx, workflowEnablementKind))
+	response, err := s.ControlPlane.Query(ctx, &controlpb.QueryRequest{Kind: workflowEnablementKind})
 	if err != nil {
 		return task.WorkflowEnablement{}, 0, err
 	}
@@ -78,11 +77,11 @@ func (s *Server) handleWorkflowEnabled(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "cannot create request ID", http.StatusInternalServerError)
 		return
 	}
-	if _, err := s.ControlPlane.Command(r.Context(), controlplanerpc.CommandRequest(r.Context(), &controlpb.CommandRequest{
+	if _, err := s.ControlPlane.Command(r.Context(), &controlpb.CommandRequest{
 		Kind: workflowEnablementKind, Command: "replace", ValueJson: value,
 		ExpectedVersion: version, Actor: string(audit.ActorID),
 		Source: audit.Source, RequestId: audit.RequestID,
-	})); err != nil {
+	}); err != nil {
 		writeControlPlaneError(w, err)
 		return
 	}

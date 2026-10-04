@@ -11166,9 +11166,10 @@ func (x *PackageAuthority) GetEnv() []string {
 	return nil
 }
 
+// Package and denial requests act in the org the State Store derives from the
+// caller's principal, else the default org.
 type InstallPackageRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	Reference     string                 `protobuf:"bytes,3,opt,name=reference,proto3" json:"reference,omitempty"`
 	Digest        string                 `protobuf:"bytes,4,opt,name=digest,proto3" json:"digest,omitempty"`
@@ -11204,13 +11205,6 @@ func (x *InstallPackageRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use InstallPackageRequest.ProtoReflect.Descriptor instead.
 func (*InstallPackageRequest) Descriptor() ([]byte, []int) {
 	return file_state_v1_state_proto_rawDescGZIP(), []int{202}
-}
-
-func (x *InstallPackageRequest) GetOrgId() string {
-	if x != nil {
-		return x.OrgId
-	}
-	return ""
 }
 
 func (x *InstallPackageRequest) GetName() string {
@@ -11280,7 +11274,6 @@ func (x *InstallPackageResponse) GetPackage() *InstalledPackage {
 
 type GetInstalledPackageRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -11314,13 +11307,6 @@ func (x *GetInstalledPackageRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use GetInstalledPackageRequest.ProtoReflect.Descriptor instead.
 func (*GetInstalledPackageRequest) Descriptor() ([]byte, []int) {
 	return file_state_v1_state_proto_rawDescGZIP(), []int{204}
-}
-
-func (x *GetInstalledPackageRequest) GetOrgId() string {
-	if x != nil {
-		return x.OrgId
-	}
-	return ""
 }
 
 func (x *GetInstalledPackageRequest) GetName() string {
@@ -11376,7 +11362,6 @@ func (x *GetInstalledPackageResponse) GetPackage() *InstalledPackage {
 
 type ListInstalledPackagesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -11409,13 +11394,6 @@ func (x *ListInstalledPackagesRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListInstalledPackagesRequest.ProtoReflect.Descriptor instead.
 func (*ListInstalledPackagesRequest) Descriptor() ([]byte, []int) {
 	return file_state_v1_state_proto_rawDescGZIP(), []int{206}
-}
-
-func (x *ListInstalledPackagesRequest) GetOrgId() string {
-	if x != nil {
-		return x.OrgId
-	}
-	return ""
 }
 
 type ListInstalledPackagesResponse struct {
@@ -11464,7 +11442,6 @@ func (x *ListInstalledPackagesResponse) GetPackages() []*InstalledPackage {
 
 type AcceptPackageAuthorityRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	Accepted      *PackageAuthority      `protobuf:"bytes,3,opt,name=accepted,proto3" json:"accepted,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -11499,13 +11476,6 @@ func (x *AcceptPackageAuthorityRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use AcceptPackageAuthorityRequest.ProtoReflect.Descriptor instead.
 func (*AcceptPackageAuthorityRequest) Descriptor() ([]byte, []int) {
 	return file_state_v1_state_proto_rawDescGZIP(), []int{208}
-}
-
-func (x *AcceptPackageAuthorityRequest) GetOrgId() string {
-	if x != nil {
-		return x.OrgId
-	}
-	return ""
 }
 
 func (x *AcceptPackageAuthorityRequest) GetName() string {
@@ -11568,7 +11538,6 @@ func (x *AcceptPackageAuthorityResponse) GetPackage() *InstalledPackage {
 
 type RemoveInstalledPackageRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -11602,13 +11571,6 @@ func (x *RemoveInstalledPackageRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use RemoveInstalledPackageRequest.ProtoReflect.Descriptor instead.
 func (*RemoveInstalledPackageRequest) Descriptor() ([]byte, []int) {
 	return file_state_v1_state_proto_rawDescGZIP(), []int{210}
-}
-
-func (x *RemoveInstalledPackageRequest) GetOrgId() string {
-	if x != nil {
-		return x.OrgId
-	}
-	return ""
 }
 
 func (x *RemoveInstalledPackageRequest) GetName() string {
@@ -12479,7 +12441,6 @@ func (*RecordDenialResponse) Descriptor() ([]byte, []int) {
 
 type ListDenialsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
 	Limit         int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -12513,13 +12474,6 @@ func (x *ListDenialsRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListDenialsRequest.ProtoReflect.Descriptor instead.
 func (*ListDenialsRequest) Descriptor() ([]byte, []int) {
 	return file_state_v1_state_proto_rawDescGZIP(), []int{228}
-}
-
-func (x *ListDenialsRequest) GetOrgId() string {
-	if x != nil {
-		return x.OrgId
-	}
-	return ""
 }
 
 func (x *ListDenialsRequest) GetLimit() int32 {
@@ -13325,32 +13279,27 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x11forge_permissions\x18\x03 \x03(\tR\x10forgePermissions\x12\x1a\n" +
 	"\btriggers\x18\x04 \x03(\tR\btriggers\x12\x14\n" +
 	"\x05tools\x18\x05 \x03(\tR\x05tools\x12\x10\n" +
-	"\x03env\x18\x06 \x03(\tR\x03env\"x\n" +
-	"\x15InstallPackageRequest\x12\x15\n" +
-	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x12\n" +
+	"\x03env\x18\x06 \x03(\tR\x03env\"o\n" +
+	"\x15InstallPackageRequest\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +
 	"\treference\x18\x03 \x01(\tR\treference\x12\x16\n" +
-	"\x06digest\x18\x04 \x01(\tR\x06digest\"N\n" +
+	"\x06digest\x18\x04 \x01(\tR\x06digestJ\x04\b\x01\x10\x02R\x06org_id\"N\n" +
 	"\x16InstallPackageResponse\x124\n" +
-	"\apackage\x18\x01 \x01(\v2\x1a.state.v1.InstalledPackageR\apackage\"G\n" +
-	"\x1aGetInstalledPackageRequest\x12\x15\n" +
-	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"S\n" +
+	"\apackage\x18\x01 \x01(\v2\x1a.state.v1.InstalledPackageR\apackage\">\n" +
+	"\x1aGetInstalledPackageRequest\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04nameJ\x04\b\x01\x10\x02R\x06org_id\"S\n" +
 	"\x1bGetInstalledPackageResponse\x124\n" +
-	"\apackage\x18\x01 \x01(\v2\x1a.state.v1.InstalledPackageR\apackage\"5\n" +
-	"\x1cListInstalledPackagesRequest\x12\x15\n" +
-	"\x06org_id\x18\x01 \x01(\tR\x05orgId\"W\n" +
+	"\apackage\x18\x01 \x01(\v2\x1a.state.v1.InstalledPackageR\apackage\",\n" +
+	"\x1cListInstalledPackagesRequestJ\x04\b\x01\x10\x02R\x06org_id\"W\n" +
 	"\x1dListInstalledPackagesResponse\x126\n" +
-	"\bpackages\x18\x01 \x03(\v2\x1a.state.v1.InstalledPackageR\bpackages\"\x82\x01\n" +
-	"\x1dAcceptPackageAuthorityRequest\x12\x15\n" +
-	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x12\n" +
+	"\bpackages\x18\x01 \x03(\v2\x1a.state.v1.InstalledPackageR\bpackages\"y\n" +
+	"\x1dAcceptPackageAuthorityRequest\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x126\n" +
-	"\baccepted\x18\x03 \x01(\v2\x1a.state.v1.PackageAuthorityR\baccepted\"V\n" +
+	"\baccepted\x18\x03 \x01(\v2\x1a.state.v1.PackageAuthorityR\bacceptedJ\x04\b\x01\x10\x02R\x06org_id\"V\n" +
 	"\x1eAcceptPackageAuthorityResponse\x124\n" +
-	"\apackage\x18\x01 \x01(\v2\x1a.state.v1.InstalledPackageR\apackage\"J\n" +
-	"\x1dRemoveInstalledPackageRequest\x12\x15\n" +
-	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\" \n" +
+	"\apackage\x18\x01 \x01(\v2\x1a.state.v1.InstalledPackageR\apackage\"A\n" +
+	"\x1dRemoveInstalledPackageRequest\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04nameJ\x04\b\x01\x10\x02R\x06org_id\" \n" +
 	"\x1eRemoveInstalledPackageResponse\"6\n" +
 	"\x13GetPrincipalRequest\x12\x1f\n" +
 	"\videntity_id\x18\x01 \x01(\tR\n" +
@@ -13401,10 +13350,9 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x02at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\x02at\"E\n" +
 	"\x13RecordDenialRequest\x12.\n" +
 	"\x06denial\x18\x01 \x01(\v2\x16.state.v1.AccessDenialR\x06denial\"\x16\n" +
-	"\x14RecordDenialResponse\"A\n" +
-	"\x12ListDenialsRequest\x12\x15\n" +
-	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x14\n" +
-	"\x05limit\x18\x02 \x01(\x05R\x05limit\"G\n" +
+	"\x14RecordDenialResponse\"8\n" +
+	"\x12ListDenialsRequest\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\x05R\x05limitJ\x04\b\x01\x10\x02R\x06org_id\"G\n" +
 	"\x13ListDenialsResponse\x120\n" +
 	"\adenials\x18\x01 \x03(\v2\x16.state.v1.AccessDenialR\adenials2\xe2B\n" +
 	"\x11StateStoreService\x12S\n" +

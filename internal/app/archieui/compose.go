@@ -41,7 +41,7 @@ type deps struct {
 	// Wired together or not at all.
 	Access     *infraaccess.Live
 	Principals access.PrincipalSource
-	Denials    access.DenialStore
+	Denials    access.DenialRecorder
 }
 
 // compose builds the dashboard server from contract-backed dependencies.
@@ -61,7 +61,7 @@ func compose(d deps) *webui.Server {
 	if snapshots, ok := d.Store.(storecontract.ConfigSnapshotStore); ok {
 		srv.ConfigSource = webui.RemoteConfigView(snapshots)
 	}
-	if packages, ok := d.Store.(storepkg.Manager); ok {
+	if packages, ok := d.Store.(storepkg.Installations); ok {
 		srv.Packages = packages
 	}
 	if steps, ok := d.Store.(storecontract.StepReader); ok {

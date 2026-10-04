@@ -14,13 +14,10 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 )
 
-// OrgID is the single-operator install's org, the one packages are installed in.
-const OrgID = "default"
-
 // Packages reads installed packages, as *staterpc.Client does.
 type Packages interface {
-	ListInstalled(ctx context.Context, orgID string) ([]storepkg.Installed, error)
-	GetInstalled(ctx context.Context, orgID, name string) (storepkg.Installed, error)
+	ListInstalled(ctx context.Context) ([]storepkg.Installed, error)
+	GetInstalled(ctx context.Context, name string) (storepkg.Installed, error)
 }
 
 // Source is what an extension supervisor reads: the extension-settings
@@ -55,7 +52,7 @@ func (s Source) Enabled(ctx context.Context) (map[string]controlplanerpc.Extensi
 // package digest, and returns its path and sha256. A binary already there for
 // this digest is reused.
 func Materialize(ctx context.Context, packages Packages, cacheDir string, pkg storepkg.Installed, file string) (string, string, error) {
-	full, err := packages.GetInstalled(ctx, OrgID, pkg.Name)
+	full, err := packages.GetInstalled(ctx, pkg.Name)
 	if err != nil {
 		return "", "", fmt.Errorf("get installed package: %w", err)
 	}

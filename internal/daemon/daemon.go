@@ -117,7 +117,7 @@ type Daemon struct {
 	// identity. Wired with Access or not at all.
 	Principals access.PrincipalSource
 	// Denials records dispatch refusals. Optional: nil skips the record.
-	Denials access.DenialStore
+	Denials access.DenialRecorder
 	Forge   forge.Forge
 	Trees   *worktree.Manager
 	Bus     *events.Bus

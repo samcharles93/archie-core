@@ -15,7 +15,7 @@ import (
 // The Client satisfies the access contracts the two callers depend on.
 var (
 	_ access.PolicyStore     = (*Client)(nil)
-	_ access.DenialStore     = (*Client)(nil)
+	_ access.DenialRecorder  = (*Client)(nil)
 	_ access.PrincipalSource = (*Client)(nil)
 )
 
@@ -75,16 +75,4 @@ func (c *Client) EnsureShippedOrgPolicies(ctx context.Context, orgID org.OrgID) 
 func (c *Client) RecordDenial(ctx context.Context, d access.Denial) error {
 	_, err := c.client.RecordDenial(ctx, &pb.RecordDenialRequest{Denial: accessDenialProto(d)})
 	return unmapError(err)
-}
-
-func (c *Client) ListDenials(ctx context.Context, orgID org.OrgID, limit int) ([]access.Denial, error) {
-	r, err := c.client.ListDenials(ctx, &pb.ListDenialsRequest{OrgId: string(orgID), Limit: int32(limit)})
-	if err != nil {
-		return nil, unmapError(err)
-	}
-	out := make([]access.Denial, len(r.Denials))
-	for i := range r.Denials {
-		out[i] = accessDenialValue(r.Denials[i])
-	}
-	return out, nil
 }

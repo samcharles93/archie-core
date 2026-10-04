@@ -8,11 +8,11 @@ import (
 	"net/http"
 	"strings"
 
+	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 )
 
 const workflowDefinitionsKind = "workflow-definitions"
@@ -153,7 +153,7 @@ func (s *Server) workflowCollection(ctx context.Context) (task.WorkflowDefinitio
 	if s.ControlPlane == nil {
 		return task.WorkflowDefinitionCollection{}, nil
 	}
-	response, err := s.ControlPlane.Query(ctx, controlplanerpc.QueryRequest(ctx, workflowDefinitionsKind))
+	response, err := s.ControlPlane.Query(ctx, &controlpb.QueryRequest{Kind: workflowDefinitionsKind})
 	if err != nil {
 		return task.WorkflowDefinitionCollection{}, err
 	}

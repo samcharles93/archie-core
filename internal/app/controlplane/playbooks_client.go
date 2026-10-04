@@ -38,7 +38,7 @@ func (l *LivePlaybooks) current(ctx context.Context) *playbook.Store {
 	defer l.mu.Unlock()
 	ctx, cancel := context.WithTimeout(ctx, playbookQueryTimeout)
 	defer cancel()
-	response, err := l.rpc.Query(ctx, controlplanerpc.QueryRequest(ctx, PlaybooksKind))
+	response, err := l.rpc.Query(ctx, &pb.QueryRequest{Kind: PlaybooksKind})
 	if err != nil {
 		l.log.Warn("eda playbooks unavailable; keeping the last good set", "err", controlplanerpc.ClientError(err))
 		return l.store

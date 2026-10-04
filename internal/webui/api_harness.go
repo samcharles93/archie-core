@@ -12,9 +12,9 @@ import (
 
 	"golang.org/x/net/websocket"
 
+	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
-	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 )
 
 // The control-plane resources the harness page reads. The kinds are spelled
@@ -101,7 +101,7 @@ func (s *Server) handleHarnessBindings(w http.ResponseWriter, r *http.Request) {
 // captured token state. A service with no captured set is not an error: it
 // is exactly the state the setup terminal exists to change.
 func (s *Server) harnessBindings(ctx context.Context, orgID string) ([]harnessBindingView, error) {
-	response, err := s.ControlPlane.Query(ctx, controlplanerpc.QueryRequest(ctx, harnessBindingsKind))
+	response, err := s.ControlPlane.Query(ctx, &controlpb.QueryRequest{Kind: harnessBindingsKind})
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +143,7 @@ func (s *Server) harnessBindings(ctx context.Context, orgID string) ([]harnessBi
 // harnessProfiles returns the agent profiles that name a Kit, sorted so the
 // page's list does not depend on Go's map iteration order.
 func (s *Server) harnessProfiles(ctx context.Context) ([]string, error) {
-	response, err := s.ControlPlane.Query(ctx, controlplanerpc.QueryRequest(ctx, harnessProfilesKind))
+	response, err := s.ControlPlane.Query(ctx, &controlpb.QueryRequest{Kind: harnessProfilesKind})
 	if err != nil {
 		return nil, err
 	}

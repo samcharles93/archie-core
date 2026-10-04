@@ -57,7 +57,7 @@ func (e *forgeExtensions) open(ctx context.Context, typ, instance, host, token s
 	if !ok || !setting.Enabled {
 		return nil, false
 	}
-	installed, err := e.source.Packages.ListInstalled(ctx, extension.OrgID)
+	installed, err := e.source.Packages.ListInstalled(ctx)
 	if err != nil {
 		e.log.Warn("forge extensions: installed packages unavailable", "err", err)
 		return nil, false

@@ -90,7 +90,7 @@ func (r *Runner) Sync(ctx context.Context) error {
 }
 
 func (r *Runner) apply(ctx context.Context, settings map[string]controlplanerpc.ExtensionSetting) error {
-	installed, err := r.source.Packages.ListInstalled(ctx, extension.OrgID)
+	installed, err := r.source.Packages.ListInstalled(ctx)
 	if err != nil {
 		return fmt.Errorf("list installed packages: %w", err)
 	}

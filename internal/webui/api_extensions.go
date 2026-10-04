@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
-	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/storepkg"
 	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 )
@@ -75,7 +74,7 @@ func extensionView(p storepkg.Installed, enabled bool) ExtensionView {
 // replacement must name.
 func (s *Server) extensionSettings(ctx context.Context) (controlplanerpc.ExtensionSettings, int64, error) {
 	var doc controlplanerpc.ExtensionSettings
-	response, err := s.ControlPlane.Query(ctx, controlplanerpc.QueryRequest(ctx, controlplanerpc.ExtensionSettingsKind))
+	response, err := s.ControlPlane.Query(ctx, &controlpb.QueryRequest{Kind: controlplanerpc.ExtensionSettingsKind})
 	if err != nil {
 		return doc, 0, err
 	}
@@ -98,10 +97,10 @@ func (s *Server) putExtensionSettings(ctx context.Context, doc controlplanerpc.E
 	if err != nil {
 		return err
 	}
-	_, err = s.ControlPlane.Command(ctx, controlplanerpc.CommandRequest(ctx, &controlpb.CommandRequest{
+	_, err = s.ControlPlane.Command(ctx, &controlpb.CommandRequest{
 		Kind: controlplanerpc.ExtensionSettingsKind, Command: "replace", ValueJson: value,
 		ExpectedVersion: version, Actor: string(audit.ActorID), Source: audit.Source, RequestId: audit.RequestID,
-	}))
+	})
 	return err
 }
 
@@ -152,7 +151,7 @@ func (s *Server) handleExtensions(w http.ResponseWriter, r *http.Request) {
 	if !s.extensionsReady(w) {
 		return
 	}
-	installed, err := s.Packages.ListInstalled(r.Context(), string(org.OrgFromContext(r.Context())))
+	installed, err := s.Packages.ListInstalled(r.Context())
 	if err != nil {
 		writePackageError(w, err)
 		return
@@ -190,7 +189,7 @@ func (s *Server) handleExtensionInstall(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	p, err := s.Packages.InstallPackage(r.Context(), string(org.OrgFromContext(r.Context())),
+	p, err := s.Packages.InstallPackage(r.Context(),
 		strings.TrimSpace(request.Name), strings.TrimSpace(request.Reference), strings.TrimSpace(request.Digest))
 	if err != nil {
 		writePackageError(w, err)
@@ -205,13 +204,13 @@ func (s *Server) handleExtensionAccept(w http.ResponseWriter, r *http.Request) {
 	if !s.extensionsReady(w) {
 		return
 	}
-	orgID, name := string(org.OrgFromContext(r.Context())), r.PathValue("name")
-	installed, err := s.Packages.GetInstalled(r.Context(), orgID, name)
+	name := r.PathValue("name")
+	installed, err := s.Packages.GetInstalled(r.Context(), name)
 	if err != nil {
 		writePackageError(w, err)
 		return
 	}
-	p, err := s.Packages.AcceptPackageAuthority(r.Context(), orgID, name, installed.Descriptor.Authority)
+	p, err := s.Packages.AcceptPackageAuthority(r.Context(), name, installed.Descriptor.Authority)
 	if err != nil {
 		writePackageError(w, err)
 		return
@@ -234,7 +233,7 @@ func (s *Server) handleExtensionEnabled(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	name := r.PathValue("name")
-	if _, err := s.Packages.GetInstalled(r.Context(), string(org.OrgFromContext(r.Context())), name); err != nil {
+	if _, err := s.Packages.GetInstalled(r.Context(), name); err != nil {
 		writePackageError(w, err)
 		return
 	}
@@ -257,7 +256,7 @@ func (s *Server) handleExtensionRemove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
-	if err := s.Packages.RemoveInstalled(r.Context(), string(org.OrgFromContext(r.Context())), name); err != nil {
+	if err := s.Packages.RemoveInstalled(r.Context(), name); err != nil {
 		writePackageError(w, err)
 		return
 	}

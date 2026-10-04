@@ -41,13 +41,17 @@ type Resetter interface {
 	ResetInstancePolicies(ctx context.Context) error
 }
 
+// DenialRecorder records one refusal with the level that decided it and the
+// deciding policies.
+type DenialRecorder interface {
+	RecordDenial(ctx context.Context, d Denial) error
+}
+
 // DenialStore records and lists denial records. The store coalesces
 // identical denials within a minute into one row with a count, so a retry
 // storm does not flood the surface.
 type DenialStore interface {
-	// RecordDenial records one refusal with the level that decided it and
-	// the deciding policies.
-	RecordDenial(ctx context.Context, d Denial) error
+	DenialRecorder
 	// ListDenials returns an org's most recent denials, newest first.
 	ListDenials(ctx context.Context, orgID org.OrgID, limit int) ([]Denial, error)
 }
