@@ -3,7 +3,12 @@ import { computed } from "vue";
 
 import LogRow from "@/base/LogRow.vue";
 import { Button } from "@/components/ui/button";
-import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { api } from "@/lib/api";
 import { attemptFooter } from "@/lib/log";
 

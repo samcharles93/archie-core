@@ -2,7 +2,13 @@
 import { Check } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { setupPanelState, type SetupPanelState } from "./setup-preference";
 import { setup } from "./state";

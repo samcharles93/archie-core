@@ -14,7 +14,6 @@ import SchedulesPage from "@/settings/SchedulesPage.vue";
 import ExtensionsPage from "@/settings/ExtensionsPage.vue";
 import PluginsPage from "@/settings/PluginsPage.vue";
 import ContainerRuntimePage from "@/settings/ContainerRuntimePage.vue";
-import SystemAdvancedPage from "@/settings/SystemAdvancedPage.vue";
 import SystemIdentitiesPage from "@/settings/SystemIdentitiesPage.vue";
 import AccessPoliciesPage from "@/settings/AccessPoliciesPage.vue";
 import SystemAppearancePage from "@/settings/SystemAppearancePage.vue";
@@ -323,18 +322,6 @@ const routes = [
     },
   },
   {
-    path: "/settings/advanced",
-    name: "system-advanced",
-    component: SystemAdvancedPage,
-    meta: {
-      navPath: "/settings",
-      settings: true,
-      label: "Advanced",
-      description: "Actions that stop or roll back archied.",
-      section: "settings",
-    },
-  },
-  {
     path: "/settings/history",
     name: "settings-history",
     component: HistoryPage,
@@ -363,7 +350,6 @@ const routes = [
     "/system/models": "/settings/models",
     "/system/repos": "/settings/repositories",
     "/system/identities": "/settings/identities",
-    "/system/advanced": "/settings/advanced",
     "/channels": "/settings/channels",
     "/skills": "/settings/skills",
     "/curators": "/settings/curators",

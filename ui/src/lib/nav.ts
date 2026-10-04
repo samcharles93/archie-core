@@ -56,7 +56,6 @@ const settings: NavSpec = {
         "/settings/container-runtime",
         "/settings/harness",
         "/settings/status",
-        "/settings/advanced",
       ],
     },
     { paths: ["/settings/history"] },
