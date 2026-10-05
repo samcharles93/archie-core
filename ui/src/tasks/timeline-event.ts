@@ -121,6 +121,14 @@ export function describeTimelineEvent(ev: TaskEvent = {}): TimelineLine {
   // Condition (d): the two provenance kinds render as one human line. The
   // captured payload is rendered by its own panel, never dumped into the
   // timeline, so these cases name what was recorded and nothing more.
+  if (ev.kind === "remediation_round") {
+    const of = Number(data.of);
+    const author = text(data.author);
+    return {
+      title: `Remediation ${text(data.round)}${of > 0 ? ` of ${of}` : ""}`,
+      detail: [author && `answers ${author}'s review`, data.review_id ? `#${text(data.review_id)}` : ""].filter(Boolean).join(" "),
+    };
+  }
   if (ev.kind === "review_approved") {
     const pr = text(data.pr_number);
     return { title: "Pull request approved", detail: [text(data.author), pr && `#${pr}`].filter(Boolean).join(" · ") };

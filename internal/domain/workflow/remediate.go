@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/samcharles93/archie-core/internal/events"
 )
 
 // ErrNoReviewPayload is returned when a remediate run starts on a task that
@@ -120,6 +122,12 @@ func StageRemediationRoundCap() Stage {
 			return nil
 		}
 		tc.Task.RemediationRounds++
+		unit, _ := DecodeReviewUnit(tc.Task.ReviewPayload)
+		if err := tc.EmitDurable(ctx, events.KindRemediationRound, "round-cap",
+			fmt.Sprintf("remediation round %d answers review %d by %s", tc.Task.RemediationRounds, unit.ReviewID, unit.Author),
+			map[string]any{"round": tc.Task.RemediationRounds, "of": maxRounds, "review_id": unit.ReviewID, "author": unit.Author}); err != nil {
+			tc.Log.Warn("remediation round not recorded", "err", err)
+		}
 		return nil
 	}}
 }

@@ -53,6 +53,9 @@ const (
 	KindTaskCancelled = "task_cancelled"
 	KindTaskStopped   = "task_stopped"
 	KindTaskAbandoned = "task_abandoned"
+	// KindRemediationRound marks a remediation round starting and the review
+	// it answers. data: round, of (0 when uncapped), review_id, author.
+	KindRemediationRound = "remediation_round"
 	// KindReviewApproved records an approving review on a task's pull
 	// request. data: review_id, author, pr_number.
 	KindReviewApproved = "review_approved"
