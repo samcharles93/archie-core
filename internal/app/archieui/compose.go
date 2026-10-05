@@ -122,9 +122,10 @@ func compose(d deps) *webui.Server {
 }
 
 // wireCatalog attaches the Gateway-owned surfaces the dashboard reads over the
-// chat client: the skill catalogue, the curator registry and the channel
-// reload seam. A client that cannot answer them leaves those pages empty rather
-// than fabricating a set.
+// chat client: the skill catalogue and the curator registry. A client that
+// cannot answer them leaves those pages empty rather than fabricating a set.
+// Channel reload is deliberately left unwired: channels run in the Messaging
+// Service, not the Gateway, so no Gateway client can serve one.
 func wireCatalog(d deps, srv *webui.Server) {
 	catalog, ok := d.Chat.(gatewayrpc.CatalogClient)
 	if !ok {
@@ -132,7 +133,6 @@ func wireCatalog(d deps, srv *webui.Server) {
 	}
 	srv.Skills = skillCatalog{client: catalog}
 	srv.Curators = curatorStatus{client: catalog}
-	srv.ReloadChannel = catalog.ReloadChannel
 }
 
 // wireTaskLogs attaches the task-log read when the store client carries the
