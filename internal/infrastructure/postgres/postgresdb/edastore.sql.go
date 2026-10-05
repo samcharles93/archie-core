@@ -189,6 +189,21 @@ func (q *Queries) DeletePlaybookDispatches(ctx context.Context, playbookID strin
 	return err
 }
 
+const deleteUnboundSource = `-- name: DeleteUnboundSource :execrows
+DELETE FROM sources s WHERE s.path = $1
+  AND NOT EXISTS (SELECT 1 FROM bindings b WHERE b.source = s.path AND b.status = 'armed')
+`
+
+// A source an armed binding fires on is not deleted: the binding would
+// silently stop receiving events.
+func (q *Queries) DeleteUnboundSource(ctx context.Context, path string) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteUnboundSource, path)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deriveSources = `-- name: DeriveSources :exec
 SELECT derive_sources()
 `
@@ -342,7 +357,7 @@ func (q *Queries) GetMapping(ctx context.Context, id string) (GetMappingRow, err
 }
 
 const getSource = `-- name: GetSource :one
-SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id FROM sources WHERE path = $1
+SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id, name FROM sources WHERE path = $1
 `
 
 func (q *Queries) GetSource(ctx context.Context, path string) (Source, error) {
@@ -356,6 +371,7 @@ func (q *Queries) GetSource(ctx context.Context, path string) (Source, error) {
 		&i.UpdatedAt,
 		&i.OrgID,
 		&i.WorkspaceID,
+		&i.Name,
 	)
 	return i, err
 }
@@ -837,7 +853,7 @@ func (q *Queries) ListMappings(ctx context.Context) ([]ListMappingsRow, error) {
 }
 
 const listSources = `-- name: ListSources :many
-SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id FROM sources ORDER BY created_at DESC, path
+SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id, name FROM sources ORDER BY created_at DESC, path
 `
 
 func (q *Queries) ListSources(ctx context.Context) ([]Source, error) {
@@ -857,6 +873,7 @@ func (q *Queries) ListSources(ctx context.Context) ([]Source, error) {
 			&i.UpdatedAt,
 			&i.OrgID,
 			&i.WorkspaceID,
+			&i.Name,
 		); err != nil {
 			return nil, err
 		}
@@ -956,6 +973,23 @@ type SetBindingDispatchTaskParams struct {
 func (q *Queries) SetBindingDispatchTask(ctx context.Context, arg SetBindingDispatchTaskParams) error {
 	_, err := q.db.Exec(ctx, setBindingDispatchTask, arg.Binding, arg.Capture, arg.TaskID)
 	return err
+}
+
+const setSourceName = `-- name: SetSourceName :execrows
+UPDATE sources SET name = $2, updated_at = now() WHERE path = $1
+`
+
+type SetSourceNameParams struct {
+	Path string
+	Name string
+}
+
+func (q *Queries) SetSourceName(ctx context.Context, arg SetSourceNameParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setSourceName, arg.Path, arg.Name)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const setSourceSecret = `-- name: SetSourceSecret :execrows

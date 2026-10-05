@@ -111,6 +111,8 @@ const (
 	StateStoreService_ListSources_FullMethodName                = "/state.v1.StateStoreService/ListSources"
 	StateStoreService_SetSourceSigning_FullMethodName           = "/state.v1.StateStoreService/SetSourceSigning"
 	StateStoreService_SetSourceSecret_FullMethodName            = "/state.v1.StateStoreService/SetSourceSecret"
+	StateStoreService_SetSourceName_FullMethodName              = "/state.v1.StateStoreService/SetSourceName"
+	StateStoreService_DeleteSource_FullMethodName               = "/state.v1.StateStoreService/DeleteSource"
 	StateStoreService_ArmedBindingsForSource_FullMethodName     = "/state.v1.StateStoreService/ArmedBindingsForSource"
 	StateStoreService_RecordDispatch_FullMethodName             = "/state.v1.StateStoreService/RecordDispatch"
 	StateStoreService_SetDispatchTask_FullMethodName            = "/state.v1.StateStoreService/SetDispatchTask"
@@ -315,6 +317,8 @@ type StateStoreServiceClient interface {
 	ListSources(ctx context.Context, in *ListSourcesRequest, opts ...grpc.CallOption) (*ListSourcesResponse, error)
 	SetSourceSigning(ctx context.Context, in *SetSourceSigningRequest, opts ...grpc.CallOption) (*SetSourceSigningResponse, error)
 	SetSourceSecret(ctx context.Context, in *SetSourceSecretRequest, opts ...grpc.CallOption) (*SetSourceSecretResponse, error)
+	SetSourceName(ctx context.Context, in *SetSourceNameRequest, opts ...grpc.CallOption) (*SetSourceNameResponse, error)
+	DeleteSource(ctx context.Context, in *DeleteSourceRequest, opts ...grpc.CallOption) (*DeleteSourceResponse, error)
 	// Dispatch
 	ArmedBindingsForSource(ctx context.Context, in *ArmedBindingsForSourceRequest, opts ...grpc.CallOption) (*ArmedBindingsForSourceResponse, error)
 	RecordDispatch(ctx context.Context, in *RecordDispatchRequest, opts ...grpc.CallOption) (*RecordDispatchResponse, error)
@@ -1310,6 +1314,26 @@ func (c *stateStoreServiceClient) SetSourceSecret(ctx context.Context, in *SetSo
 	return out, nil
 }
 
+func (c *stateStoreServiceClient) SetSourceName(ctx context.Context, in *SetSourceNameRequest, opts ...grpc.CallOption) (*SetSourceNameResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetSourceNameResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_SetSourceName_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) DeleteSource(ctx context.Context, in *DeleteSourceRequest, opts ...grpc.CallOption) (*DeleteSourceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteSourceResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_DeleteSource_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *stateStoreServiceClient) ArmedBindingsForSource(ctx context.Context, in *ArmedBindingsForSourceRequest, opts ...grpc.CallOption) (*ArmedBindingsForSourceResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ArmedBindingsForSourceResponse)
@@ -1746,6 +1770,8 @@ type StateStoreServiceServer interface {
 	ListSources(context.Context, *ListSourcesRequest) (*ListSourcesResponse, error)
 	SetSourceSigning(context.Context, *SetSourceSigningRequest) (*SetSourceSigningResponse, error)
 	SetSourceSecret(context.Context, *SetSourceSecretRequest) (*SetSourceSecretResponse, error)
+	SetSourceName(context.Context, *SetSourceNameRequest) (*SetSourceNameResponse, error)
+	DeleteSource(context.Context, *DeleteSourceRequest) (*DeleteSourceResponse, error)
 	// Dispatch
 	ArmedBindingsForSource(context.Context, *ArmedBindingsForSourceRequest) (*ArmedBindingsForSourceResponse, error)
 	RecordDispatch(context.Context, *RecordDispatchRequest) (*RecordDispatchResponse, error)
@@ -2078,6 +2104,12 @@ func (UnimplementedStateStoreServiceServer) SetSourceSigning(context.Context, *S
 }
 func (UnimplementedStateStoreServiceServer) SetSourceSecret(context.Context, *SetSourceSecretRequest) (*SetSourceSecretResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetSourceSecret not implemented")
+}
+func (UnimplementedStateStoreServiceServer) SetSourceName(context.Context, *SetSourceNameRequest) (*SetSourceNameResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetSourceName not implemented")
+}
+func (UnimplementedStateStoreServiceServer) DeleteSource(context.Context, *DeleteSourceRequest) (*DeleteSourceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteSource not implemented")
 }
 func (UnimplementedStateStoreServiceServer) ArmedBindingsForSource(context.Context, *ArmedBindingsForSourceRequest) (*ArmedBindingsForSourceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ArmedBindingsForSource not implemented")
@@ -3817,6 +3849,42 @@ func _StateStoreService_SetSourceSecret_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StateStoreService_SetSourceName_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetSourceNameRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).SetSourceName(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_SetSourceName_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).SetSourceName(ctx, req.(*SetSourceNameRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_DeleteSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteSourceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).DeleteSource(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_DeleteSource_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).DeleteSource(ctx, req.(*DeleteSourceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _StateStoreService_ArmedBindingsForSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ArmedBindingsForSourceRequest)
 	if err := dec(in); err != nil {
@@ -4626,6 +4694,14 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetSourceSecret",
 			Handler:    _StateStoreService_SetSourceSecret_Handler,
+		},
+		{
+			MethodName: "SetSourceName",
+			Handler:    _StateStoreService_SetSourceName_Handler,
+		},
+		{
+			MethodName: "DeleteSource",
+			Handler:    _StateStoreService_DeleteSource_Handler,
 		},
 		{
 			MethodName: "ArmedBindingsForSource",

@@ -64,5 +64,10 @@ export function useSources() {
       run(() => api.sourceSigning<Source>(source.path, true)),
     approveUnsigned: (source: Source) =>
       run(() => api.sourceApproveUnsigned<Source>(source.path)),
+    rename: (source: Source, name: string) =>
+      run(() => api.sourceName<Source>(source.path, name.trim())),
+    // An armed binding on the source refuses the delete; the refusal shows
+    // as the panel's failure.
+    remove: (source: Source) => run(() => api.sourceDelete(source.path)),
   };
 }

@@ -152,10 +152,10 @@ SELECT pg_advisory_xact_lock(hashtext('event_types:' || sqlc.arg(source)::text))
 INSERT INTO sources (path, signing, secret) VALUES ($1, $2, $3);
 
 -- name: GetSource :one
-SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id FROM sources WHERE path = $1;
+SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id, name FROM sources WHERE path = $1;
 
 -- name: ListSources :many
-SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id FROM sources ORDER BY created_at DESC, path;
+SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id, name FROM sources ORDER BY created_at DESC, path;
 
 -- name: SetSourceSigning :execrows
 UPDATE sources SET signing = sqlc.arg(to_signing), updated_at = now()
@@ -163,6 +163,15 @@ WHERE path = sqlc.arg(path) AND signing = sqlc.arg(from_signing);
 
 -- name: SetSourceSecret :execrows
 UPDATE sources SET secret = $2, updated_at = now() WHERE path = $1;
+
+-- name: SetSourceName :execrows
+UPDATE sources SET name = $2, updated_at = now() WHERE path = $1;
+
+-- name: DeleteUnboundSource :execrows
+-- A source an armed binding fires on is not deleted: the binding would
+-- silently stop receiving events.
+DELETE FROM sources s WHERE s.path = $1
+  AND NOT EXISTS (SELECT 1 FROM bindings b WHERE b.source = s.path AND b.status = 'armed');
 
 -- name: SourceExists :one
 SELECT EXISTS (SELECT 1 FROM sources WHERE path = $1);

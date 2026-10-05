@@ -304,6 +304,8 @@ func (s *Server) registerMappingAndBindingRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/sources/{path}/signing", s.handleSourceSigning)
 	mux.HandleFunc("POST /api/sources/{path}/approve-unsigned", s.handleSourceApproveUnsigned)
 	mux.HandleFunc("POST /api/sources/{path}/secret", s.handleSourceSecret)
+	mux.HandleFunc("PUT /api/sources/{path}/name", s.handleSourceName)
+	mux.HandleFunc("DELETE /api/sources/{path}", s.handleSourceDelete)
 }
 
 func (s *Server) registerHarnessRoutes(mux *http.ServeMux) {

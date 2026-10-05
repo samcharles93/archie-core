@@ -954,6 +954,28 @@ func (s *server) SetSourceSecret(ctx context.Context, r *pb.SetSourceSecretReque
 	return &pb.SetSourceSecretResponse{}, nil
 }
 
+func (s *server) SetSourceName(ctx context.Context, r *pb.SetSourceNameRequest) (*pb.SetSourceNameResponse, error) {
+	ss, err := s.sources()
+	if err != nil {
+		return nil, err
+	}
+	if err := ss.SetSourceName(ctx, r.Path, r.Name); err != nil {
+		return nil, s.logErr("SetSourceName", err)
+	}
+	return &pb.SetSourceNameResponse{}, nil
+}
+
+func (s *server) DeleteSource(ctx context.Context, r *pb.DeleteSourceRequest) (*pb.DeleteSourceResponse, error) {
+	ss, err := s.sources()
+	if err != nil {
+		return nil, err
+	}
+	if err := ss.DeleteSource(ctx, r.Path); err != nil {
+		return nil, s.logErr("DeleteSource", err)
+	}
+	return &pb.DeleteSourceResponse{}, nil
+}
+
 // Dispatch
 
 func (s *server) ArmedBindingsForSource(ctx context.Context, r *pb.ArmedBindingsForSourceRequest) (*pb.ArmedBindingsForSourceResponse, error) {

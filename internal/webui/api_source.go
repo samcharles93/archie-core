@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/source"
@@ -131,6 +132,47 @@ func (s *Server) handleSourceSecret(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, src)
 }
 
+// handleSourceName relabels a source; its path does not change.
+func (s *Server) handleSourceName(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeTaskMutation(w, r) {
+		return
+	}
+	src, ok := s.loadSource(w, r)
+	if !ok {
+		return
+	}
+	var request struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&request); err != nil {
+		http.Error(w, "invalid source name", http.StatusBadRequest)
+		return
+	}
+	src.Name = strings.TrimSpace(request.Name)
+	if err := s.Sources.SetSourceName(r.Context(), src.Path, src.Name); err != nil {
+		s.sourceError(w, "set source name", err)
+		return
+	}
+	src.Secret = ""
+	writeJSON(w, src)
+}
+
+// handleSourceDelete deletes a source no armed binding fires on.
+func (s *Server) handleSourceDelete(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeTaskMutation(w, r) {
+		return
+	}
+	if s.Sources == nil {
+		http.Error(w, "sources not configured", http.StatusServiceUnavailable)
+		return
+	}
+	if err := s.Sources.DeleteSource(r.Context(), r.PathValue("path")); err != nil {
+		s.sourceError(w, "delete source", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) loadSource(w http.ResponseWriter, r *http.Request) (*source.Source, bool) {
 	if s.Sources == nil {
 		http.Error(w, "sources not configured", http.StatusServiceUnavailable)
@@ -156,6 +198,8 @@ func (s *Server) sourceError(w http.ResponseWriter, what string, err error) {
 		http.Error(w, "source signing changed; reload and retry", http.StatusConflict)
 	case errors.Is(err, storecontract.ErrSourceNotFound):
 		http.Error(w, "source not found", http.StatusNotFound)
+	case errors.Is(err, storecontract.ErrSourceInUse):
+		http.Error(w, "an armed binding fires on this source; pause or delete it first", http.StatusConflict)
 	default:
 		s.Log.Error(what, "err", err)
 		http.Error(w, what+" failed", http.StatusInternalServerError)

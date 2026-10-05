@@ -344,6 +344,7 @@ type Source struct {
 	UpdatedAt   time.Time
 	OrgID       string
 	WorkspaceID string
+	Name        string
 }
 
 type StepExecution struct {

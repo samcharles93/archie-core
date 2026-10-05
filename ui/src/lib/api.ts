@@ -336,6 +336,10 @@ export const api = {
     request<T>(`/api/sources/${encodeURIComponent(path)}/approve-unsigned`, {
       method: "POST",
     }),
+  sourceName: <T = unknown>(path: string, name: string) =>
+    request<T>(`/api/sources/${encodeURIComponent(path)}/name`, { method: "PUT", body: { name } }),
+  sourceDelete: (path: string) =>
+    request<void>(`/api/sources/${encodeURIComponent(path)}`, { method: "DELETE", parse: false }),
   sourceSecret: <T = unknown>(path: string) =>
     request<T>(`/api/sources/${encodeURIComponent(path)}/secret`, {
       method: "POST",

@@ -35,7 +35,9 @@ var (
 // captures and binding matchers reference it, so it does not change after
 // creation. Secret is the HMAC key a signed sender signs with.
 type Source struct {
-	Path      string    `json:"path"`
+	Path string `json:"path"`
+	// Name is the operator's label; Path stays the source's identity.
+	Name      string    `json:"name,omitempty"`
 	Signing   Signing   `json:"signing"`
 	Secret    string    `json:"secret,omitempty"`
 	CreatedAt time.Time `json:"created_at"`

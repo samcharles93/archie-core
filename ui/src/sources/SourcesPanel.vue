@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Check, Copy, KeyRound, Lock, LockOpen, Plus } from "@lucide/vue";
+import { Check, Copy, KeyRound, Lock, LockOpen, Plus, Trash2 } from "@lucide/vue";
 import { onMounted, ref } from "vue";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -46,6 +46,8 @@ const {
   requestUnsigned,
   requireSigning,
   approveUnsigned,
+  rename,
+  remove,
   refusals,
 } = useSources();
 
@@ -111,7 +113,14 @@ function url(source: Source): string {
               <TableCell
                 class="max-w-0 truncate font-mono text-fg-muted"
                 :title="url(source)"
-                >{{ source.path }}
+                ><input
+                  class="block w-full bg-transparent font-sans text-sm text-foreground outline-none placeholder:text-fg-subtle focus:underline"
+                  :value="source.name ?? ''"
+                  placeholder="Name this source"
+                  :aria-label="`Name of source ${source.path}`"
+                  :disabled="busy"
+                  @change="rename(source, ($event.target as HTMLInputElement).value)"
+                />{{ source.path }}
                 <div
                   v-if="refusals[source.path]"
                   class="text-xs font-sans text-destructive"
@@ -185,6 +194,20 @@ function url(source: Source): string {
                     <Lock data-icon="inline-start" />
                     Require signing
                   </Button>
+                  <Tooltip>
+                    <TooltipTrigger as-child>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Delete source"
+                        :disabled="busy"
+                        @click="remove(source)"
+                      >
+                        <Trash2 />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Delete source</TooltipContent>
+                  </Tooltip>
                 </div>
               </TableCell>
             </TableRow>

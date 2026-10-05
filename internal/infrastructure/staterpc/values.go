@@ -211,7 +211,7 @@ func capturedEventValue(c *pb.CapturedEvent) storecontract.CapturedEvent {
 
 func sourceProto(s source.Source) *pb.Source {
 	return &pb.Source{
-		Path: s.Path, Signing: string(s.Signing), Secret: s.Secret,
+		Path: s.Path, Name: s.Name, Signing: string(s.Signing), Secret: s.Secret,
 		CreatedAt: timestamp(s.CreatedAt), UpdatedAt: timestamp(s.UpdatedAt),
 	}
 }
@@ -221,7 +221,7 @@ func sourceValue(s *pb.Source) source.Source {
 		return source.Source{}
 	}
 	return source.Source{
-		Path: s.Path, Signing: source.Signing(s.Signing), Secret: s.Secret,
+		Path: s.Path, Name: s.Name, Signing: source.Signing(s.Signing), Secret: s.Secret,
 		CreatedAt: timeValue(s.CreatedAt), UpdatedAt: timeValue(s.UpdatedAt),
 	}
 }
@@ -496,6 +496,7 @@ var wireErrors = []struct {
 	{storecontract.ErrMappingNotFound, codes.NotFound, msgMappingNotFound},
 	{storecontract.ErrEventTypeNotFound, codes.NotFound, msgEventTypeNotFound},
 	{storecontract.ErrSourceNotFound, codes.NotFound, msgSourceNotFound},
+	{storecontract.ErrSourceInUse, codes.FailedPrecondition, storecontract.ErrSourceInUse.Error()},
 	{storecontract.ErrAlreadyDispatched, codes.AlreadyExists, msgAlreadyDispatched},
 	{storecontract.ErrCallNotYours, codes.PermissionDenied, storecontract.ErrCallNotYours.Error()},
 	{storecontract.ErrCallCallerNotRunning, codes.FailedPrecondition, storecontract.ErrCallCallerNotRunning.Error()},

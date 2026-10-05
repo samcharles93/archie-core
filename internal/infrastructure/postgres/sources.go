@@ -102,6 +102,37 @@ func (s *EDA) SetSourceSecret(ctx context.Context, path, secret string) error {
 	return nil
 }
 
+// SetSourceName relabels a source.
+func (s *EDA) SetSourceName(ctx context.Context, path, name string) error {
+	n, err := s.q.SetSourceName(ctx, postgresdb.SetSourceNameParams{Path: path, Name: name})
+	if err != nil {
+		return fmt.Errorf("edastore: set source name: %w", err)
+	}
+	if n == 0 {
+		return storecontract.ErrSourceNotFound
+	}
+	return nil
+}
+
+// DeleteSource deletes a source no armed binding fires on.
+func (s *EDA) DeleteSource(ctx context.Context, path string) error {
+	n, err := s.q.DeleteUnboundSource(ctx, path)
+	if err != nil {
+		return fmt.Errorf("edastore: delete source: %w", err)
+	}
+	if n > 0 {
+		return nil
+	}
+	exists, err := s.q.SourceExists(ctx, path)
+	if err != nil {
+		return fmt.Errorf("edastore: delete source: %w", err)
+	}
+	if exists {
+		return storecontract.ErrSourceInUse
+	}
+	return storecontract.ErrSourceNotFound
+}
+
 // sealSecret encrypts a non-empty secret when a cipher is configured.
 func (s *EDA) sealSecret(secret string) (string, error) {
 	if s.cipher == nil || secret == "" {
@@ -124,7 +155,7 @@ func (s *EDA) sourceValue(r postgresdb.Source) (source.Source, error) {
 		secret = plain
 	}
 	return source.Source{
-		Path: r.Path, Signing: source.Signing(r.Signing), Secret: secret,
+		Path: r.Path, Name: r.Name, Signing: source.Signing(r.Signing), Secret: secret,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}, nil
 }

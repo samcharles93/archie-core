@@ -39,6 +39,8 @@ const inputs = computed(() =>
 const repository = computed(() => takesRepository({ id: "", name: "", repository: String(workflowField(props.yaml, "repository") ?? "") || undefined }));
 
 const sources = ref<string[]>([]);
+// The operator's label for each source path, where one is set.
+const sourceNames = ref<Record<string, string>>({});
 const captures = ref<Capture[]>([]);
 const eventTypes = ref<EventType[]>([]);
 const mappings = ref<Mapping[]>([]);
@@ -64,13 +66,14 @@ async function loadCaptures(): Promise<void> {
 
 onMounted(async () => {
   const [listed, types, mapped, bound] = await Promise.all([
-    api.sources<{ sources?: { path: string }[] }>().catch(() => null),
+    api.sources<{ sources?: { path: string; name?: string }[] }>().catch(() => null),
     api.eventTypes<{ event_types?: EventType[] }>().catch(() => null),
     api.mappings<{ mappings?: Mapping[] }>().catch(() => null),
     api.bindings<{ bindings?: Binding[] }>().catch(() => null),
     loadCaptures(),
   ]);
   sources.value = (listed?.sources ?? []).map((s) => s.path);
+  sourceNames.value = Object.fromEntries((listed?.sources ?? []).filter((s) => s.name).map((s) => [s.path, s.name!]));
   eventTypes.value = types?.event_types ?? [];
   mappings.value = mapped?.mappings ?? [];
   bindings.value = bound?.bindings ?? [];
@@ -235,7 +238,7 @@ const resume = () => transition(api.bindingResume, "pending_approval");
         <label for="bind-source" class="text-xs font-medium text-muted-foreground">Source</label>
         <select id="bind-source" v-model="source" class="h-8 w-full rounded-md border border-input bg-background px-2 text-[13px]" :disabled="!!binding">
           <option value="" disabled>Pick a source</option>
-          <option v-for="path in sources" :key="path" :value="path">{{ path }}</option>
+          <option v-for="path in sources" :key="path" :value="path">{{ sourceNames[path] ? `${sourceNames[path]} (${path})` : path }}</option>
           <option :value="NEW_SOURCE">New source…</option>
         </select>
         <input

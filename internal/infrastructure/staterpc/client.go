@@ -659,6 +659,16 @@ func (c *Client) SetSourceSigning(ctx context.Context, path string, from, to sou
 	return unmapError(err)
 }
 
+func (c *Client) SetSourceName(ctx context.Context, path, name string) error {
+	_, err := c.client.SetSourceName(ctx, &pb.SetSourceNameRequest{Path: path, Name: name})
+	return unmapError(err)
+}
+
+func (c *Client) DeleteSource(ctx context.Context, path string) error {
+	_, err := c.client.DeleteSource(ctx, &pb.DeleteSourceRequest{Path: path})
+	return unmapError(err)
+}
+
 func (c *Client) SetSourceSecret(ctx context.Context, path, secret string) error {
 	_, err := c.client.SetSourceSecret(ctx, &pb.SetSourceSecretRequest{Path: path, Secret: secret})
 	return unmapError(err)

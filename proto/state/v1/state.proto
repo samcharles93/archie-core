@@ -190,6 +190,8 @@ service StateStoreService {
   rpc ListSources(ListSourcesRequest) returns (ListSourcesResponse);
   rpc SetSourceSigning(SetSourceSigningRequest) returns (SetSourceSigningResponse);
   rpc SetSourceSecret(SetSourceSecretRequest) returns (SetSourceSecretResponse);
+  rpc SetSourceName(SetSourceNameRequest) returns (SetSourceNameResponse);
+  rpc DeleteSource(DeleteSourceRequest) returns (DeleteSourceResponse);
 
   // Dispatch
   rpc ArmedBindingsForSource(ArmedBindingsForSourceRequest) returns (ArmedBindingsForSourceResponse);
@@ -557,6 +559,7 @@ message Source {
   string secret = 3;
   google.protobuf.Timestamp created_at = 4;
   google.protobuf.Timestamp updated_at = 5;
+  string name = 6;
 }
 
 // WorkflowStat mirrors storecontract.WorkflowStat.
@@ -1119,6 +1122,13 @@ message DeleteBindingResponse {}
 
 message ApproveBindingRequest { string id = 1; }
 message ApproveBindingResponse {}
+message SetSourceNameRequest {
+  string path = 1;
+  string name = 2;
+}
+message SetSourceNameResponse {}
+message DeleteSourceRequest { string path = 1; }
+message DeleteSourceResponse {}
 message PauseBindingRequest { string id = 1; }
 message PauseBindingResponse {}
 message ResumeBindingRequest { string id = 1; }

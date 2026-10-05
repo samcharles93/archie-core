@@ -248,6 +248,10 @@ type SourceStore interface {
 	ListSources(ctx context.Context) ([]source.Source, error)
 	SetSourceSigning(ctx context.Context, path string, from, to source.Signing) error
 	SetSourceSecret(ctx context.Context, path, secret string) error
+	SetSourceName(ctx context.Context, path, name string) error
+	// DeleteSource refuses with ErrSourceInUse while an armed binding fires
+	// on the source.
+	DeleteSource(ctx context.Context, path string) error
 }
 
 // DispatchLedger reads the binding dispatch ledger.
@@ -488,6 +492,9 @@ var (
 	ErrEventTypeNotFound = errors.New("store: event type not found")
 	// ErrSourceNotFound is returned when a source path does not exist.
 	ErrSourceNotFound = errors.New("store: source not found")
+	// ErrSourceInUse is returned when deleting a source an armed binding
+	// fires on.
+	ErrSourceInUse = errors.New("store: source has an armed binding")
 	// ErrSourcePathTaken is returned when a new source's path is in use.
 	ErrSourcePathTaken = errors.New("store: source path already taken")
 	// ErrSourceSigningStale is returned when a signing write's expected
