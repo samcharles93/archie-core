@@ -660,6 +660,7 @@ func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c st
 		return
 	}
 	if admitted, _ := filter.Admits(values); !admitted {
+		d.recordEvaluated(ctx, b, c, "filtered")
 		return
 	}
 
@@ -672,8 +673,8 @@ func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c st
 	}
 	// The chain decides dispatch: the workflow's identity may `run` this
 	// workflow in its workspace, and the event's signature result and address
-	// travel with the request. A denial is recorded and the dispatch is not
-	// claimed: the capture stays listed for the next cycle.
+	// travel with the request. A denial is terminal; an unavailable principal
+	// leaves the capture listed for the next cycle.
 	if !d.authorizeDispatch(ctx, b, c, target) {
 		return
 	}
@@ -684,7 +685,7 @@ func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c st
 // the task. A failed enqueue after the claim loses that dispatch, which is
 // the at-most-once side of the trade.
 func (d *Daemon) claimAndEnqueue(ctx context.Context, b binding.Binding, c storecontract.CapturedEvent, target bindingTarget, values map[string]any) {
-	if err := d.BindingDispatcher.RecordDispatch(ctx, b.ID, int64(b.Version), c.ID, 0); err != nil {
+	if err := d.BindingDispatcher.RecordDispatch(ctx, b.ID, int64(b.Version), c.ID, 0, ""); err != nil {
 		if !errors.Is(err, storecontract.ErrAlreadyDispatched) {
 			d.Log.Warn("binding dispatch: record", "binding", b.ID, "capture", c.ID, "error", err)
 		}
@@ -767,8 +768,10 @@ func (d *Daemon) markUnsignedStart(ctx context.Context, taskID int64, b binding.
 	}
 }
 
-// recordDispatchFailure records why a binding did not dispatch a capture.
+// recordDispatchFailure records why a binding did not dispatch a capture and
+// marks the pair evaluated, so the capture is not offered to it again.
 func (d *Daemon) recordDispatchFailure(ctx context.Context, b binding.Binding, c storecontract.CapturedEvent, reason string, extra map[string]any) {
+	d.recordEvaluated(ctx, b, c, reason)
 	data := map[string]any{
 		"binding_id":      b.ID,
 		"binding_version": b.Version,
@@ -780,6 +783,16 @@ func (d *Daemon) recordDispatchFailure(ctx context.Context, b binding.Binding, c
 		Detail: fmt.Sprintf("binding %q (capture %q): %s", b.ID, c.ID, reason),
 		Data:   data,
 	})
+}
+
+// recordEvaluated writes the ledger row for an evaluation that started no
+// task. Only terminal outcomes call it; transient ones leave the capture
+// listed for the next cycle.
+func (d *Daemon) recordEvaluated(ctx context.Context, b binding.Binding, c storecontract.CapturedEvent, reason string) {
+	err := d.BindingDispatcher.RecordDispatch(ctx, b.ID, int64(b.Version), c.ID, 0, reason)
+	if err != nil && !errors.Is(err, storecontract.ErrAlreadyDispatched) {
+		d.Log.Warn("binding dispatch: record evaluation", "binding", b.ID, "capture", c.ID, "error", err)
+	}
 }
 
 // hasBlockingFailure reports whether any failure is on a required field.

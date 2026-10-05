@@ -942,7 +942,7 @@ func (s *server) RecordDispatch(ctx context.Context, r *pb.RecordDispatchRequest
 	if s.deps.BindingDispatcher == nil {
 		return nil, errBindingDispatchUnavailable
 	}
-	if err := s.deps.BindingDispatcher.RecordDispatch(ctx, r.BindingId, r.BindingVersion, r.CaptureId, r.TaskId); err != nil {
+	if err := s.deps.BindingDispatcher.RecordDispatch(ctx, r.BindingId, r.BindingVersion, r.CaptureId, r.TaskId, r.Reason); err != nil {
 		return nil, s.logErr("RecordDispatch", err)
 	}
 	return &pb.RecordDispatchResponse{}, nil

@@ -485,13 +485,15 @@ func (s *EDA) ApproveBinding(ctx context.Context, id string) error {
 
 // RecordDispatch writes one at-most-once binding dispatch. binding_version is
 // stored but is not part of the unique key, so a version bump does not permit
-// re-dispatching the same (binding, capture).
-func (s *EDA) RecordDispatch(ctx context.Context, bindingID string, bindingVersion int64, captureID string, taskID int64) error {
+// re-dispatching the same (binding, capture). A non-empty reason records an
+// evaluation that ended without a task.
+func (s *EDA) RecordDispatch(ctx context.Context, bindingID string, bindingVersion int64, captureID string, taskID int64, reason string) error {
 	err := s.q.InsertBindingDispatch(ctx, postgresdb.InsertBindingDispatchParams{
 		Binding:        bindingID,
 		BindingVersion: bindingVersion,
 		Capture:        captureID,
 		TaskID:         taskID,
+		Reason:         reason,
 	})
 	return ledgerWrite(err, "edastore: record dispatch")
 }

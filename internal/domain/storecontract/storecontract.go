@@ -257,6 +257,9 @@ type BindingDispatcher interface {
 		// migrating: it stays an integer on purpose. The binding dispatch
 		// loop claims before it enqueues, so it records 0.
 		taskID int64,
+		// reason is empty for a dispatch and names the terminal outcome of
+		// an evaluation that started no task.
+		reason string,
 	) error
 	ListUndispatchedCaptures(ctx context.Context, sources []string, limit int) ([]CapturedEvent, error)
 }

@@ -10645,7 +10645,10 @@ type RecordDispatchRequest struct {
 	BindingVersion int64                  `protobuf:"varint,2,opt,name=binding_version,json=bindingVersion,proto3" json:"binding_version,omitempty"`
 	CaptureId      string                 `protobuf:"bytes,3,opt,name=capture_id,json=captureId,proto3" json:"capture_id,omitempty"`
 	// task_id addresses the tasks table.
-	TaskId        int64 `protobuf:"varint,4,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	TaskId int64 `protobuf:"varint,4,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	// reason is empty for a dispatch and names why an evaluated capture
+	// started no task.
+	Reason        string `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -10706,6 +10709,13 @@ func (x *RecordDispatchRequest) GetTaskId() int64 {
 		return x.TaskId
 	}
 	return 0
+}
+
+func (x *RecordDispatchRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
 }
 
 type RecordDispatchResponse struct {
@@ -13662,14 +13672,15 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x1dArmedBindingsForSourceRequest\x12\x16\n" +
 	"\x06source\x18\x01 \x01(\tR\x06source\"O\n" +
 	"\x1eArmedBindingsForSourceResponse\x12-\n" +
-	"\bbindings\x18\x01 \x03(\v2\x11.state.v1.BindingR\bbindings\"\x97\x01\n" +
+	"\bbindings\x18\x01 \x03(\v2\x11.state.v1.BindingR\bbindings\"\xaf\x01\n" +
 	"\x15RecordDispatchRequest\x12\x1d\n" +
 	"\n" +
 	"binding_id\x18\x01 \x01(\tR\tbindingId\x12'\n" +
 	"\x0fbinding_version\x18\x02 \x01(\x03R\x0ebindingVersion\x12\x1d\n" +
 	"\n" +
 	"capture_id\x18\x03 \x01(\tR\tcaptureId\x12\x17\n" +
-	"\atask_id\x18\x04 \x01(\x03R\x06taskId\"\x18\n" +
+	"\atask_id\x18\x04 \x01(\x03R\x06taskId\x12\x16\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\"\x18\n" +
 	"\x16RecordDispatchResponse\"\xa3\x01\n" +
 	"\x1dRecordPlaybookDispatchRequest\x12\x1f\n" +
 	"\vplaybook_id\x18\x01 \x01(\tR\n" +

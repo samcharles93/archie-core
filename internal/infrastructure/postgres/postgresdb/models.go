@@ -78,6 +78,7 @@ type BindingDispatch struct {
 	Capture        string
 	TaskID         int64
 	DispatchedAt   time.Time
+	Reason         string
 }
 
 type Capture struct {

@@ -1114,6 +1114,9 @@ message RecordDispatchRequest {
   string capture_id = 3;
   // task_id addresses the tasks table.
   int64 task_id = 4;
+  // reason is empty for a dispatch and names why an evaluated capture
+  // started no task.
+  string reason = 5;
 }
 message RecordDispatchResponse {}
 

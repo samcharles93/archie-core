@@ -395,8 +395,8 @@ func (q *Queries) InsertBinding(ctx context.Context, arg InsertBindingParams) er
 }
 
 const insertBindingDispatch = `-- name: InsertBindingDispatch :exec
-INSERT INTO binding_dispatches (binding, binding_version, capture, task_id)
-VALUES ($1, $2, $3, $4)
+INSERT INTO binding_dispatches (binding, binding_version, capture, task_id, reason)
+VALUES ($1, $2, $3, $4, $5)
 `
 
 type InsertBindingDispatchParams struct {
@@ -404,6 +404,7 @@ type InsertBindingDispatchParams struct {
 	BindingVersion int64
 	Capture        string
 	TaskID         int64
+	Reason         string
 }
 
 func (q *Queries) InsertBindingDispatch(ctx context.Context, arg InsertBindingDispatchParams) error {
@@ -412,6 +413,7 @@ func (q *Queries) InsertBindingDispatch(ctx context.Context, arg InsertBindingDi
 		arg.BindingVersion,
 		arg.Capture,
 		arg.TaskID,
+		arg.Reason,
 	)
 	return err
 }

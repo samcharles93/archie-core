@@ -88,8 +88,8 @@ UPDATE bindings SET status = 'armed', updated_at = now() WHERE id = $1;
 DELETE FROM bindings WHERE id = $1;
 
 -- name: InsertBindingDispatch :exec
-INSERT INTO binding_dispatches (binding, binding_version, capture, task_id)
-VALUES ($1, $2, $3, $4);
+INSERT INTO binding_dispatches (binding, binding_version, capture, task_id, reason)
+VALUES ($1, $2, $3, $4, $5);
 
 -- name: InsertPlaybookDispatch :exec
 INSERT INTO playbook_dispatches (playbook_id, playbook_version, event_id, action_id)

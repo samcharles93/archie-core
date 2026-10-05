@@ -635,8 +635,8 @@ func (c *Client) ArmedBindingsForSource(ctx context.Context, source string) ([]b
 	return mapValues(r.Bindings, bindingValue), nil
 }
 
-func (c *Client) RecordDispatch(ctx context.Context, bindingID string, bindingVersion int64, captureID string, taskID int64) error {
-	_, err := c.client.RecordDispatch(ctx, &pb.RecordDispatchRequest{BindingId: bindingID, BindingVersion: bindingVersion, CaptureId: captureID, TaskId: taskID})
+func (c *Client) RecordDispatch(ctx context.Context, bindingID string, bindingVersion int64, captureID string, taskID int64, reason string) error {
+	_, err := c.client.RecordDispatch(ctx, &pb.RecordDispatchRequest{BindingId: bindingID, BindingVersion: bindingVersion, CaptureId: captureID, TaskId: taskID, Reason: reason})
 	return unmapError(err)
 }
 
