@@ -25,6 +25,10 @@ export interface StepNodeData {
    * that name it is: two unnamed repo.commit steps are commit 0 and 1. */
   stage?: string;
   occurrence?: number;
+  /** The top-level stage this node resumes the run from. A branch step's own
+   * recorded name is branch-qualified and cannot resume on its own, so it
+   * names the parallel step it belongs to here. */
+  resume?: string;
   run?: StageRun;
   /** Where the step lives in the YAML document, for editing it. */
   path?: (string | number)[];
@@ -79,11 +83,12 @@ export interface Restart {
 export function restartAt(graph: WorkflowGraph, path: (string | number)[]): Restart | null {
   const top = (data: StepNodeData) => (data.path && data.path.length >= 2 ? Number(data.path[1]) : -1);
   const node = graph.nodes.find((candidate) => JSON.stringify(candidate.data.path) === JSON.stringify(path))?.data;
-  if (!node?.stage) return null;
+  const from = node?.resume ?? node?.stage;
+  if (!node || !from) return null;
   const stopped = Math.max(-1, ...graph.nodes.filter((candidate) => candidate.data.run).map((candidate) => top(candidate.data)));
   const at = top(node);
   if (at < 0 || at > stopped) return null;
-  return { label: at === stopped ? "Resume from here" : "Re-run from here", from: node.stage };
+  return { label: at === stopped ? "Resume from here" : "Re-run from here", from };
 }
 
 export interface GraphNode {
@@ -223,7 +228,7 @@ export function workflowGraph(source: string): WorkflowGraph {
     x: number,
     y: number,
     branch?: string,
-    recorded?: { stage: string; occurrence: number },
+    resume?: string,
     path?: (string | number)[],
   ): string => {
     const record = isMapping(step) ? step : {};
@@ -231,6 +236,9 @@ export function workflowGraph(source: string): WorkflowGraph {
     const settings = isMapping(record.settings) ? record.settings : {};
     const stepID = typeof record.id === "string" ? record.id : "";
     const id = `step-${key}`;
+    // A branch step's row is named after its branch, so two branches running
+    // the same step are two rows rather than one shared run.
+    const recordName = branch ? `${branch}/${stepID || type}` : stepID || type;
     nodes.push({
       id,
       type: "step",
@@ -247,7 +255,9 @@ export function workflowGraph(source: string): WorkflowGraph {
         continues: record.on_failure === "continue",
         branch,
         path,
-        ...(recorded ?? { stage: stepID || type, occurrence: occurrenceOf(stepID || type) }),
+        stage: recordName,
+        occurrence: occurrenceOf(recordName),
+        ...(resume ? { resume } : {}),
       },
     });
     if (stepID) byStepID.set(stepID, id);
@@ -270,9 +280,9 @@ export function workflowGraph(source: string): WorkflowGraph {
   for (const [i, step] of steps.entries()) {
     if (isMapping(step) && isMapping(step.parallel)) {
       const branches = Object.entries(step.parallel);
-      // Branch steps run inside the parallel step, which is what gets recorded.
+      // Each branch step records its own row under the parallel step, so the
+      // canvas lights every branch node from its own run.
       const parallelName = typeof step.id === "string" ? step.id : "parallel";
-      const recorded = { stage: parallelName, occurrence: occurrenceOf(parallelName) };
       const ends: string[] = [];
       let depth = 0;
       branches.forEach(([name, branchSteps], column) => {
@@ -280,7 +290,7 @@ export function workflowGraph(source: string): WorkflowGraph {
         let tail = previous;
         const entry = previous;
         (Array.isArray(branchSteps) ? branchSteps : []).forEach((branchStep, j) => {
-          const id = addStep(branchStep, `${i + 1}-${name}-${j + 1}`, x, (row + j) * ROW, name, recorded, ["steps", i, "parallel", name, j]);
+          const id = addStep(branchStep, `${i + 1}-${name}-${j + 1}`, x, (row + j) * ROW, name, parallelName, ["steps", i, "parallel", name, j]);
           link(tail, id, tail === entry && column === branches.length - 1 ? i - 1 : undefined);
           tail = [id];
           depth = Math.max(depth, j + 1);

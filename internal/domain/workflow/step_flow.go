@@ -12,6 +12,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 	"github.com/samcharles93/archie-core/internal/domain/stableid"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
 const maxRetryAttempts = 10
@@ -272,14 +273,44 @@ func compileParallel(step StepRecord, registry StepRegistry) (Stage, error) {
 
 func runBranch(ctx context.Context, tc *TaskContext, stages []Stage) error {
 	for _, stage := range stages {
-		if err := stage.Run(ctx, tc); err != nil && !stage.ContinueOnFailure {
+		parentID := tc.StepID
+		stepID, _, err := tc.startChildStep(ctx, task.StepKindStage, branchStepName(tc.workflowBranch, stage.Name))
+		if err != nil {
 			return err
+		}
+		tc.StepID = stepID
+		runErr := stage.Run(ctx, tc)
+		tc.StepID = parentID
+		to, detail := taskstate.StepSucceeded, ""
+		switch {
+		case runErr == nil:
+		case ctx.Err() != nil:
+			to, detail = taskstate.StepInterrupted, runErr.Error()
+		default:
+			to, detail = taskstate.StepFailed, runErr.Error()
+		}
+		if err := tc.finishChildStep(ctx, stepID, to, detail, 0); err != nil {
+			return err
+		}
+		if runErr != nil && !stage.ContinueOnFailure {
+			return runErr
 		}
 		if tc.Outcome.Status != "" {
 			return nil
 		}
 	}
 	return nil
+}
+
+// branchStepName qualifies a branch stage's recorded name with its branch, so
+// two branches running the same step are distinct rows. It mirrors the name
+// RunAgentChild gives a branch's agent steps; a branch step and the agent it
+// runs may share a name, which is safe because they are different step kinds.
+func branchStepName(branch, name string) string {
+	if branch == "" {
+		return name
+	}
+	return branch + "/" + name
 }
 
 // branch is a copy of the run's context for one parallel branch. The task is
