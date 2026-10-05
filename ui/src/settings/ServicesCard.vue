@@ -22,7 +22,7 @@ interface AppliedRecord {
 
 interface Service {
   service: string;
-  state: "up" | "degraded" | "down";
+  state: "up" | "degraded" | "down" | "unknown";
   version: string;
   install_type: string;
   started_at: string;
@@ -35,10 +35,10 @@ const services = ref<Service[]>([]);
 const error = ref<string | null>(null);
 let timer: ReturnType<typeof setInterval> | undefined;
 
-const tone = { up: "ok", degraded: "warn", down: "danger" } as const;
+const tone = { up: "ok", degraded: "warn", down: "danger", unknown: "idle" } as const;
 
 function uptime(service: Service): string {
-  if (service.state === "down") return "";
+  if (!service.started_at || service.state === "down") return "";
   const seconds = Math.max(
     0,
     Math.round((Date.now() - Date.parse(service.started_at)) / 1000),
@@ -89,7 +89,7 @@ onUnmounted(() => clearInterval(timer));
             <TableCell>
               <span class="font-mono font-medium">{{ service.service }}</span>
               <span v-if="service.detail" class="ml-2 text-sm text-fg-muted"
-                >degraded: {{ service.detail }}</span
+                >{{ service.state }}: {{ service.detail }}</span
               >
             </TableCell>
             <TableCell class="text-sm">

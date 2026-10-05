@@ -89,6 +89,9 @@ const (
 	StateUp       = "up"
 	StateDegraded = "degraded"
 	StateDown     = "down"
+	// StateUnknown is a service whose record cannot be read because the
+	// State Store holding it is unreachable.
+	StateUnknown = "unknown"
 )
 
 // Service is one expected service as the mesh view shows it: its newest
@@ -117,6 +120,20 @@ func Mesh(records []storecontract.Presence, now time.Time) []Service {
 		if service.State == StateDown {
 			// The last probe result describes a process that is gone.
 			service.Detail = ""
+		}
+		services = append(services, service)
+	}
+	return services
+}
+
+// Unreachable is the mesh view when the State Store cannot be read: the store
+// is down and every other service is unknown, since its record lives there.
+func Unreachable() []Service {
+	services := make([]Service, 0, len(Services()))
+	for _, name := range Services() {
+		service := Service{Presence: storecontract.Presence{Service: name}, State: StateUnknown}
+		if name == StateStore {
+			service.State, service.Detail = StateDown, "unreachable"
 		}
 		services = append(services, service)
 	}
