@@ -13,8 +13,10 @@ func TestFormPayload(t *testing.T) {
 	}{
 		{"github form", "application/x-www-form-urlencoded", "payload=" + url.QueryEscape(json), json, true},
 		{"json passes through", "application/json", json, "", false},
-		{"form without payload", "application/x-www-form-urlencoded", "a=b", "", false},
-		{"payload not json", "application/x-www-form-urlencoded", "payload=nope", "", false},
+		{"github form with charset", "application/x-www-form-urlencoded; charset=utf-8", "payload=" + url.QueryEscape(json), json, true},
+		{"plain form", "application/x-www-form-urlencoded", "a=b&a=c&n=1", `{"a":"b","n":"1"}`, true},
+		{"payload not json", "application/x-www-form-urlencoded", "payload=nope", `{"payload":"nope"}`, true},
+		{"malformed form", "application/x-www-form-urlencoded", "a=%zz", "", false},
 	}
 	for _, tt := range tests {
 		got, ok := formPayload(tt.contentType, []byte(tt.body))

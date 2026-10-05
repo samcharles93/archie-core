@@ -206,9 +206,10 @@ func verify(src *source.Source, h http.Header, body []byte) (authenticated, unsi
 	return webhookguard.VerifyHMAC(body, sig, src.Secret), false
 }
 
-// formPayload unwraps the JSON a form-encoded delivery carries in its payload
-// field, GitHub's default webhook content type, so it types and maps like a
-// JSON delivery.
+// formPayload turns a form-encoded delivery into JSON so it types and maps
+// like a JSON one. A payload field holding JSON (GitHub's and Slack's form
+// shape) is the event itself; any other form becomes an object of its fields,
+// first value per name.
 func formPayload(contentType string, body []byte) ([]byte, bool) {
 	mt, _, err := mime.ParseMediaType(contentType)
 	if err != nil || mt != "application/x-www-form-urlencoded" {
@@ -218,11 +219,15 @@ func formPayload(contentType string, body []byte) ([]byte, bool) {
 	if err != nil {
 		return nil, false
 	}
-	payload := form.Get("payload")
-	if !json.Valid([]byte(payload)) {
-		return nil, false
+	if payload := form.Get("payload"); json.Valid([]byte(payload)) {
+		return []byte(payload), true
 	}
-	return []byte(payload), true
+	fields := make(map[string]string, len(form))
+	for name := range form {
+		fields[name] = form.Get(name)
+	}
+	out, err := json.Marshal(fields)
+	return out, err == nil
 }
 
 func (rc *Receiver) logger() *slog.Logger {
