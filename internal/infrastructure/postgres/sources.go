@@ -114,6 +114,18 @@ func (s *EDA) SetSourceName(ctx context.Context, path, name string) error {
 	return nil
 }
 
+// SetSourceDeliveryHeader sets the header that names a source's deliveries.
+func (s *EDA) SetSourceDeliveryHeader(ctx context.Context, path, header string) error {
+	n, err := s.q.SetSourceDeliveryHeader(ctx, postgresdb.SetSourceDeliveryHeaderParams{Path: path, DeliveryHeader: header})
+	if err != nil {
+		return fmt.Errorf("edastore: set source delivery header: %w", err)
+	}
+	if n == 0 {
+		return storecontract.ErrSourceNotFound
+	}
+	return nil
+}
+
 // DeleteSource deletes a source no armed binding fires on.
 func (s *EDA) DeleteSource(ctx context.Context, path string) error {
 	n, err := s.q.DeleteUnboundSource(ctx, path)
@@ -155,7 +167,7 @@ func (s *EDA) sourceValue(r postgresdb.Source) (source.Source, error) {
 		secret = plain
 	}
 	return source.Source{
-		Path: r.Path, Name: r.Name, Signing: source.Signing(r.Signing), Secret: secret,
+		Path: r.Path, Name: r.Name, DeliveryHeader: r.DeliveryHeader, Signing: source.Signing(r.Signing), Secret: secret,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}, nil
 }

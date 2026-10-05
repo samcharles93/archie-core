@@ -157,6 +157,37 @@ func (s *Server) handleSourceName(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, src)
 }
 
+// handleSourceDeliveryHeader sets the header that names a source's
+// deliveries, so a sender's retry dispatches no second run.
+func (s *Server) handleSourceDeliveryHeader(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeTaskMutation(w, r) {
+		return
+	}
+	src, ok := s.loadSource(w, r)
+	if !ok {
+		return
+	}
+	var request struct {
+		Header string `json:"header"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&request); err != nil {
+		http.Error(w, "invalid delivery header", http.StatusBadRequest)
+		return
+	}
+	header, err := source.DeliveryHeader(request.Header)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	src.DeliveryHeader = header
+	if err := s.Sources.SetSourceDeliveryHeader(r.Context(), src.Path, header); err != nil {
+		s.sourceError(w, "set source delivery header", err)
+		return
+	}
+	src.Secret = ""
+	writeJSON(w, src)
+}
+
 // handleSourceDelete deletes a source no armed binding fires on.
 func (s *Server) handleSourceDelete(w http.ResponseWriter, r *http.Request) {
 	if !s.authorizeTaskMutation(w, r) {

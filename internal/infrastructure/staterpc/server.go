@@ -965,6 +965,17 @@ func (s *server) SetSourceName(ctx context.Context, r *pb.SetSourceNameRequest) 
 	return &pb.SetSourceNameResponse{}, nil
 }
 
+func (s *server) SetSourceDeliveryHeader(ctx context.Context, r *pb.SetSourceDeliveryHeaderRequest) (*pb.SetSourceDeliveryHeaderResponse, error) {
+	ss, err := s.sources()
+	if err != nil {
+		return nil, err
+	}
+	if err := ss.SetSourceDeliveryHeader(ctx, r.Path, r.Header); err != nil {
+		return nil, s.logErr("SetSourceDeliveryHeader", err)
+	}
+	return &pb.SetSourceDeliveryHeaderResponse{}, nil
+}
+
 func (s *server) DeleteSource(ctx context.Context, r *pb.DeleteSourceRequest) (*pb.DeleteSourceResponse, error) {
 	ss, err := s.sources()
 	if err != nil {

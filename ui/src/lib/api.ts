@@ -342,6 +342,8 @@ export const api = {
     }),
   sourceName: <T = unknown>(path: string, name: string) =>
     request<T>(`/api/sources/${encodeURIComponent(path)}/name`, { method: "PUT", body: { name } }),
+  sourceDeliveryHeader: <T = unknown>(path: string, header: string) =>
+    request<T>(`/api/sources/${encodeURIComponent(path)}/delivery-header`, { method: "PUT", body: { header } }),
   sourceDelete: (path: string) =>
     request<void>(`/api/sources/${encodeURIComponent(path)}`, { method: "DELETE", parse: false }),
   sourceSecret: <T = unknown>(path: string) =>

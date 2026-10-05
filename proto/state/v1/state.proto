@@ -191,6 +191,7 @@ service StateStoreService {
   rpc SetSourceSigning(SetSourceSigningRequest) returns (SetSourceSigningResponse);
   rpc SetSourceSecret(SetSourceSecretRequest) returns (SetSourceSecretResponse);
   rpc SetSourceName(SetSourceNameRequest) returns (SetSourceNameResponse);
+  rpc SetSourceDeliveryHeader(SetSourceDeliveryHeaderRequest) returns (SetSourceDeliveryHeaderResponse);
   rpc DeleteSource(DeleteSourceRequest) returns (DeleteSourceResponse);
 
   // Dispatch
@@ -473,7 +474,8 @@ message CapturedEvent {
   // unsigned marks an event taken on an approved unsigned source.
   bool unsigned = 10;
   // delivery names the sender's delivery; a retry of one delivery shares it.
-  // Intake sets the sender's delivery ID; empty takes the capture ID.
+  // Intake sets it from the source's delivery header; empty takes the
+  // capture ID.
   string delivery = 11;
 }
 
@@ -563,6 +565,7 @@ message Source {
   google.protobuf.Timestamp created_at = 4;
   google.protobuf.Timestamp updated_at = 5;
   string name = 6;
+  string delivery_header = 7;
 }
 
 // WorkflowStat mirrors storecontract.WorkflowStat.
@@ -1130,6 +1133,11 @@ message SetSourceNameRequest {
   string name = 2;
 }
 message SetSourceNameResponse {}
+message SetSourceDeliveryHeaderRequest {
+  string path = 1;
+  string header = 2;
+}
+message SetSourceDeliveryHeaderResponse {}
 message DeleteSourceRequest { string path = 1; }
 message DeleteSourceResponse {}
 message PauseBindingRequest { string id = 1; }

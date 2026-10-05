@@ -339,14 +339,15 @@ type Session struct {
 }
 
 type Source struct {
-	Path        string
-	Signing     string
-	Secret      string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	OrgID       string
-	WorkspaceID string
-	Name        string
+	Path           string
+	Signing        string
+	Secret         string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	OrgID          string
+	WorkspaceID    string
+	Name           string
+	DeliveryHeader string
 }
 
 type StepExecution struct {

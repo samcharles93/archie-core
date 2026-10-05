@@ -4,8 +4,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net/textproto"
+	"strings"
 
 	"github.com/google/uuid"
+	"golang.org/x/net/http/httpguts"
 )
 
 // NewPath returns a fresh UUIDv7 path: time-ordered, unguessable, and never
@@ -47,4 +50,16 @@ func unreserved(c byte) bool {
 		return true
 	}
 	return c == '-' || c == '.' || c == '_' || c == '~'
+}
+
+// DeliveryHeader canonicalises a delivery header name; empty clears it.
+func DeliveryHeader(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", nil
+	}
+	if len(name) > MaxPathLen || !httpguts.ValidHeaderFieldName(name) {
+		return "", ErrInvalidHeader
+	}
+	return textproto.CanonicalMIMEHeaderKey(name), nil
 }

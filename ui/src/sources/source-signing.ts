@@ -8,6 +8,8 @@ export interface Source {
   path: string;
   /** The operator's label; the path stays the source's identity. */
   name?: string;
+  /** The header the sender repeats on every retry of one delivery. */
+  delivery_header?: string;
   signing?: string;
   /** Present only on create and on a new secret. */
   secret?: string;

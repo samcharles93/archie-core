@@ -1,9 +1,13 @@
--- captures.delivery names the sender's delivery: its delivery ID header when
--- it sends one, else the capture itself. A retry of one delivery shares it, so
+-- sources.delivery_header names the header a source's sender repeats on every
+-- retry of one delivery. captures.delivery names the delivery: that header's
+-- value when the source sets one and the sender sent it, else the capture
+-- itself. A retry of one delivery shares it, so
 -- binding_dispatches keyed on it dispatches each delivery once however many
 -- times it arrives.
 
 -- +goose Up
+
+ALTER TABLE sources ADD COLUMN delivery_header text NOT NULL DEFAULT '';
 
 ALTER TABLE captures ADD COLUMN delivery text NOT NULL DEFAULT '';
 UPDATE captures SET delivery = id;
@@ -19,3 +23,4 @@ DROP INDEX idx_binding_dispatch_once;
 CREATE UNIQUE INDEX idx_binding_dispatch_once ON binding_dispatches (binding, capture);
 ALTER TABLE binding_dispatches DROP COLUMN delivery;
 ALTER TABLE captures DROP COLUMN delivery;
+ALTER TABLE sources DROP COLUMN delivery_header;

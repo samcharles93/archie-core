@@ -116,7 +116,7 @@ func TestRedeliveryDispatchesOnce(t *testing.T) {
 		return id
 	}
 
-	original, retry := capture("X-GitHub-Delivery:abc"), capture("X-GitHub-Delivery:abc")
+	original, retry := capture("delivery-1"), capture("delivery-1")
 	assertUndispatched(t, eda, 2)
 	if err := eda.RecordDispatch(ctx, bindingID, 1, original, 0, ""); err != nil {
 		t.Fatal(err)
@@ -126,7 +126,7 @@ func TestRedeliveryDispatchesOnce(t *testing.T) {
 	}
 	assertUndispatched(t, eda, 0)
 
-	capture("X-GitHub-Delivery:def")
+	capture("delivery-2")
 	capture("")
 	assertUndispatched(t, eda, 2)
 	captures, err := eda.ListCaptures(ctx, 10)

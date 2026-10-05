@@ -211,7 +211,7 @@ func capturedEventValue(c *pb.CapturedEvent) storecontract.CapturedEvent {
 
 func sourceProto(s source.Source) *pb.Source {
 	return &pb.Source{
-		Path: s.Path, Name: s.Name, Signing: string(s.Signing), Secret: s.Secret,
+		Path: s.Path, Name: s.Name, DeliveryHeader: s.DeliveryHeader, Signing: string(s.Signing), Secret: s.Secret,
 		CreatedAt: timestamp(s.CreatedAt), UpdatedAt: timestamp(s.UpdatedAt),
 	}
 }
@@ -221,7 +221,7 @@ func sourceValue(s *pb.Source) source.Source {
 		return source.Source{}
 	}
 	return source.Source{
-		Path: s.Path, Name: s.Name, Signing: source.Signing(s.Signing), Secret: s.Secret,
+		Path: s.Path, Name: s.Name, DeliveryHeader: s.DeliveryHeader, Signing: source.Signing(s.Signing), Secret: s.Secret,
 		CreatedAt: timeValue(s.CreatedAt), UpdatedAt: timeValue(s.UpdatedAt),
 	}
 }

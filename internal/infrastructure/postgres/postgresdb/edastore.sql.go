@@ -357,7 +357,7 @@ func (q *Queries) GetMapping(ctx context.Context, id string) (GetMappingRow, err
 }
 
 const getSource = `-- name: GetSource :one
-SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id, name FROM sources WHERE path = $1
+SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id, name, delivery_header FROM sources WHERE path = $1
 `
 
 func (q *Queries) GetSource(ctx context.Context, path string) (Source, error) {
@@ -372,6 +372,7 @@ func (q *Queries) GetSource(ctx context.Context, path string) (Source, error) {
 		&i.OrgID,
 		&i.WorkspaceID,
 		&i.Name,
+		&i.DeliveryHeader,
 	)
 	return i, err
 }
@@ -860,7 +861,7 @@ func (q *Queries) ListMappings(ctx context.Context) ([]ListMappingsRow, error) {
 }
 
 const listSources = `-- name: ListSources :many
-SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id, name FROM sources ORDER BY created_at DESC, path
+SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id, name, delivery_header FROM sources ORDER BY created_at DESC, path
 `
 
 func (q *Queries) ListSources(ctx context.Context) ([]Source, error) {
@@ -881,6 +882,7 @@ func (q *Queries) ListSources(ctx context.Context) ([]Source, error) {
 			&i.OrgID,
 			&i.WorkspaceID,
 			&i.Name,
+			&i.DeliveryHeader,
 		); err != nil {
 			return nil, err
 		}
@@ -981,6 +983,23 @@ type SetBindingDispatchTaskParams struct {
 func (q *Queries) SetBindingDispatchTask(ctx context.Context, arg SetBindingDispatchTaskParams) error {
 	_, err := q.db.Exec(ctx, setBindingDispatchTask, arg.Binding, arg.Capture, arg.TaskID)
 	return err
+}
+
+const setSourceDeliveryHeader = `-- name: SetSourceDeliveryHeader :execrows
+UPDATE sources SET delivery_header = $2, updated_at = now() WHERE path = $1
+`
+
+type SetSourceDeliveryHeaderParams struct {
+	Path           string
+	DeliveryHeader string
+}
+
+func (q *Queries) SetSourceDeliveryHeader(ctx context.Context, arg SetSourceDeliveryHeaderParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setSourceDeliveryHeader, arg.Path, arg.DeliveryHeader)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const setSourceName = `-- name: SetSourceName :execrows

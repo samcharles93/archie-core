@@ -664,6 +664,11 @@ func (c *Client) SetSourceName(ctx context.Context, path, name string) error {
 	return unmapError(err)
 }
 
+func (c *Client) SetSourceDeliveryHeader(ctx context.Context, path, header string) error {
+	_, err := c.client.SetSourceDeliveryHeader(ctx, &pb.SetSourceDeliveryHeaderRequest{Path: path, Header: header})
+	return unmapError(err)
+}
+
 func (c *Client) DeleteSource(ctx context.Context, path string) error {
 	_, err := c.client.DeleteSource(ctx, &pb.DeleteSourceRequest{Path: path})
 	return unmapError(err)

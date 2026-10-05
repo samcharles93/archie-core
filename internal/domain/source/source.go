@@ -27,6 +27,8 @@ const MinSecretLen = 64
 var (
 	// ErrInvalidPath refuses a custom path that is not URL-safe.
 	ErrInvalidPath = errors.New("source: path must be 1-128 URL-safe characters (A-Z a-z 0-9 - . _ ~), not a dot segment")
+	// ErrInvalidHeader refuses a delivery header that is not an HTTP field name.
+	ErrInvalidHeader = errors.New("source: delivery header must be an HTTP header name")
 	// ErrSigningTransition refuses an approval with no pending request.
 	ErrSigningTransition = errors.New("source: signing transition rejected")
 )
@@ -37,11 +39,15 @@ var (
 type Source struct {
 	Path string `json:"path"`
 	// Name is the operator's label; Path stays the source's identity.
-	Name      string    `json:"name,omitempty"`
-	Signing   Signing   `json:"signing"`
-	Secret    string    `json:"secret,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Name string `json:"name,omitempty"`
+	// DeliveryHeader is the header the sender repeats unchanged on every
+	// retry of one delivery, so a retry dispatches no second run. Empty
+	// counts every arrival as its own delivery.
+	DeliveryHeader string    `json:"delivery_header,omitempty"`
+	Signing        Signing   `json:"signing"`
+	Secret         string    `json:"secret,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // New builds a signed source with a generated secret. An empty customPath

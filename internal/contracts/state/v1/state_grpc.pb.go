@@ -112,6 +112,7 @@ const (
 	StateStoreService_SetSourceSigning_FullMethodName           = "/state.v1.StateStoreService/SetSourceSigning"
 	StateStoreService_SetSourceSecret_FullMethodName            = "/state.v1.StateStoreService/SetSourceSecret"
 	StateStoreService_SetSourceName_FullMethodName              = "/state.v1.StateStoreService/SetSourceName"
+	StateStoreService_SetSourceDeliveryHeader_FullMethodName    = "/state.v1.StateStoreService/SetSourceDeliveryHeader"
 	StateStoreService_DeleteSource_FullMethodName               = "/state.v1.StateStoreService/DeleteSource"
 	StateStoreService_ArmedBindingsForSource_FullMethodName     = "/state.v1.StateStoreService/ArmedBindingsForSource"
 	StateStoreService_RecordDispatch_FullMethodName             = "/state.v1.StateStoreService/RecordDispatch"
@@ -318,6 +319,7 @@ type StateStoreServiceClient interface {
 	SetSourceSigning(ctx context.Context, in *SetSourceSigningRequest, opts ...grpc.CallOption) (*SetSourceSigningResponse, error)
 	SetSourceSecret(ctx context.Context, in *SetSourceSecretRequest, opts ...grpc.CallOption) (*SetSourceSecretResponse, error)
 	SetSourceName(ctx context.Context, in *SetSourceNameRequest, opts ...grpc.CallOption) (*SetSourceNameResponse, error)
+	SetSourceDeliveryHeader(ctx context.Context, in *SetSourceDeliveryHeaderRequest, opts ...grpc.CallOption) (*SetSourceDeliveryHeaderResponse, error)
 	DeleteSource(ctx context.Context, in *DeleteSourceRequest, opts ...grpc.CallOption) (*DeleteSourceResponse, error)
 	// Dispatch
 	ArmedBindingsForSource(ctx context.Context, in *ArmedBindingsForSourceRequest, opts ...grpc.CallOption) (*ArmedBindingsForSourceResponse, error)
@@ -1324,6 +1326,16 @@ func (c *stateStoreServiceClient) SetSourceName(ctx context.Context, in *SetSour
 	return out, nil
 }
 
+func (c *stateStoreServiceClient) SetSourceDeliveryHeader(ctx context.Context, in *SetSourceDeliveryHeaderRequest, opts ...grpc.CallOption) (*SetSourceDeliveryHeaderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetSourceDeliveryHeaderResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_SetSourceDeliveryHeader_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *stateStoreServiceClient) DeleteSource(ctx context.Context, in *DeleteSourceRequest, opts ...grpc.CallOption) (*DeleteSourceResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeleteSourceResponse)
@@ -1771,6 +1783,7 @@ type StateStoreServiceServer interface {
 	SetSourceSigning(context.Context, *SetSourceSigningRequest) (*SetSourceSigningResponse, error)
 	SetSourceSecret(context.Context, *SetSourceSecretRequest) (*SetSourceSecretResponse, error)
 	SetSourceName(context.Context, *SetSourceNameRequest) (*SetSourceNameResponse, error)
+	SetSourceDeliveryHeader(context.Context, *SetSourceDeliveryHeaderRequest) (*SetSourceDeliveryHeaderResponse, error)
 	DeleteSource(context.Context, *DeleteSourceRequest) (*DeleteSourceResponse, error)
 	// Dispatch
 	ArmedBindingsForSource(context.Context, *ArmedBindingsForSourceRequest) (*ArmedBindingsForSourceResponse, error)
@@ -2107,6 +2120,9 @@ func (UnimplementedStateStoreServiceServer) SetSourceSecret(context.Context, *Se
 }
 func (UnimplementedStateStoreServiceServer) SetSourceName(context.Context, *SetSourceNameRequest) (*SetSourceNameResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetSourceName not implemented")
+}
+func (UnimplementedStateStoreServiceServer) SetSourceDeliveryHeader(context.Context, *SetSourceDeliveryHeaderRequest) (*SetSourceDeliveryHeaderResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetSourceDeliveryHeader not implemented")
 }
 func (UnimplementedStateStoreServiceServer) DeleteSource(context.Context, *DeleteSourceRequest) (*DeleteSourceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteSource not implemented")
@@ -3867,6 +3883,24 @@ func _StateStoreService_SetSourceName_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StateStoreService_SetSourceDeliveryHeader_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetSourceDeliveryHeaderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).SetSourceDeliveryHeader(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_SetSourceDeliveryHeader_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).SetSourceDeliveryHeader(ctx, req.(*SetSourceDeliveryHeaderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _StateStoreService_DeleteSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DeleteSourceRequest)
 	if err := dec(in); err != nil {
@@ -4698,6 +4732,10 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetSourceName",
 			Handler:    _StateStoreService_SetSourceName_Handler,
+		},
+		{
+			MethodName: "SetSourceDeliveryHeader",
+			Handler:    _StateStoreService_SetSourceDeliveryHeader_Handler,
 		},
 		{
 			MethodName: "DeleteSource",

@@ -47,6 +47,7 @@ const {
   requireSigning,
   approveUnsigned,
   rename,
+  setDeliveryHeader,
   remove,
   refusals,
 } = useSources();
@@ -121,6 +122,15 @@ function url(source: Source): string {
                   :disabled="busy"
                   @change="rename(source, ($event.target as HTMLInputElement).value)"
                 />{{ source.path }}
+                <input
+                  class="block w-full bg-transparent font-mono text-xs text-fg-muted outline-none placeholder:text-fg-subtle focus:underline"
+                  :value="source.delivery_header ?? ''"
+                  placeholder="Delivery ID header"
+                  title="The header the sender repeats on every retry of one delivery; a retry then starts no second run"
+                  :aria-label="`Delivery ID header of source ${source.path}`"
+                  :disabled="busy"
+                  @change="setDeliveryHeader(source, ($event.target as HTMLInputElement).value)"
+                />
                 <div
                   v-if="refusals[source.path]"
                   class="text-xs font-sans text-destructive"

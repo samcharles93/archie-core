@@ -249,6 +249,7 @@ type SourceStore interface {
 	SetSourceSigning(ctx context.Context, path string, from, to source.Signing) error
 	SetSourceSecret(ctx context.Context, path, secret string) error
 	SetSourceName(ctx context.Context, path, name string) error
+	SetSourceDeliveryHeader(ctx context.Context, path, header string) error
 	// DeleteSource refuses with ErrSourceInUse while an armed binding fires
 	// on the source.
 	DeleteSource(ctx context.Context, path string) error
@@ -367,8 +368,8 @@ type CapturedEvent struct {
 	// It dispatches without Authenticated and is flagged wherever it shows.
 	Unsigned bool `json:"unsigned"`
 	// Delivery names the sender's delivery; a retry of one delivery shares
-	// it, so a binding dispatches each delivery once. Intake sets the
-	// sender's delivery ID; the store fills the capture ID when it is empty.
+	// it, so a binding dispatches each delivery once. Intake sets it from the
+	// source's delivery header; the store fills the capture ID when empty.
 	Delivery string `json:"delivery"`
 }
 

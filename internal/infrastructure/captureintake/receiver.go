@@ -133,7 +133,7 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Body:          string(redactedBody),
 		Authenticated: authenticated,
 		Unsigned:      unsigned,
-		Delivery:      deliveryID(r.Header),
+		Delivery:      deliveryID(src, r.Header),
 	}
 	id, err := rc.Captures.InsertCapture(r.Context(), c, rc.Retention, rc.MaxEvents)
 	if err != nil {
@@ -208,29 +208,18 @@ func verify(src *source.Source, h http.Header, body []byte) (authenticated, unsi
 	return webhookguard.VerifyHMAC(body, sig, src.Secret), false
 }
 
-// deliveryHeaders carry a sender's ID for one delivery, repeated unchanged on
-// every retry of it: GitHub, Gitea, Gogs, GitLab, Standard Webhooks, and the
-// generic idempotency key.
-var deliveryHeaders = []string{
-	"X-GitHub-Delivery", "X-Gitea-Delivery", "X-Gogs-Delivery",
-	"X-Gitlab-Event-UUID", "Webhook-Id", "Idempotency-Key",
-}
-
-// deliveryID is the sender's delivery ID, or empty when it sends none and
-// each arrival counts as its own delivery.
-func deliveryID(h http.Header) string {
-	for _, name := range deliveryHeaders {
-		if id := strings.TrimSpace(h.Get(name)); id != "" {
-			return name + ":" + id
-		}
+// deliveryID is the value of src's delivery header, or empty when the source
+// names none or the sender omitted it, so the arrival is its own delivery.
+func deliveryID(src *source.Source, h http.Header) string {
+	if src == nil || src.DeliveryHeader == "" {
+		return ""
 	}
-	return ""
+	return strings.TrimSpace(h.Get(src.DeliveryHeader))
 }
 
-// formPayload turns a form-encoded delivery into JSON so it types and maps
-// like a JSON one. A payload field holding JSON (GitHub's and Slack's form
-// shape) is the event itself; any other form becomes an object of its fields,
-// first value per name.
+// formPayload turns a form-encoded delivery into a JSON object of its fields,
+// first value per name, so it types and maps like a JSON one. A field whose
+// value is a JSON object or array is nested as that structure.
 func formPayload(contentType string, body []byte) ([]byte, bool) {
 	mt, _, err := mime.ParseMediaType(contentType)
 	if err != nil || mt != "application/x-www-form-urlencoded" {
@@ -240,15 +229,22 @@ func formPayload(contentType string, body []byte) ([]byte, bool) {
 	if err != nil {
 		return nil, false
 	}
-	if payload := form.Get("payload"); json.Valid([]byte(payload)) {
-		return []byte(payload), true
-	}
-	fields := make(map[string]string, len(form))
+	fields := make(map[string]any, len(form))
 	for name := range form {
-		fields[name] = form.Get(name)
+		fields[name] = formValue(form.Get(name))
 	}
 	out, err := json.Marshal(fields)
 	return out, err == nil
+}
+
+func formValue(value string) any {
+	trimmed := strings.TrimSpace(value)
+	if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
+		if json.Valid([]byte(trimmed)) {
+			return json.RawMessage(trimmed)
+		}
+	}
+	return value
 }
 
 func (rc *Receiver) logger() *slog.Logger {
