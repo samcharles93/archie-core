@@ -11,6 +11,7 @@ import (
 	workflowtask "github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/eventbus"
+	"github.com/samcharles93/archie-core/internal/events"
 )
 
 // ReactionSource is the pull surface the reaction consumer needs: fetch one
@@ -39,18 +40,24 @@ var remediableReviewStates = map[string]bool{
 type reactionConsumer struct {
 	lookup       workintake.ReviewTaskLookup
 	remediations storecontract.RemediationStarter
-	botUser      func(*workflowtask.Task) string
-	log          *slog.Logger
-	dropped      int64
+	events       interface {
+		InsertEvent(context.Context, events.Event) (int64, error)
+	}
+	botUser func(*workflowtask.Task) string
+	log     *slog.Logger
+	dropped int64
 }
 
 func newReactionConsumer(
 	lookup workintake.ReviewTaskLookup,
 	remediations storecontract.RemediationStarter,
+	recorder interface {
+		InsertEvent(context.Context, events.Event) (int64, error)
+	},
 	botUser func(*workflowtask.Task) string,
 	log *slog.Logger,
 ) *reactionConsumer {
-	return &reactionConsumer{lookup: lookup, remediations: remediations, botUser: botUser, log: log}
+	return &reactionConsumer{lookup: lookup, remediations: remediations, events: recorder, botUser: botUser, log: log}
 }
 
 // drain fetches and handles reactions until the stream is idle or the
@@ -116,9 +123,13 @@ func (c *reactionConsumer) handle(ctx context.Context, msg eventbus.Message) {
 }
 
 func (c *reactionConsumer) handleReview(ctx context.Context, msg eventbus.Message, task *workflowtask.Task, e workintake.ReviewCommentEnvelope) {
+	if e.State == "approved" {
+		// No remediation, and never auto-merge (decision 5): the approval is
+		// recorded on the task's timeline.
+		c.recordApproval(ctx, msg, task, e)
+		return
+	}
 	if !remediableReviewStates[e.State] {
-		// approved: no remediation, and never auto-merge (decision 5). The
-		// review state is visible on the forge itself.
 		c.drop(msg, fmt.Sprintf("review state %q does not trigger remediation", e.State))
 		return
 	}
@@ -193,6 +204,19 @@ func (c *reactionConsumer) handleComment(ctx context.Context, msg eventbus.Messa
 			return
 		}
 		c.log.Error("UpdateReviewPayload failed", "task", task.ID, "err", err)
+		_ = msg.Nak()
+		return
+	}
+	_ = msg.Ack()
+}
+
+func (c *reactionConsumer) recordApproval(ctx context.Context, msg eventbus.Message, task *workflowtask.Task, e workintake.ReviewCommentEnvelope) {
+	if _, err := c.events.InsertEvent(ctx, events.Event{
+		TaskID: task.ID, Kind: events.KindReviewApproved,
+		Detail: fmt.Sprintf("%s approved pull request #%d", e.Author, e.PRNumber),
+		Data:   map[string]any{"review_id": e.ReviewID, "author": e.Author, "pr_number": e.PRNumber},
+	}); err != nil {
+		c.log.Error("record approval failed", "task", task.ID, "err", err)
 		_ = msg.Nak()
 		return
 	}

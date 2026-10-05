@@ -862,6 +862,7 @@ func (d *Daemon) drainReactions(ctx context.Context) {
 			// still owns (pr-review-remediation.md decision 3).
 			d.Store,
 			d.Store,
+			d.Store,
 			d.botUserForTask,
 			d.Log,
 		)

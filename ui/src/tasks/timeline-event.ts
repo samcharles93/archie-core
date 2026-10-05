@@ -121,6 +121,10 @@ export function describeTimelineEvent(ev: TaskEvent = {}): TimelineLine {
   // Condition (d): the two provenance kinds render as one human line. The
   // captured payload is rendered by its own panel, never dumped into the
   // timeline, so these cases name what was recorded and nothing more.
+  if (ev.kind === "review_approved") {
+    const pr = text(data.pr_number);
+    return { title: "Pull request approved", detail: [text(data.author), pr && `#${pr}`].filter(Boolean).join(" · ") };
+  }
   if (ev.kind === "step_retried") {
     return {
       title: `Attempt ${text(data.attempt)} of ${text(data.of)} failed: ${ev.stage || "step"}`,

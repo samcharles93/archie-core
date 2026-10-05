@@ -53,6 +53,9 @@ const (
 	KindTaskCancelled = "task_cancelled"
 	KindTaskStopped   = "task_stopped"
 	KindTaskAbandoned = "task_abandoned"
+	// KindReviewApproved records an approving review on a task's pull
+	// request. data: review_id, author, pr_number.
+	KindReviewApproved = "review_approved"
 	// KindStepRetried records one failed attempt of a step that is retried.
 	// data: attempt, of, error.
 	KindStepRetried = "step_retried"
