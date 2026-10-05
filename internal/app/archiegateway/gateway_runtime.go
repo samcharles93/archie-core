@@ -27,7 +27,7 @@ func (b *server) setupChatRuntime(ctx context.Context, cfg config.Config, actor 
 	// Created before the router so the LLMResponder can be wired in for
 	// non-command message processing.
 	providers := executionProviders(cfg)
-	b.setLLM(modelloop.NewRuntime(providers))
+	b.setLLM(modelloop.NewRuntime(providers, b.catalog.Path()))
 	// Transcription is a model-role capability, like the chat models it sits
 	// beside: it is built here, on the model-owning side, from this process's
 	// own [models]/[providers]. The Messaging Service carries a voice note's

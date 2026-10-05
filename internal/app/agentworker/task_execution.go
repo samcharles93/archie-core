@@ -157,7 +157,7 @@ type taskDependencies struct {
 type runnerFactory func(map[string]agentrun.Provider, *slog.Logger) agentrun.Runner
 
 func newTaskRunner(providers map[string]agentrun.Provider, log *slog.Logger) agentrun.Runner {
-	return modelloop.NewLoopRunner(modelloop.NewRuntime(providers), log)
+	return modelloop.NewLoopRunner(modelloop.NewRuntime(providers, ""), log)
 }
 
 // applyToolLimits sets the task's tool policy and allowlist on a
@@ -231,7 +231,7 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 	// the task's own model rather than a second provider client.
 	var llm *runtime.Runtime
 	if len(req.MCPServers) > 0 {
-		llm = modelloop.NewRuntime(req.Providers)
+		llm = modelloop.NewRuntime(req.Providers, "")
 	}
 	mcpSet, mcpErr := startMCPProviders(ctx, req.MCPServers, taskSamplingHandler(llm, req.Cfg), log)
 	if mcpSet != nil {
