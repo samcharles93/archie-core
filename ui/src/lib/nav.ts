@@ -28,6 +28,7 @@ const settings: NavSpec = {
     {
       label: "Agents",
       paths: [
+        "/settings/soul",
         "/settings/personas",
         "/settings/models",
         "/settings/skills",

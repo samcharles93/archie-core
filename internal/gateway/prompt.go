@@ -31,8 +31,8 @@ type RepoEnv struct {
 
 // SystemPromptConfig holds the inputs for one rendered system prompt.
 type SystemPromptConfig struct {
-	// Persona is the active persona prompt.
-	Persona string
+	// Soul is the agent's SOUL identity text, rendered into the <soul> block.
+	Soul string
 	// Tools is the complete set of tools available for this turn.
 	Tools []ToolSummary
 	// Channel names the communication channel.
@@ -95,7 +95,7 @@ func BuildSystemPrompt(cfg SystemPromptConfig) string {
 		}
 	}
 	data := promptData{
-		Persona:   cfg.Persona,
+		Soul:      cfg.Soul,
 		Tools:     tools,
 		Channel:   cfg.Channel,
 		Model:     cfg.Model,

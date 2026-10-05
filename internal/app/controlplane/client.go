@@ -168,6 +168,34 @@ func (c *Client) WatchPersonas(ctx context.Context, afterVersion int64) (<-chan 
 		func(err error) AppliedPersonas { return AppliedPersonas{Err: err} }), nil
 }
 
+func (c *Client) Soul(ctx context.Context) (agent.Soul, int64, error) {
+	response, err := c.rpc.Query(ctx, &pb.QueryRequest{Kind: SoulKind})
+	if err != nil {
+		return agent.Soul{}, 0, controlplanerpc.ClientError(err)
+	}
+	soul, err := decodeSoul(response.Resource.ValueJson)
+	return soul, response.Resource.Version, err
+}
+
+type AppliedSoul struct {
+	Soul    agent.Soul
+	Version int64
+	Err     error
+}
+
+func (c *Client) WatchSoul(ctx context.Context, afterVersion int64) (<-chan AppliedSoul, error) {
+	stream, err := c.rpc.Watch(ctx, &pb.WatchRequest{Kind: SoulKind, AfterVersion: afterVersion})
+	if err != nil {
+		return nil, controlplanerpc.ClientError(err)
+	}
+	return watchUpdates(ctx, stream,
+		func(resource *pb.Resource) AppliedSoul {
+			soul, err := decodeSoul(resource.ValueJson)
+			return AppliedSoul{Soul: soul, Version: resource.Version, Err: err}
+		},
+		func(err error) AppliedSoul { return AppliedSoul{Err: err} }), nil
+}
+
 // watchUpdates turns one Watch stream into the channel a watch loop reads: every
 // document the stream carries, decoded, and then a single update carrying the
 // error that ended it -- unless the stream ended cleanly or the context did, in

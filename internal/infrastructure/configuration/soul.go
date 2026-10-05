@@ -52,6 +52,24 @@ func SoulPath(configPath string) string {
 	return filepath.Join(ConfigDir(configPath), SoulFilename)
 }
 
+// ReadSoul reads the identity's SOUL file for a selected config path, bounded
+// before decoding so an oversized file cannot crowd the prompt. A missing file
+// returns "" and no error: the caller falls back to the shipped default.
+func ReadSoul(configPath string) (string, error) {
+	path := SoulPath(configPath)
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("soul: read %s: %w", path, err)
+	}
+	if len(data) > maxSoulReadBytes {
+		return "", fmt.Errorf("soul: %s exceeds %d bytes", path, maxSoulReadBytes)
+	}
+	return string(data), nil
+}
+
 // SeedSoul writes the starter SOUL file when none exists. It never
 // overwrites an existing file.
 func SeedSoul(configPath, shipped string) (SoulSeedResult, error) {

@@ -58,9 +58,9 @@ type TurnModelRequest struct {
 	MaxOutputTokens int
 }
 
-// PersonaPromptSource supplies the active persona prompt for a session.
-type PersonaPromptSource interface {
-	GetActive(sessionID string) string
+// SoulSource supplies the SOUL identity text a turn renders into its prompt.
+type SoulSource interface {
+	Soul() string
 }
 
 // TurnEventPublisher receives completed primary chat-turn events.
@@ -87,8 +87,10 @@ type TurnRunnerConfig struct {
 	Router   *Router
 	Sessions SessionStore
 	Models   ModelManager
-	Personas PersonaPromptSource
-	Model    TurnModel
+	// Soul supplies the identity text the system prompt renders. Nil renders
+	// no <soul> block.
+	Soul  SoulSource
+	Model TurnModel
 	// Transcriber replaces an inbound voice attachment's note with its
 	// transcript. Nil keeps the note.
 	Transcriber        messaging.Transcriber
@@ -324,13 +326,13 @@ func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, in Inbou
 	if prepared == nil {
 		return preparedTurn{}, fmt.Errorf("build chat model: empty preparation")
 	}
-	persona := ""
-	if r.Personas != nil {
-		persona = r.Personas.GetActive(sessionID)
+	soul := ""
+	if r.Soul != nil {
+		soul = r.Soul.Soul()
 	}
 	memoryBlock := renderMemory(ctx, r.MemoryEngine, subject, r.Log)
 	systemPrompt := BuildSystemPrompt(SystemPromptConfig{
-		Persona:   persona,
+		Soul:      soul,
 		Tools:     prepared.ToolSummaries(),
 		Channel:   r.Channel,
 		Model:     modelName,

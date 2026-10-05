@@ -10,6 +10,7 @@ import ReviewSettingsPage from "@/settings/ReviewSettingsPage.vue";
 import ToolsPage from "@/settings/ToolsPage.vue";
 import HistoryPage from "@/settings/HistoryPage.vue";
 import PersonasPage from "@/settings/PersonasPage.vue";
+import SoulPage from "@/settings/SoulPage.vue";
 import SchedulesPage from "@/settings/SchedulesPage.vue";
 import ExtensionsPage from "@/settings/ExtensionsPage.vue";
 import PluginsPage from "@/settings/PluginsPage.vue";
@@ -221,6 +222,18 @@ const routes = [
       settings: true,
       label: "Personas",
       description: "The system prompts chat runs under, and the default.",
+      section: "settings",
+    },
+  },
+  {
+    path: "/settings/soul",
+    name: "settings-soul",
+    component: SoulPage,
+    meta: {
+      navPath: "/settings",
+      settings: true,
+      label: "SOUL",
+      description: "Archie's user-authored identity and tone.",
       section: "settings",
     },
   },

@@ -51,6 +51,19 @@ func (b *server) setupChatRuntime(ctx context.Context, cfg config.Config, actor 
 		}
 	}
 
+	// ── SOUL ─────────────────────────────────────────────────────────
+	if b.soul == nil {
+		soul, version, err := b.controlPlane.Soul(ctx)
+		if err != nil {
+			return fmt.Errorf("load soul: %w", err)
+		}
+		b.soul = newSoulSource(b.cfgPath, b.log)
+		b.applySoul(soul, version)
+		if err := b.watchSoul(ctx, version); err != nil {
+			return fmt.Errorf("watch soul: %w", err)
+		}
+	}
+
 	// ── Operator health surface ──────────────────────────────────────
 	// Built before the gateways because every turn runner and router built
 	// later carries both: the recorder is written by sendChatTurn, the source
@@ -120,6 +133,32 @@ func (b *server) applyPersonas(collection agent.PersonaCollection, version int64
 	b.log.Info("personas applied", "version", version)
 }
 
+// watchSoul keeps the soul stream established for the life of the process, so
+// a dashboard edit reaches the next turn without a restart.
+func (b *server) watchSoul(ctx context.Context, version int64) error {
+	updates, err := b.controlPlane.WatchSoul(ctx, version)
+	if err != nil {
+		return err
+	}
+	go servicekit.KeepWatch(ctx, b.log, controlplane.SoulKind, version, updates,
+		b.controlPlane.WatchSoul,
+		servicekit.WaitFor,
+		func(update controlplane.AppliedSoul) int64 { return update.Version },
+		func(update controlplane.AppliedSoul) {
+			if update.Err != nil {
+				b.log.Error("soul watch failed", "err", update.Err)
+				return
+			}
+			b.applySoul(update.Soul, update.Version)
+		})
+	return nil
+}
+
+func (b *server) applySoul(soul agent.Soul, version int64) {
+	b.soul.apply(soul.Text)
+	b.log.Info("soul applied", "version", version)
+}
+
 // setupGatewayChat is the sole production constructor of the local contract.
 // Frontends use its gRPC representation; only this service owns the router.
 func (b *server) setupGatewayChat(ctx context.Context, actor gateway.ChatTaskActor) (gateway.ChatContract, error) {
@@ -143,7 +182,7 @@ func (b *server) setupGatewayChat(ctx context.Context, actor gateway.ChatTaskAct
 		Cfg:        config.NewHolder(cfg),
 		ToolLimits: func() modelloop.ToolLimits { return toolLimits(b.cfgHolder.Get()) },
 		LLM:        b.chatLLM, ChatModels: b.chatModels, ToolReg: b.toolReg,
-		Personas: b.personas, ChatTasks: b.chatTasks,
+		Soul: b.soul, ChatTasks: b.chatTasks,
 		ChatTaskLister:      chatTaskListerAdapter{tasks: b.stateStore.Tasks},
 		ChatTaskLogs:        chatTaskLogReaderAdapter{tasks: b.stateStore.TaskByID, taskLogs: b.taskLogs},
 		ChatTaskActor:       actor,

@@ -58,6 +58,7 @@ type Options struct {
 type server struct {
 	cfg       config.Config
 	cfgHolder *config.Holder
+	cfgPath   string
 	log       *slog.Logger
 	taskLogs  *logging.TaskRegistry
 
@@ -82,6 +83,7 @@ type server struct {
 	mcpApplied       map[string]appliedMCPServer
 	chatModels       *chatModelManager
 	personas         *gateway.PersonaRegistry
+	soul             *soulSource
 	memEngines       *domainmemory.Registry
 	curatorRegistry  *curator.Registry
 	curatorRuntime   *curator.Runtime
@@ -157,6 +159,7 @@ func (b *server) loadConfig(cfgPath, overlayPath string) error {
 		return err
 	}
 	b.cfg = doc.Config
+	b.cfgPath = cfgPath
 	b.catalog = modelcatalog.NewCatalog(cfgPath)
 	b.cfgHolder = config.NewHolder(b.cfg)
 	logs := servicekit.Logging(b.cfg, "gateway")

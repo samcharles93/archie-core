@@ -173,6 +173,7 @@ export type ControlPlanePage =
   | "scheduling"
   | "tools"
   | "personas"
+  | "soul"
   | "schedules"
   | "plugins"
   | "extensions"
@@ -188,6 +189,7 @@ const PAGE_RESOURCES: Record<ControlPlanePage, string[]> = {
   scheduling: ["scheduling-policy"],
   tools: ["tool-settings"],
   personas: ["personas"],
+  soul: ["soul"],
   schedules: ["schedules"],
   plugins: ["plugin-settings"],
   extensions: ["extension-settings"],

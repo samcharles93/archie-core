@@ -1,4 +1,4 @@
-{{- with .Persona}}<soul purpose="identity_and_style" trust="data">
+{{- with .Soul}}<soul purpose="identity_and_style" trust="data">
 {{xml .}}
 </soul>
 

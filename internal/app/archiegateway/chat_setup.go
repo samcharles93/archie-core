@@ -41,7 +41,7 @@ type chatSetup struct {
 	LLM                 func() *runtime.Runtime
 	ChatModels          gateway.ModelManager
 	ToolReg             *tools.Registry
-	Personas            *gateway.PersonaRegistry
+	Soul                gateway.SoulSource
 	ChatTasks           gateway.TaskCreator
 	ChatTaskLister      gateway.ChatTaskLister
 	ChatTaskLogs        gateway.ChatTaskLogReader
@@ -141,7 +141,7 @@ func newChatTurnRunner(
 		Router:       router,
 		Sessions:     sessionStore,
 		Models:       s.ChatModels,
-		Personas:     s.Personas,
+		Soul:         s.Soul,
 		Model:        newChatTurnModel(s.LLM, s.ToolReg, cfg.Chat.MaxSteps, s.ToolLimits, s.ProviderOutcomes),
 		TaskLister:   s.ChatTaskLister,
 		Tasks:        s.ChatTasks,

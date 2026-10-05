@@ -1,6 +1,28 @@
 package agent
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
+
+// MaxSoulBytes bounds a SOUL document. Its body renders into the prompt ahead
+// of the rules, so an oversized one cannot crowd them out.
+const MaxSoulBytes = 8 << 10
+
+// Soul is the control-plane document holding an identity's SOUL text. Empty
+// Text means no stored SOUL: the loader falls back to the identity's file and
+// then the shipped default, and the first save takes ownership.
+type Soul struct {
+	Text string `json:"text"`
+}
+
+// Validate bounds the SOUL document's size. Empty is valid: it means unowned.
+func (s Soul) Validate() error {
+	if len(s.Text) > MaxSoulBytes {
+		return fmt.Errorf("soul: %d bytes exceeds the %d-byte limit", len(s.Text), MaxSoulBytes)
+	}
+	return nil
+}
 
 // DefaultSoul is the starter SOUL document: the agent's identity prose in the
 // system prompt.

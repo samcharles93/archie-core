@@ -8,7 +8,7 @@ import (
 // Schemas are not declared here: each Definition names its document type, and
 // Definition.Descriptor derives the JSON Schema from it (internal/app/controlplane/schema.go).
 func builtinDefinitions(steps workflow.StepRegistry, settings map[string]any) []Definition {
-	definitions := []Definition{workflowDefinition(), workflowDefinitionsDefinition(steps, settings), workflowEnablementDefinition(), personaDefinition(), scheduleDefinition(), agentProfileDefinition(), playbooksDefinition(), skillsDefinition(), credentialBindingsDefinition(), identityGrantsDefinition(), reviewSettingsDefinition()}
+	definitions := []Definition{workflowDefinition(), workflowDefinitionsDefinition(steps, settings), workflowEnablementDefinition(), personaDefinition(), soulDefinition(), scheduleDefinition(), agentProfileDefinition(), playbooksDefinition(), skillsDefinition(), credentialBindingsDefinition(), identityGrantsDefinition(), reviewSettingsDefinition()}
 	definitions = append(definitions, modelDefinitions()...)
 	definitions = append(definitions, operationalDefinitions()...)
 	return definitions
