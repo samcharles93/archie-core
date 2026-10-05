@@ -88,4 +88,6 @@ type StepExecution struct {
 	TokensUsed  int64
 	StartedAt   time.Time
 	FinishedAt  time.Time
+	// CalledExecutionID is the callee task a workflow.call step started, or 0.
+	CalledExecutionID int64
 }

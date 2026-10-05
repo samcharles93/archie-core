@@ -258,6 +258,7 @@ func (s *Store) ListSteps(ctx context.Context, executionID int64, attempt int) (
 			Kind: r.Kind, Name: r.Name, Status: taskstate.StepStatus(r.Status),
 			Detail: r.Detail, TokensUsed: r.TokensUsed,
 			StartedAt: r.StartedAt.Time, FinishedAt: r.FinishedAt.Time,
+			CalledExecutionID: r.CalledExecutionID,
 		}
 	}
 	return steps, nil

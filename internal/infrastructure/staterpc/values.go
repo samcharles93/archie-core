@@ -330,6 +330,7 @@ func stepExecutionProto(s task.StepExecution) *pb.StepExecution {
 		ParentId: s.ParentID, Depth: int32(s.Depth), Kind: s.Kind, Name: s.Name,
 		Status: string(s.Status), Detail: s.Detail, TokensUsed: s.TokensUsed,
 		StartedAt: timestamp(s.StartedAt), FinishedAt: timestamp(s.FinishedAt),
+		CalledExecutionId: s.CalledExecutionID,
 	}
 }
 
@@ -342,6 +343,7 @@ func stepExecutionValue(s *pb.StepExecution) task.StepExecution {
 		ParentID: s.ParentId, Depth: int(s.Depth), Kind: s.Kind, Name: s.Name,
 		Status: taskstate.StepStatus(s.Status), Detail: s.Detail, TokensUsed: s.TokensUsed,
 		StartedAt: timeValue(s.StartedAt), FinishedAt: timeValue(s.FinishedAt),
+		CalledExecutionID: s.CalledExecutionId,
 	}
 }
 

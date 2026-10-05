@@ -65,6 +65,8 @@ export interface Stage {
   status?: string;
   duration_ms?: number;
   error?: string;
+  /** The callee tasks this stage's workflow.call steps started. */
+  calls?: number[];
 }
 
 export interface Attempt {
@@ -83,6 +85,11 @@ export interface AttemptsState {
   attempts?: Attempt[];
   current_attempt?: number;
   unattributed_events?: number;
+  /** What the task was started with and what its current attempt wrote. */
+  inputs?: Record<string, unknown>;
+  outputs?: Record<string, unknown>;
+  /** The task whose workflow.call started this one. */
+  called_by?: number;
 }
 
 /** One event off the task's stream, as much of it as this page reads. */

@@ -707,6 +707,8 @@ message StepExecution {
   int64 tokens_used = 10;
   google.protobuf.Timestamp started_at = 11;
   google.protobuf.Timestamp finished_at = 12;
+  // called_execution_id is the callee task a workflow.call step started.
+  int64 called_execution_id = 13;
 }
 
 message ListStepsRequest {

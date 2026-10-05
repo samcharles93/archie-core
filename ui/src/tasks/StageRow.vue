@@ -101,6 +101,15 @@ const nodeClass = computed(() =>
       >
         {{ stage.error }}
       </div>
+      <div v-if="stage.calls?.length" class="mt-2 flex flex-wrap gap-3 text-xs">
+        <RouterLink
+          v-for="callee in stage.calls"
+          :key="callee"
+          :to="`/tasks/${callee}`"
+          class="text-fg-muted underline-offset-2 hover:text-foreground hover:underline"
+          >called task #{{ callee }}</RouterLink
+        >
+      </div>
       <div
         v-for="(retry, i) in retries"
         :key="`retry-${i}`"

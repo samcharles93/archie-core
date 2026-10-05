@@ -189,7 +189,7 @@ func (q *Queries) LatestStageResults(ctx context.Context, arg LatestStageResults
 }
 
 const listStepExecutions = `-- name: ListStepExecutions :many
-SELECT id, execution_id, attempt, parent_id, depth, kind, name, status, detail, tokens_used, started_at, finished_at
+SELECT id, execution_id, attempt, parent_id, depth, kind, name, status, detail, tokens_used, started_at, finished_at, called_execution_id
 FROM step_executions
 WHERE execution_id = $1::bigint AND ($2::bigint = 0 OR attempt = $2::bigint)
 ORDER BY attempt, id
@@ -201,18 +201,19 @@ type ListStepExecutionsParams struct {
 }
 
 type ListStepExecutionsRow struct {
-	ID          int64
-	ExecutionID int64
-	Attempt     int64
-	ParentID    pgtype.Int8
-	Depth       int32
-	Kind        string
-	Name        string
-	Status      string
-	Detail      string
-	TokensUsed  int64
-	StartedAt   pgtype.Timestamptz
-	FinishedAt  pgtype.Timestamptz
+	ID                int64
+	ExecutionID       int64
+	Attempt           int64
+	ParentID          pgtype.Int8
+	Depth             int32
+	Kind              string
+	Name              string
+	Status            string
+	Detail            string
+	TokensUsed        int64
+	StartedAt         pgtype.Timestamptz
+	FinishedAt        pgtype.Timestamptz
+	CalledExecutionID int64
 }
 
 // attempt = 0 lists every attempt of the execution, oldest first; the index
@@ -240,6 +241,7 @@ func (q *Queries) ListStepExecutions(ctx context.Context, arg ListStepExecutions
 			&i.TokensUsed,
 			&i.StartedAt,
 			&i.FinishedAt,
+			&i.CalledExecutionID,
 		); err != nil {
 			return nil, err
 		}

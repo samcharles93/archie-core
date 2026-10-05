@@ -38,6 +38,11 @@ type taskAttemptsView struct {
 	// of presenting it as a first run.
 	UnattributedEvents int               `json:"unattributed_events"`
 	Attempts           []taskAttemptView `json:"attempts"`
+	// Inputs are what the task was started with; Outputs what its current
+	// attempt wrote; CalledBy the task whose workflow.call started it.
+	Inputs   map[string]any `json:"inputs,omitempty"`
+	Outputs  map[string]any `json:"outputs,omitempty"`
+	CalledBy int64          `json:"called_by,omitempty"`
 }
 
 // taskAttemptView is one attempt, bounded by its first and last event.
@@ -65,6 +70,8 @@ type taskStageView struct {
 	Error      string          `json:"error"`
 	FinishedAt *time.Time      `json:"finished_at,omitempty"`
 	Agents     []taskAgentView `json:"agents,omitempty"`
+	// Calls are the callee tasks this stage's workflow.call steps started.
+	Calls []int64 `json:"calls,omitempty"`
 }
 
 type taskAgentView struct {
@@ -103,6 +110,9 @@ func (s *Server) handleTaskAttempts(w http.ResponseWriter, r *http.Request) {
 		CurrentAttempt:     t.Attempt,
 		UnattributedEvents: unattributed,
 		Attempts:           attempts,
+		Inputs:             t.Inputs,
+		Outputs:            t.Outputs,
+		CalledBy:           t.CallParentTaskID,
 	})
 }
 
@@ -260,6 +270,9 @@ func stageViewsFromSteps(steps []task.StepExecution, inFlight bool) []taskStageV
 			view.DurationMS = &duration
 		}
 		for _, child := range steps {
+			if child.ParentID == s.ID && child.CalledExecutionID != 0 {
+				view.Calls = append(view.Calls, child.CalledExecutionID)
+			}
 			if child.ParentID != s.ID || child.Kind != task.StepKindAgent {
 				continue
 			}

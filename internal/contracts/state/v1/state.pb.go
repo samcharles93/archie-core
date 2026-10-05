@@ -4266,17 +4266,19 @@ type StepExecution struct {
 	ExecutionId int64                  `protobuf:"varint,2,opt,name=execution_id,json=executionId,proto3" json:"execution_id,omitempty"`
 	Attempt     int64                  `protobuf:"varint,3,opt,name=attempt,proto3" json:"attempt,omitempty"`
 	// parent_id is 0 for a stage at the tree's root.
-	ParentId      int64                  `protobuf:"varint,4,opt,name=parent_id,json=parentId,proto3" json:"parent_id,omitempty"`
-	Depth         int32                  `protobuf:"varint,5,opt,name=depth,proto3" json:"depth,omitempty"`
-	Kind          string                 `protobuf:"bytes,6,opt,name=kind,proto3" json:"kind,omitempty"`
-	Name          string                 `protobuf:"bytes,7,opt,name=name,proto3" json:"name,omitempty"`
-	Status        string                 `protobuf:"bytes,8,opt,name=status,proto3" json:"status,omitempty"`
-	Detail        string                 `protobuf:"bytes,9,opt,name=detail,proto3" json:"detail,omitempty"`
-	TokensUsed    int64                  `protobuf:"varint,10,opt,name=tokens_used,json=tokensUsed,proto3" json:"tokens_used,omitempty"`
-	StartedAt     *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
-	FinishedAt    *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=finished_at,json=finishedAt,proto3" json:"finished_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	ParentId   int64                  `protobuf:"varint,4,opt,name=parent_id,json=parentId,proto3" json:"parent_id,omitempty"`
+	Depth      int32                  `protobuf:"varint,5,opt,name=depth,proto3" json:"depth,omitempty"`
+	Kind       string                 `protobuf:"bytes,6,opt,name=kind,proto3" json:"kind,omitempty"`
+	Name       string                 `protobuf:"bytes,7,opt,name=name,proto3" json:"name,omitempty"`
+	Status     string                 `protobuf:"bytes,8,opt,name=status,proto3" json:"status,omitempty"`
+	Detail     string                 `protobuf:"bytes,9,opt,name=detail,proto3" json:"detail,omitempty"`
+	TokensUsed int64                  `protobuf:"varint,10,opt,name=tokens_used,json=tokensUsed,proto3" json:"tokens_used,omitempty"`
+	StartedAt  *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	FinishedAt *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=finished_at,json=finishedAt,proto3" json:"finished_at,omitempty"`
+	// called_execution_id is the callee task a workflow.call step started.
+	CalledExecutionId int64 `protobuf:"varint,13,opt,name=called_execution_id,json=calledExecutionId,proto3" json:"called_execution_id,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *StepExecution) Reset() {
@@ -4391,6 +4393,13 @@ func (x *StepExecution) GetFinishedAt() *timestamppb.Timestamp {
 		return x.FinishedAt
 	}
 	return nil
+}
+
+func (x *StepExecution) GetCalledExecutionId() int64 {
+	if x != nil {
+		return x.CalledExecutionId
+	}
+	return 0
 }
 
 type ListStepsRequest struct {
@@ -14834,7 +14843,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x0e\n" +
 	"\x02to\x18\x03 \x01(\tR\x02to\"G\n" +
 	"\x17CancelExecutionResponse\x12,\n" +
-	"\x12cancelled_step_ids\x18\x01 \x03(\x03R\x10cancelledStepIds\"\x80\x03\n" +
+	"\x12cancelled_step_ids\x18\x01 \x03(\x03R\x10cancelledStepIds\"\xb0\x03\n" +
 	"\rStepExecution\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12!\n" +
 	"\fexecution_id\x18\x02 \x01(\x03R\vexecutionId\x12\x18\n" +
@@ -14851,7 +14860,8 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\n" +
 	"started_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12;\n" +
 	"\vfinished_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"finishedAt\"O\n" +
+	"finishedAt\x12.\n" +
+	"\x13called_execution_id\x18\r \x01(\x03R\x11calledExecutionId\"O\n" +
 	"\x10ListStepsRequest\x12!\n" +
 	"\fexecution_id\x18\x01 \x01(\x03R\vexecutionId\x12\x18\n" +
 	"\aattempt\x18\x02 \x01(\x03R\aattempt\"B\n" +

@@ -36,6 +36,16 @@ const parked = computed(() => status.value === "parked" && !!run.task?.park_reas
 // task is finished with. Whether this task offers it at all is the server's
 // action list, never this page's opinion about the status.
 const HEAD_ACTIONS = ["archive"];
+
+// The run's inputs and written outputs, one row per name.
+const io = computed(() => {
+  const rows = (prefix: string, values?: Record<string, unknown>) =>
+    Object.entries(values ?? {}).map(([name, value]) => ({
+      label: `${prefix} ${name}`,
+      value: typeof value === "string" ? value : JSON.stringify(value),
+    }));
+  return [...rows("input", run.attempts?.inputs), ...rows("output", run.attempts?.outputs)];
+});
 const headerActions = computed(() =>
   shownActionIds(run.task?.actions, HEAD_ACTIONS),
 );
@@ -85,6 +95,24 @@ const headerActions = computed(() =>
         <StartNewRun compact :id="id" />
       </div>
     </div>
+
+    <dl
+      v-if="io.length || run.attempts?.called_by"
+      class="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs"
+    >
+      <template v-if="run.attempts?.called_by">
+        <dt class="text-fg-subtle">Called by</dt>
+        <dd>
+          <RouterLink :to="`/tasks/${run.attempts.called_by}`" class="font-mono text-fg-muted hover:text-foreground hover:underline"
+            >task #{{ run.attempts.called_by }}</RouterLink
+          >
+        </dd>
+      </template>
+      <template v-for="row in io" :key="row.label">
+        <dt class="text-fg-subtle">{{ row.label }}</dt>
+        <dd class="font-mono break-words text-fg-muted">{{ row.value }}</dd>
+      </template>
+    </dl>
 
     <div
       v-if="parked"
