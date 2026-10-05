@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { Inbox, TriangleAlert } from "@lucide/vue";
-import { ref } from "vue";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import {
   Empty,
   EmptyDescription,
@@ -28,16 +26,6 @@ import { captures, enabled, error, loading } from "./state";
  * window with nothing in it yet.
  */
 
-// The receiver's path, held as a string rather than typed into the template:
-// its source segment is angle-bracketed, which a template parser reads as a
-// tag.
-const endpoint = "/webhooks/capture/<source>";
-const copied = ref(false);
-async function copyEndpoint() {
-  await navigator.clipboard.writeText(`${location.origin}${endpoint}`);
-  copied.value = true;
-  setTimeout(() => (copied.value = false), 1500);
-}
 </script>
 
 <template>
@@ -64,12 +52,8 @@ async function copyEndpoint() {
     <EmptyHeader>
       <EmptyMedia variant="icon"><Inbox /></EmptyMedia>
       <EmptyTitle>No captures yet</EmptyTitle>
-      <EmptyDescription>Webhooks sent here appear below.</EmptyDescription>
+      <EmptyDescription>Create a source above and point a sender at its URL.</EmptyDescription>
     </EmptyHeader>
-    <div class="flex items-center gap-2 rounded-md border border-border bg-background py-1 pr-1 pl-3">
-      <code class="font-mono text-xs">{{ endpoint }}</code>
-      <Button variant="ghost" size="sm" @click="copyEndpoint">{{ copied ? "Copied" : "Copy" }}</Button>
-    </div>
   </Empty>
 
   <Table v-else>

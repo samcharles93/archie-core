@@ -3,6 +3,7 @@ import { breakpointsTailwind, useBreakpoints } from "@vueuse/core";
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
+import SourcesPanel from "@/sources/SourcesPanel.vue";
 import CaptureDetail from "./CaptureDetail.vue";
 import CapturesCard from "./CapturesCard.vue";
 import EventTypesCard from "./EventTypesCard.vue";
@@ -90,6 +91,7 @@ watch(selected, (capture) => {
 </script>
 
 <template>
+  <SourcesPanel />
   <!-- Split only when there is a capture to show beside the list. -->
   <div
     class="grid min-w-0 items-start gap-4"
