@@ -110,7 +110,6 @@ export function provideTaskRun(id: ComputedRef<number | null>): TaskRun {
   const retryBusy = ref(false);
   const retryError = ref<RetryError | null>(null);
   const refreshToken = ref(0);
-  const started = new Set<string>();
 
   const task = computed<TaskRecord | null>(() =>
     Array.isArray(taskList.value)
@@ -171,16 +170,13 @@ export function provideTaskRun(id: ComputedRef<number | null>): TaskRun {
     cache: Ref<Cache<T>>,
     { force = false }: { force?: boolean } = {},
   ): void {
-    if (started.has(cacheKey) && !force) return;
-    started.add(cacheKey);
+    if (cache.value.has(cacheKey) && cache.value.get(cacheKey) !== null && !force) return;
     cache.value = new Map(cache.value).set(cacheKey, undefined);
     // A read that never settles would pin the panel's loading line forever:
     // after a quiet minute the read is declared broken so the retry button
     // can appear. A late response after the timeout is discarded by the race.
-    let timedOut = false;
     const timeout = new Promise<never>((_, reject) => {
       setTimeout(() => {
-        timedOut = true;
         reject(new Error("read timed out"));
       }, 30_000);
     });
@@ -189,7 +185,6 @@ export function provideTaskRun(id: ComputedRef<number | null>): TaskRun {
         cache.value = new Map(cache.value).set(cacheKey, res);
       })
       .catch(() => {
-        if (!timedOut) started.delete(cacheKey);
         cache.value = new Map(cache.value).set(cacheKey, null);
       });
   }
@@ -275,7 +270,6 @@ export function provideTaskRun(id: ComputedRef<number | null>): TaskRun {
   /** Drop every cache so a manual refresh cannot show a stale capture or log
    * beside fresh attempt history. */
   function dropCaches(): void {
-    started.clear();
     logs.value = new Map();
     changes.value = new Map();
     debug.value = new Map();
@@ -342,7 +336,7 @@ export function provideTaskRun(id: ComputedRef<number | null>): TaskRun {
     if (tab.value === "log") loadLogs(attempt);
     else if (tab.value === "changes") loadChanges(attempt);
     else if (tab.value === "debug") loadDebug(attempt);
-  });
+  }, { immediate: true });
 
   watch([tab, attemptNumber], () => {
     if (id.value == null) return;
