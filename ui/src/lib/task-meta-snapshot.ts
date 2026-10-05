@@ -85,6 +85,12 @@ export const DEFAULT_ACTIONS: ActionMeta[] = [
     kind: "quiet",
     confirm: `Archive the local record for "{title}"?`,
   },
+  {
+    id: "merge",
+    label: "Merge",
+    kind: "primary",
+    confirm: `Merge the pull request for "{title}"?`,
+  },
   { id: "open_pr", label: "Open PR", kind: "link" },
   { id: "open_issue", label: "Open issue", kind: "link" },
 ];

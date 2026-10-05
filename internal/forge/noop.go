@@ -49,6 +49,10 @@ func (n *NoopForge) ClosePR(ctx context.Context, owner, repo string, number int,
 	return nil
 }
 
+func (n *NoopForge) MergePR(ctx context.Context, owner, repo string, number int) error {
+	return nil
+}
+
 func (n *NoopForge) PRState(ctx context.Context, owner, repo string, number int) (string, error) {
 	return "closed", nil
 }

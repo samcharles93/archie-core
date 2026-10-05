@@ -28,7 +28,10 @@ const (
 	KindPRRejected = "pr_rejected"
 	// KindPRClosed records archie closing a task's PR when the task is rejected.
 	KindPRClosed = "pr_closed" // data: pr_number
-	KindTaskDead = "task_dead"
+	// KindPRMergeRequested records an operator merging a task's PR from
+	// archie. data: pr_number.
+	KindPRMergeRequested = "pr_merge_requested"
+	KindTaskDead         = "task_dead"
 	// Operator actions taken from the dashboard. Without these an
 	// intervention is recorded in the tasks table but invisible on the
 	// timeline and the activity stream -- the one kind of event most worth

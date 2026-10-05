@@ -20,6 +20,7 @@ func (b *boot) taskActions() taskactions.Service {
 		b.cancelTask,
 		b.closeIssue,
 		b.closePR,
+		b.mergePR,
 		b.removeTaskLogs,
 		b.removeTaskWorktree,
 		b.publishEvent,
@@ -55,6 +56,13 @@ func (b *boot) closePR(ctx context.Context, owner, repo string, number int, comm
 		return fmt.Errorf("forge is not configured")
 	}
 	return b.forgeClient.ClosePR(ctx, owner, repo, number, comment)
+}
+
+func (b *boot) mergePR(ctx context.Context, owner, repo string, number int) error {
+	if b.forgeClient == nil {
+		return fmt.Errorf("forge is not configured")
+	}
+	return b.forgeClient.MergePR(ctx, owner, repo, number)
 }
 
 func (b *boot) removeTaskLogs(id int64) error {

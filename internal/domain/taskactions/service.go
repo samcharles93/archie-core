@@ -200,6 +200,7 @@ type Service struct {
 	CancelTask func(int64) bool
 	CloseIssue func(context.Context, string, string, int, string) error
 	ClosePR    func(context.Context, string, string, int, string) error
+	MergePR    func(context.Context, string, string, int) error
 	RemoveLogs func(int64) error
 	// RemoveWorktree discards the task's clone on archive, the reap path for a
 	// worktree terminal cleanup kept because it may hold uncaptured work.
@@ -303,6 +304,8 @@ func (s Service) apply(ctx context.Context, task *Task, actor Actor, action task
 		return s.applyCancelOrAbandon(ctx, task, action, actor, o)
 	case taskstate.ActionArchive:
 		return s.applyArchive(ctx, task, actor, o)
+	case taskstate.ActionMerge:
+		return s.applyMerge(ctx, task, actor, o)
 	default:
 		return o, fmt.Errorf("unsupported task action %q", action)
 	}
@@ -522,6 +525,25 @@ func (s Service) applyCancelOrAbandon(ctx context.Context, task *Task, action ta
 	}
 	s.deliver(task.ID)
 	return o, nil
+}
+
+// applyMerge merges the task's pull request on the forge, then records the
+// task merged. A forge refusal (conflicts, failing checks, protection) leaves
+// the task in review.
+func (s Service) applyMerge(ctx context.Context, task *Task, actor Actor, o outcome) (outcome, error) {
+	if s.MergePR == nil {
+		return o, ErrUnavailable
+	}
+	if task.PRNumber <= 0 {
+		return o, fmt.Errorf("%w: task has no pull request", ErrConflict)
+	}
+	if err := s.MergePR(ctx, task.Owner, task.Repo, task.PRNumber); err != nil {
+		return o, fmt.Errorf("%w: merge pull request #%d: %w", ErrConflict, task.PRNumber, err)
+	}
+	o.event.Kind, o.event.Detail = events.KindPRMergeRequested, actor.describe(fmt.Sprintf("merged pull request #%d", task.PRNumber))
+	o.event.Data = map[string]any{"pr_number": task.PRNumber}
+	merged, _ := taskstate.ActionTarget(taskstate.ActionMerge)
+	return o, s.Store.Transition(ctx, task.ID, task.Status, merged, o.event.Detail)
 }
 
 func (s Service) applyArchive(ctx context.Context, task *Task, actor Actor, o outcome) (outcome, error) {

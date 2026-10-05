@@ -213,6 +213,13 @@ func (f *Forge) ClosePR(ctx context.Context, owner, repo string, number int, com
 	return err
 }
 
+func (f *Forge) MergePR(ctx context.Context, owner, repo string, number int) error {
+	_, err := call(ctx, f, "merge pull request", func(c forgev1.ForgeServiceClient) (*forgev1.MergePRResponse, error) {
+		return c.MergePR(ctx, &forgev1.MergePRRequest{Repo: ref(owner, repo), Number: int32(number)}) //nolint:gosec // PR numbers fit int32
+	})
+	return err
+}
+
 func (f *Forge) PRState(ctx context.Context, owner, repo string, number int) (string, error) {
 	resp, err := call(ctx, f, "pull request state", func(c forgev1.ForgeServiceClient) (*forgev1.PRStateResponse, error) {
 		return c.PRState(ctx, &forgev1.PRStateRequest{Repo: ref(owner, repo), Number: int32(number)}) //nolint:gosec // issue numbers fit int32

@@ -61,6 +61,9 @@ type PullRequestForge interface {
 	// ClosePR closes a pull request without merging, with an optional final
 	// comment.
 	ClosePR(ctx context.Context, owner, repo string, number int, comment string) error
+
+	// MergePR merges a pull request with the forge's default method.
+	MergePR(ctx context.Context, owner, repo string, number int) error
 }
 
 // PullRequest is a forge-neutral summary of an existing pull request,

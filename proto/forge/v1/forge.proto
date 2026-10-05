@@ -25,6 +25,7 @@ service ForgeService {
   rpc CreatePR(CreatePRRequest) returns (CreatePRResponse);
   rpc PRState(PRStateRequest) returns (PRStateResponse);
   rpc ClosePR(ClosePRRequest) returns (ClosePRResponse);
+  rpc MergePR(MergePRRequest) returns (MergePRResponse);
   rpc GetPullRequest(GetPullRequestRequest) returns (GetPullRequestResponse);
   rpc GetPullRequestDiff(GetPullRequestDiffRequest) returns (GetPullRequestDiffResponse);
   rpc ListReviews(ListReviewsRequest) returns (ListReviewsResponse);
@@ -100,6 +101,13 @@ message ClosePRRequest {
   string comment = 3;
 }
 message ClosePRResponse {}
+
+// MergePRRequest merges a pull request with the forge's default method.
+message MergePRRequest {
+  RepoRef repo = 1;
+  int32 number = 2;
+}
+message MergePRResponse {}
 
 message ReactRequest {
   RepoRef repo = 1;

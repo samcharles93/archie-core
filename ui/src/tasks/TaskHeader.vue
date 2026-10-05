@@ -35,7 +35,7 @@ const parked = computed(() => status.value === "parked" && !!run.task?.park_reas
 // The head has room for one control: the reap an operator reaches for once a
 // task is finished with. Whether this task offers it at all is the server's
 // action list, never this page's opinion about the status.
-const HEAD_ACTIONS = ["archive"];
+const HEAD_ACTIONS = ["archive", "merge"];
 
 // The run's inputs and written outputs, one row per name.
 const io = computed(() => {

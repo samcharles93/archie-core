@@ -21,6 +21,7 @@ const (
 	ActionRereview  Action = "rereview"
 	ActionRetry     Action = "retry"
 	ActionAbandon   Action = "abandon"
+	ActionMerge     Action = "merge"
 	ActionOpenPR    Action = "open_pr"
 	ActionOpenIssue Action = "open_issue"
 	ActionArchive   Action = "archive"
@@ -76,7 +77,7 @@ func Actions(status string) []Action {
 	case Parked:
 		actions = []Action{ActionRetry, ActionAbandon, ActionReject}
 	case PROpen:
-		actions = []Action{ActionOpenPR, ActionOpenIssue, ActionReject}
+		actions = []Action{ActionMerge, ActionOpenPR, ActionOpenIssue, ActionReject}
 	case Merged, Rejected, Dead, Declined, Completed:
 		actions = []Action{ActionArchive}
 	}
@@ -93,6 +94,8 @@ func ActionTarget(action Action) (string, bool) {
 		return Parked, true
 	case ActionCancel, ActionReject, ActionAbandon:
 		return Declined, true
+	case ActionMerge:
+		return Merged, true
 	default:
 		return "", false
 	}
@@ -242,6 +245,7 @@ func ActionCatalog() []ActionMeta {
 		{ID: string(ActionRetry), Label: "Retry", Kind: "primary"},
 		{ID: string(ActionAbandon), Label: "Abandon", Kind: "quiet", Confirm: `Abandon "{title}"? Archie stops working on it; the forge issue stays open.`},
 		{ID: string(ActionArchive), Label: "Archive", Kind: "quiet", Confirm: `Archive the local record for "{title}"?`},
+		{ID: string(ActionMerge), Label: "Merge", Kind: "primary", Confirm: `Merge the pull request for "{title}"?`},
 		{ID: string(ActionOpenPR), Label: "Open PR", Kind: "link"},
 		{ID: string(ActionOpenIssue), Label: "Open issue", Kind: "link"},
 	}
