@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { Check, Pencil, Trash2 } from "@lucide/vue";
 
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +20,12 @@ const props = defineProps<{
   mappings: MappingOption[];
   eventTypes: EventType[];
 }>();
+// A filtered capture is the filter doing its job; any other reason means the
+// binding matched an event and could not start its workflow.
+const failing = computed(() => {
+  const reason = props.binding.last_outcome?.reason;
+  return !!reason && reason !== "filtered";
+});
 const emit = defineEmits<{
   edit: [binding: Binding];
   approve: [binding: Binding];
@@ -50,6 +57,12 @@ const emit = defineEmits<{
       <div class="flex items-center gap-2">
         {{ props.binding.workflow || "—" }}
         <Badge v-if="props.binding.workflow_disabled" variant="warn">Disabled</Badge>
+        <Badge
+          v-if="failing"
+          variant="danger"
+          :title="props.binding.last_outcome?.reason"
+          >Not dispatching</Badge
+        >
       </div>
     </TableCell>
     <TableCell class="font-mono text-fg-muted">{{

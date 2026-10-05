@@ -617,8 +617,8 @@ func (d *Daemon) dispatchCapture(ctx context.Context, c storecontract.CapturedEv
 }
 
 // bindingMapping returns b's mapping, or nil after logging why it is
-// unavailable.
-func (d *Daemon) bindingMapping(ctx context.Context, b binding.Binding) *mapping.Mapping {
+// unavailable. A mapping that no longer exists is a terminal outcome.
+func (d *Daemon) bindingMapping(ctx context.Context, b binding.Binding, c storecontract.CapturedEvent) *mapping.Mapping {
 	if d.Mappings == nil {
 		d.Log.Warn("binding dispatch: mapping store unavailable", "binding", b.ID)
 		return nil
@@ -629,7 +629,7 @@ func (d *Daemon) bindingMapping(ctx context.Context, b binding.Binding) *mapping
 		return nil
 	}
 	if m == nil {
-		d.Log.Warn("binding dispatch: mapping missing", "binding", b.ID, "mapping", b.MappingID)
+		d.recordDispatchFailure(ctx, b, c, fmt.Sprintf("mapping %q does not exist", b.MappingID), nil)
 	}
 	return m
 }
@@ -640,7 +640,7 @@ func (d *Daemon) bindingMapping(ctx context.Context, b binding.Binding) *mapping
 // dispatch is claimed in the ledger before the task is enqueued, so each
 // binding fires at most once per capture.
 func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c storecontract.CapturedEvent, workflows workflow.WorkflowDefinitionCollection) {
-	m := d.bindingMapping(ctx, b)
+	m := d.bindingMapping(ctx, b, c)
 	if m == nil || m.EventTypeID != c.EventType {
 		return
 	}
@@ -665,10 +665,8 @@ func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c st
 	}
 
 	target, reason, ok := d.resolveBindingTarget(b, values, workflows)
-	if reason != "" {
-		d.recordDispatchFailure(ctx, b, c, reason, nil)
-	}
 	if !ok {
+		d.recordDispatchFailure(ctx, b, c, reason, nil)
 		return
 	}
 	// The chain decides dispatch: the workflow's identity may `run` this
@@ -834,18 +832,15 @@ func renderBindingBody(values map[string]any, c storecontract.CapturedEvent) str
 
 // resolveBindingRepo returns the binding's pinned owner/repo, or the only
 // configured repo. With zero or several repos and no pin it refuses.
-func (d *Daemon) resolveBindingRepo(b binding.Binding) (string, string, bool) {
+func (d *Daemon) resolveBindingRepo(b binding.Binding) (owner, repo, reason string) {
 	if b.Owner != "" && b.Repo != "" {
-		return b.Owner, b.Repo, true
+		return b.Owner, b.Repo, ""
 	}
 	repos := d.Cfg.Get().Repos
 	if len(repos) == 1 {
-		return repos[0].Owner, repos[0].Name, true
+		return repos[0].Owner, repos[0].Name, ""
 	}
-	d.Log.Warn("binding dispatch: cannot resolve target repo",
-		"hint", "configure exactly one [[repos]] entry, or pin the binding to a specific owner/repo",
-		"configured_repos", len(repos))
-	return "", "", false
+	return "", "", fmt.Sprintf("cannot pick a repository: %d are configured; pin the binding to one", len(repos))
 }
 
 // drainReactions turns available review reactions into queued remediate

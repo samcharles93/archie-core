@@ -31,6 +31,8 @@ export interface Binding {
   unsigned?: boolean;
   /** Set when the binding's org has disabled the workflow it targets. */
   workflow_disabled?: boolean;
+  /** The newest ledger row: a task started, or why none was. */
+  last_outcome?: { task_id?: number; reason?: string; dispatched_at: string };
 }
 
 /** One workflow input's assignment on the wire. */

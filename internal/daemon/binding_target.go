@@ -40,8 +40,7 @@ func (d *Daemon) workflowEnablement(ctx context.Context) (workflowtask.WorkflowE
 
 // resolveBindingTarget checks a matched binding against the workflow it
 // targets and resolves the task's repository and inputs. A non-empty reason
-// means the binding does not dispatch and the reason is recorded on it; ok
-// false with no reason means resolveBindingRepo already logged why.
+// means the binding does not dispatch and the reason is recorded on it.
 func (d *Daemon) resolveBindingTarget(b binding.Binding, values map[string]any, workflows workflow.WorkflowDefinitionCollection) (target bindingTarget, reason string, ok bool) {
 	entry, found := workflows.DefinitionByID(b.Workflow)
 	if !found {
@@ -72,9 +71,9 @@ func (d *Daemon) resolveBindingTarget(b binding.Binding, values map[string]any, 
 	case mode == workflowtask.RepositoryOptional && b.Owner == "":
 		return target, "", true
 	}
-	owner, repo, resolved := d.resolveBindingRepo(b)
-	if !resolved {
-		return bindingTarget{}, "", false
+	owner, repo, reason := d.resolveBindingRepo(b)
+	if reason != "" {
+		return bindingTarget{}, reason, false
 	}
 	target.owner, target.repo = owner, repo
 	return target, "", true

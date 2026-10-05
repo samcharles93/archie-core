@@ -40,6 +40,9 @@ type bindingView struct {
 	// WorkflowDisabled marks a binding whose org has disabled the workflow it
 	// targets; it does not dispatch until the workflow is enabled again.
 	WorkflowDisabled bool `json:"workflow_disabled"`
+	// LastOutcome is the binding's newest ledger row: the task it started or
+	// the reason it started none.
+	LastOutcome *storecontract.Dispatch `json:"last_outcome,omitempty"`
 }
 
 func (s *Server) handleBindingsList(w http.ResponseWriter, r *http.Request) {
@@ -67,9 +70,26 @@ func (s *Server) handleBindingsList(w http.ResponseWriter, r *http.Request) {
 	}
 	views := make([]bindingView, 0, len(bindings))
 	for _, b := range bindings {
-		views = append(views, bindingView{Binding: b, Unsigned: unsigned[b.Matcher.Source], WorkflowDisabled: !enablement.Enabled(b.OrgID, b.Workflow)})
+		views = append(views, bindingView{
+			Binding: b, Unsigned: unsigned[b.Matcher.Source], WorkflowDisabled: !enablement.Enabled(b.OrgID, b.Workflow),
+			LastOutcome: s.lastOutcome(r.Context(), b.ID),
+		})
 	}
 	writeJSON(w, map[string]any{"bindings": views})
+}
+
+// lastOutcome returns a binding's newest dispatch, or nil when it has none or
+// the ledger is unreadable.
+func (s *Server) lastOutcome(ctx context.Context, bindingID string) *storecontract.Dispatch {
+	rows, err := s.Bindings.ListDispatches(ctx, storecontract.DispatchFilter{BindingID: bindingID, Limit: 1})
+	if err != nil {
+		s.Log.Warn("binding last outcome", "binding", bindingID, "err", err)
+		return nil
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	return &rows[0]
 }
 
 func (s *Server) handleBindingCreate(w http.ResponseWriter, r *http.Request) {
