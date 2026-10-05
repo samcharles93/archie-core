@@ -39,7 +39,7 @@ func taskSamplingHandler(llm *runtime.Runtime, cfg config.TaskConfig) mcp.Sampli
 			Messages:  messages,
 			System:    req.SystemPrompt,
 			MaxSteps:  1,
-			MaxTokens: modelloop.SamplingMaxTokens(req.MaxTokens, limits.MaxOutputTokens, limits.Reasoning),
+			MaxTokens: modelloop.SamplingMaxTokens(req.MaxTokens, limits.MaxOutputTokens),
 		}
 		if req.Temperature != nil {
 			options.Temperature = float32(*req.Temperature)

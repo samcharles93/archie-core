@@ -66,6 +66,6 @@ func (b *server) mcpSamplingHandler() mcp.SamplingHandler {
 // path (modelloop.SamplingMaxTokens) so the same server sees the same bound on
 // either path.
 func samplingMaxTokens(req mcp.SamplingRequest, models *chatModelManager, model string) int {
-	details, ok := models.ModelDetails(model)
-	return modelloop.SamplingMaxTokens(req.MaxTokens, details.MaxOutputTokens, ok && details.Reasoning)
+	details, _ := models.ModelDetails(model)
+	return modelloop.SamplingMaxTokens(req.MaxTokens, details.MaxOutputTokens)
 }

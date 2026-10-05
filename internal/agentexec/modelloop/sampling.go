@@ -41,17 +41,16 @@ func SamplingMessages(req protocol.SamplingRequest) ([]chat.Message, error) {
 }
 
 // SamplingMaxTokens returns the request's maxTokens or the default, capped at
-// the model's ceiling. Reasoning models get no bound.
-func SamplingMaxTokens(requested, modelCeiling int, reasoning bool) int {
+// the model's ceiling. The ai-sdk runtime picks max_completion_tokens or
+// max_tokens from the model's catalog metadata, so there is no reasoning
+// branch here.
+func SamplingMaxTokens(requested, modelCeiling int) int {
 	maxTokens := requested
 	if maxTokens <= 0 {
 		maxTokens = DefaultSamplingMaxTokens
 	}
 	if modelCeiling > 0 && maxTokens > modelCeiling {
 		maxTokens = modelCeiling
-	}
-	if reasoning {
-		return 0
 	}
 	return maxTokens
 }
