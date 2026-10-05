@@ -36,7 +36,7 @@ const failureByField = computed(
 
 <template>
   <p v-if="!fields.length" class="py-3 text-sm text-fg-muted">
-    Click a value in the payload to bind a field.
+    No fields bound.
   </p>
 
   <Table v-else>

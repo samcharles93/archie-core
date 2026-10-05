@@ -19,7 +19,6 @@ watch(() => props.task.review_gate, () => {
   <Card v-if="gate" class="mb-6">
     <CardHeader>
       <CardTitle>Review findings</CardTitle>
-      <p class="text-sm text-muted-foreground">Select the findings to post to the pull request.</p>
       <p v-if="gate.head_sha" class="break-all font-mono text-xs text-muted-foreground">Head commit: {{ gate.head_sha }}</p>
     </CardHeader>
     <CardContent class="space-y-4">
@@ -44,7 +43,7 @@ watch(() => props.task.review_gate, () => {
         </li>
       </ul>
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <p class="text-xs text-muted-foreground">{{ selected.length }} of {{ gate.findings.length }} selected<template v-if="!selected.length">. Select at least one finding to approve.</template></p>
+        <p class="text-xs text-muted-foreground">{{ selected.length }} of {{ gate.findings.length }} selected</p>
         <TaskRowActions :task="task" :only="['approve', 'rereview', 'reject']" :findings="selected" @done="emit('done', $event)" />
       </div>
     </CardContent>

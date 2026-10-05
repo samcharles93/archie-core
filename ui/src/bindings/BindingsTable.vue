@@ -63,8 +63,7 @@ const failureTitle = computed(() =>
     <EmptyHeader>
       <EmptyTitle>No bindings yet</EmptyTitle>
       <EmptyDescription>
-        Create one from a saved field mapping to turn a captured webhook into a
-        workflow.
+        None yet. A mapping + a workflow make a binding.
       </EmptyDescription>
     </EmptyHeader>
   </Empty>

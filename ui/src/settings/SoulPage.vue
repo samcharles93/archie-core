@@ -36,9 +36,7 @@ const chars = computed(() => soul.value?.text.length ?? 0);
         <DraftHint :kind="KIND" path="text" />
       </div>
       <p class="mt-1 text-xs text-fg-subtle">
-        Archie's name, register and warmth, rendered into the chat prompt's identity slot. An empty
-        value falls back to the SOUL file, then the shipped default. The invariant rules and tool
-        inventory are unaffected.
+        Empty falls back to the SOUL file, then the shipped default.
       </p>
       <Textarea
         id="soul-text"

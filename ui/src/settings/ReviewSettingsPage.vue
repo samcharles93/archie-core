@@ -53,7 +53,7 @@ const status = computed(() => (dials.value ? reviewDialStatus(config.value, dial
       <SettingRow
         label="Approve before posting"
         for="review-approve"
-        hint="Park a finished review so an operator approves the draft before it posts."
+        hint="Draft waits for you before it posts."
       >
         <div class="flex flex-wrap items-center gap-3">
           <Switch id="review-approve" v-model="dials.approve_before_post" aria-label="Approve before posting" />

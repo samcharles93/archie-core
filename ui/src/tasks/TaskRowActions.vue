@@ -354,9 +354,8 @@ function requestFromMenu(id: string) {
         <DialogHeader>
           <DialogTitle>Re-review this pull request?</DialogTitle>
           <DialogDescription>
-            The review phases run again with your instructions. Two re-reviews
-            are allowed; this is
-            {{ props.task.rereview_rounds ? "the next" : "the first" }} one.
+            Two re-reviews allowed; this is the
+            {{ props.task.rereview_rounds ? "next" : "first" }}.
           </DialogDescription>
         </DialogHeader>
         <div class="flex flex-col gap-2">
@@ -397,8 +396,7 @@ function requestFromMenu(id: string) {
         <DialogHeader>
           <DialogTitle>Retry this task?</DialogTitle>
           <DialogDescription>
-            Choose where the retry starts. The mode is saved on the task and
-            the daemon prepares the worktree from it.
+            Choose where the retry starts.
           </DialogDescription>
         </DialogHeader>
         <RadioGroupRoot

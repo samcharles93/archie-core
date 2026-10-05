@@ -119,8 +119,7 @@ function scopes(binding: HarnessBinding): string {
       <EmptyHeader>
         <EmptyTitle>Harness bindings are not configured</EmptyTitle>
         <EmptyDescription>
-          This process cannot read credential bindings or captured OAuth tokens,
-          so there is nothing to set up here.
+          This process cannot read credential bindings or captured OAuth tokens.
         </EmptyDescription>
       </EmptyHeader>
     </Empty>
@@ -129,8 +128,8 @@ function scopes(binding: HarnessBinding): string {
       <Alert v-if="!state.terminal" class="mb-4">
         <AlertTitle>Setup terminal unavailable</AlertTitle>
         <AlertDescription>
-          This process cannot open a Kit container. The bindings below are still
-          listed; the setup terminal needs a container-capable process.
+          This process cannot open a Kit container. Bindings are still listed
+          below.
         </AlertDescription>
       </Alert>
 

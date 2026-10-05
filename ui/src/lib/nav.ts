@@ -78,13 +78,13 @@ const settings: NavSpec = {
         "/settings/status",
       ],
     },
-    { paths: ["/settings/history"] },
+    { paths: ["/settings/appearance", "/settings/history"] },
   ],
 };
 
 // Reached from the Dashboard's Logs button and the account menu, and by
 // Jump to, but not from the bar.
-const unlisted = ["/logs", "/settings/appearance"];
+const unlisted = ["/logs"];
 
 export function navTree(hidden: string[] = []): NavNode[] {
   return buildNav(table, specs, hidden).tree;

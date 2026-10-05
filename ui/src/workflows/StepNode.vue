@@ -62,7 +62,7 @@ function duration(ms?: number): string {
         <span v-if="trigger.detail" class="truncate text-fg-subtle">{{ trigger.detail }}</span>
       </li>
     </ul>
-    <div v-else-if="data.kind === 'start'" class="mt-0.5 text-xs text-muted-foreground">Nothing starts it yet; run it by hand or bind an event to it.</div>
+    <div v-else-if="data.kind === 'start'" class="mt-0.5 text-xs text-muted-foreground">Nothing starts it yet.</div>
     <div v-else-if="data.detail" class="mt-0.5 truncate text-xs text-muted-foreground" :title="data.detail">{{ data.detail }}</div>
     <p v-if="data.summary" class="mt-1 line-clamp-2 text-xs leading-snug text-foreground/80" :title="data.summary">{{ data.summary }}</p>
     <div v-if="data.when || data.retry || data.continues" class="mt-1 flex flex-wrap gap-1 text-[11px]">

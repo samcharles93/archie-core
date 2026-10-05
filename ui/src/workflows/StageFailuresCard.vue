@@ -4,7 +4,6 @@ import { computed } from "vue";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -36,7 +35,6 @@ const rows = computed(() => failingStages(props.stages));
   <Card>
     <CardHeader>
       <CardTitle>Most failures</CardTitle>
-      <CardDescription>Stages that error out, over their runs</CardDescription>
     </CardHeader>
     <CardContent>
       <Empty v-if="!rows.length">

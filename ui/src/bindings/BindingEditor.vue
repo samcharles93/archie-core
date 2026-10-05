@@ -141,8 +141,7 @@ const title = computed(() => (props.binding ? "Edit binding" : "New binding"));
       <DialogHeader>
         <DialogTitle>{{ title }}</DialogTitle>
         <DialogDescription>
-          A binding is not armed until it is approved, and editing one drops it
-          back to pending approval.
+          Editing returns this binding to pending approval.
         </DialogDescription>
       </DialogHeader>
 
@@ -308,8 +307,7 @@ const title = computed(() => (props.binding ? "Edit binding" : "New binding"));
               </Field>
             </div>
             <FieldDescription>
-              Optional. A pin is both halves or neither, so leave both blank to
-              use the single configured repo.
+              Both or neither; blank uses the configured repo.
             </FieldDescription>
           </Field>
         </FieldGroup>

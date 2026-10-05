@@ -5,7 +5,6 @@ import PageHeader from "@/base/PageHeader.vue";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -54,9 +53,6 @@ const filtered = computed(() => {
     <Card>
       <CardHeader>
         <CardTitle>Catalogue</CardTitle>
-        <CardDescription
-          >Project, shared, and user-global skills</CardDescription
-        >
         <Input
           v-model="search"
           type="search"

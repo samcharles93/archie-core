@@ -204,8 +204,7 @@ onMounted(load);
             }}
           </Button>
           <p v-if="installing" class="text-xs text-fg-muted">
-            The build runs on this host and the restart is verified out of band;
-            the page can be left.
+            You can leave this page; the restart continues here.
           </p>
         </div>
 

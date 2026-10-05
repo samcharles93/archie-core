@@ -174,7 +174,6 @@ const models = computed({
         </SettingRow>
         <SettingRow
           label="Unrestricted filesystem"
-          hint="File tools can write anywhere."
           :tone="chat.unrestricted_filesystem ? 'danger' : 'default'"
         >
           <Switch v-model="chat.unrestricted_filesystem" aria-label="Unrestricted filesystem" />

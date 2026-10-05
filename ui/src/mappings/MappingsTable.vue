@@ -47,10 +47,7 @@ import {
   <Empty v-else-if="!mappings.length">
     <EmptyHeader>
       <EmptyTitle>No mappings yet</EmptyTitle>
-      <EmptyDescription
-        >Create one from a captured event to reuse its fields in a future
-        playbook binding.</EmptyDescription
-      >
+      <EmptyDescription>None yet.</EmptyDescription>
     </EmptyHeader>
   </Empty>
 

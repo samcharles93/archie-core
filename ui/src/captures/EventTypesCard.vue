@@ -164,7 +164,7 @@ function fieldCount(schema: Record<string, string> | null | undefined): number {
         <EmptyHeader>
           <EmptyTitle>No event types yet</EmptyTitle>
           <EmptyDescription>
-            Create one from a captured event.
+            Nothing is dispatched until a type matches.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>

@@ -63,7 +63,7 @@ onMounted(load);
       <Button size="sm" :disabled="busy" @click="create"><Plus data-icon="inline-start" /> New token</Button>
     </div>
     <p class="mb-3 text-xs text-fg-subtle">
-      A token acts as you. Send it as <code>Authorization: Bearer &lt;token&gt;</code>.
+      Send it as <code>Authorization: Bearer &lt;token&gt;</code>.
     </p>
     <p v-if="error" role="alert" class="mb-3 text-sm text-danger">{{ error }}</p>
     <div v-if="created" class="mb-3 rounded-lg border border-border bg-card p-3">

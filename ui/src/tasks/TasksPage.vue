@@ -23,7 +23,6 @@ import { useRoute, useRouter } from "vue-router";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -209,7 +208,6 @@ async function reveal(id: number) {
       <Card>
         <CardHeader>
           <CardTitle>All tasks</CardTitle>
-          <CardDescription>Click a row for its timeline</CardDescription>
         </CardHeader>
         <CardContent class="flex flex-col gap-3">
           <TaskFilters

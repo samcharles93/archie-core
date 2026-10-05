@@ -36,8 +36,7 @@ function onOpenChange(open: boolean): void {
       <AlertDialogHeader>
         <AlertDialogTitle>Delete "{{ props.binding?.name }}"?</AlertDialogTitle>
         <AlertDialogDescription>
-          It stops dispatching immediately and cannot be recovered. Captured
-          events for its source keep arriving; they just stop starting tasks.
+          It stops dispatching immediately and cannot be recovered.
         </AlertDialogDescription>
       </AlertDialogHeader>
       <AlertDialogFooter>

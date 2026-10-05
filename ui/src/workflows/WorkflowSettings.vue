@@ -79,7 +79,6 @@ function setNeeds(next: { captures?: boolean; gate_retries?: number }): void {
     <header class="flex items-center gap-2 border-b border-border px-4 py-3">
       <div class="min-w-0 flex-1">
         <div class="text-sm font-medium">Workflow settings</div>
-        <div class="text-[11px] text-fg-subtle">What it takes, where it works, and what starts it</div>
       </div>
       <Button type="button" variant="ghost" size="icon-sm" aria-label="Close" @click="emit('close')"><X /></Button>
     </header>
@@ -202,7 +201,7 @@ function setNeeds(next: { captures?: boolean; gate_retries?: number }): void {
             </div>
           </li>
         </ul>
-        <p v-else class="text-xs text-fg-subtle">Nothing starts it automatically. Run it by hand, or bind an event.</p>
+        <p v-else class="text-xs text-fg-subtle">Nothing starts it automatically.</p>
       </section>
     </div>
     </template>

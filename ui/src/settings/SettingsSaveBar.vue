@@ -95,8 +95,7 @@ async function save() {
       <SheetHeader>
         <SheetTitle>Review {{ count }} {{ count === 1 ? "change" : "changes" }}</SheetTitle>
         <SheetDescription>
-          {{ sections.length }} {{ sections.length === 1 ? "section" : "sections" }},
-          saved in order; a failure stops the rest.
+          {{ sections.length }} {{ sections.length === 1 ? "section" : "sections" }}
         </SheetDescription>
       </SheetHeader>
       <div class="flex-1 space-y-3 overflow-y-auto px-4 pb-4">

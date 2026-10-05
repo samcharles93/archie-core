@@ -141,7 +141,6 @@ const routes = [
       navPath: "/settings",
       settings: true,
       label: "Appearance",
-      description: "Theme and display preferences.",
     },
   },
   {
@@ -317,7 +316,7 @@ const routes = [
       navPath: "/settings",
       settings: true,
       label: "Extensions",
-      description: "Installable extensions: install, accept what they may use, enable.",
+      description: "Installed extensions and their grants.",
       section: "settings",
     },
   },
@@ -329,7 +328,7 @@ const routes = [
       navPath: "/settings",
       settings: true,
       label: "Plugins",
-      description: "Directories Archie loads extensions from at startup.",
+      description: "Where extension directories are loaded from.",
       section: "settings",
     },
   },
@@ -376,7 +375,6 @@ const routes = [
     redirect: "/settings/personas",
     meta: {
       label: "Settings",
-      description: "Everything you configure: agents, integrations, runtime.",
     },
   },
   // Paths from before Settings existed, kept for bookmarks and chat history.

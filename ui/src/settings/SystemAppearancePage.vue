@@ -50,9 +50,6 @@ function chooseMotion(value: unknown): void {
         <section class="flex min-w-0 flex-col items-start">
           <div>
             <h2 id="appearance-theme" class="text-sm font-medium">Theme</h2>
-            <p class="mt-1 text-sm text-muted-foreground">
-              Follow your device, or keep Archie light or dark.
-            </p>
           </div>
           <ToggleGroup
             type="single"
@@ -71,9 +68,6 @@ function chooseMotion(value: unknown): void {
         <section class="flex min-w-0 flex-col items-start">
           <div>
             <h2 id="appearance-density" class="text-sm font-medium">Density</h2>
-            <p class="mt-1 text-sm text-muted-foreground">
-              Use relaxed spacing, or fit more work on screen.
-            </p>
           </div>
           <ToggleGroup
             type="single"
@@ -91,9 +85,6 @@ function chooseMotion(value: unknown): void {
         <section class="flex min-w-0 flex-col items-start">
           <div>
             <h2 id="appearance-motion" class="text-sm font-medium">Motion</h2>
-            <p class="mt-1 text-sm text-muted-foreground">
-              Follow your device, or reduce interface animation here.
-            </p>
           </div>
           <ToggleGroup
             type="single"
@@ -113,9 +104,6 @@ function chooseMotion(value: unknown): void {
             <h2 id="appearance-tooltips" class="text-sm font-medium">
               Tooltips
             </h2>
-            <p class="mt-1 text-sm text-muted-foreground">
-              Show extra context when controls are hovered or focused.
-            </p>
           </div>
           <Switch
             :model-value="tooltipsEnabled"

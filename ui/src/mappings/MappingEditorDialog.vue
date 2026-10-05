@@ -11,7 +11,6 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -52,10 +51,6 @@ function onOpenChange(open: boolean) {
         <DialogTitle>{{
           draft.id === null ? "New mapping" : "Edit mapping"
         }}</DialogTitle>
-        <DialogDescription>
-          Bind named fields to JSON paths from a real captured event, ready for
-          a playbook binding.
-        </DialogDescription>
       </DialogHeader>
 
       <Card>
@@ -78,7 +73,7 @@ function onOpenChange(open: boolean) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Payload — click a value to bind it</CardTitle>
+          <CardTitle>Payload</CardTitle>
         </CardHeader>
         <CardContent>
           <Alert v-if="draft.payloadError" variant="destructive">
@@ -90,7 +85,7 @@ function onOpenChange(open: boolean) {
             @pick="addField"
           />
           <p v-else class="text-sm text-fg-muted">
-            Pick a captured event above to see its payload.
+            No event selected.
           </p>
         </CardContent>
       </Card>

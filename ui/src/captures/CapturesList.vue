@@ -64,7 +64,7 @@ async function copyEndpoint() {
     <EmptyHeader>
       <EmptyMedia variant="icon"><Inbox /></EmptyMedia>
       <EmptyTitle>No captures yet</EmptyTitle>
-      <EmptyDescription>Point a webhook at this address and it shows up here.</EmptyDescription>
+      <EmptyDescription>Webhooks sent here appear below.</EmptyDescription>
     </EmptyHeader>
     <div class="flex items-center gap-2 rounded-md border border-border bg-background py-1 pr-1 pl-3">
       <code class="font-mono text-xs">{{ endpoint }}</code>

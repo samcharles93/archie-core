@@ -68,8 +68,7 @@ const total = computed(
       </TableBody>
     </Table>
     <p v-if="capture.truncated" class="mt-2 text-xs text-fg-muted">
-      Showing the first {{ files.length }} of {{ total }} files. The totals
-      above cover every file in this capture.
+      Showing the first {{ files.length }} of {{ total }} files.
     </p>
   </template>
 </template>

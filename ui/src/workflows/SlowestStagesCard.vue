@@ -4,7 +4,6 @@ import { computed } from "vue";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -31,9 +30,6 @@ const maxMs = computed(() => maxStageMs(props.stages));
   <Card>
     <CardHeader>
       <CardTitle>Slowest stages</CardTitle>
-      <CardDescription
-        >Average duration, this workflow's stages</CardDescription
-      >
     </CardHeader>
     <CardContent>
       <Table>

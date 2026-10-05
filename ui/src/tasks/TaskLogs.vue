@@ -229,8 +229,7 @@ const download = computed(() =>
       <EmptyHeader>
         <EmptyTitle>No persisted log for this attempt</EmptyTitle>
         <EmptyDescription
-          >The log service is not reporting a reader, so the file cannot be
-          read.</EmptyDescription
+          >The log service has no reader for this file.</EmptyDescription
         >
       </EmptyHeader>
     </Empty>
@@ -268,7 +267,7 @@ const download = computed(() =>
         >
       </div>
       <p v-if="current?.truncated" class="px-1 pt-1 text-xs text-warn">
-        The log is larger than the readable window; its oldest entries cannot be paged.
+        Log truncated; older entries are not pageable.
       </p>
       <Button v-if="download" variant="outline" size="sm" class="mt-3" as-child>
         <a :href="download" download>Download log</a>
