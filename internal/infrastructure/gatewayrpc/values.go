@@ -59,12 +59,11 @@ func storedValue(v *pb.Message) messaging.Message {
 }
 
 // inboundProto renders a channel message and its transport context in wire
-// shape. Page, BudgetKey and Platform ride along; the record's role does not, for
+// shape. Page and Platform ride along; the record's role does not, for
 // the reason storedProto gives.
 func inboundProto(v messaging.Inbound) *pb.Message {
 	m := storedProto(v.Message)
 	m.Page = v.Page
-	m.BudgetKey = v.BudgetKey
 	m.Platform = v.Platform
 	m.Media = inboundAttachmentProtoList(v.Media)
 	return m
@@ -82,7 +81,7 @@ func inboundValue(v *pb.Message) messaging.Inbound {
 	msg.Role = messaging.RoleUser
 	// The record keeps the metadata the store persists; the transport media
 	// carries the bytes the turn model reads, which the record must not hold.
-	return messaging.Inbound{Message: msg, Page: v.Page, BudgetKey: v.BudgetKey, Platform: v.Platform, Media: inboundAttachmentValueList(v.GetMedia())}
+	return messaging.Inbound{Message: msg, Page: v.Page, Platform: v.Platform, Media: inboundAttachmentValueList(v.GetMedia())}
 }
 
 func toolProto(v messaging.ToolCallEvent) *pb.ToolCall {

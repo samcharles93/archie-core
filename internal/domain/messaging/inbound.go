@@ -14,9 +14,6 @@ type Inbound struct {
 	// this message. Transport-only: it reaches the system prompt and
 	// is never persisted. Empty for non-web channels.
 	Page string
-	// BudgetKey is the rate-limit key for a channel with no per-person sender,
-	// such as a webhook route. Not persisted. Empty means not limited.
-	BudgetKey string
 	// Platform is the channel that carried the message. Not persisted. Empty
 	// falls back to the gateway's name.
 	Platform string

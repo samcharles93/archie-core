@@ -148,15 +148,8 @@ type Message struct {
 	Text      string                 `protobuf:"bytes,6,opt,name=text,proto3" json:"text,omitempty"`
 	Page      string                 `protobuf:"bytes,7,opt,name=page,proto3" json:"page,omitempty"`
 	At        *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=at,proto3" json:"at,omitempty"`
-	// budget_key is the source an inbound message is charged against by the
-	// Gateway's inbound rate limiter, for a channel that has no per-person
-	// sender id but does have a stable, operator-controlled source of its own
-	// -- a webhook's configured route path. Transport-only: a channel frontend
-	// sets it on inbound and it is never persisted, exactly like page. Empty
-	// means the message is not rate limited.
-	BudgetKey string `protobuf:"bytes,9,opt,name=budget_key,json=budgetKey,proto3" json:"budget_key,omitempty"`
 	// platform is the channel that carried this message ("telegram", "email",
-	// "webhook", "web"), as the frontend that owns that channel knows it. It is
+	// "web"), as the frontend that owns that channel knows it. It is
 	// how the Gateway learns which channel it is serving: one Router serves every
 	// channel, so its own name is "web" even for a Telegram turn, which made
 	// Source.Platform -- the first component of the session natural key -- a
@@ -258,13 +251,6 @@ func (x *Message) GetAt() *timestamppb.Timestamp {
 		return x.At
 	}
 	return nil
-}
-
-func (x *Message) GetBudgetKey() string {
-	if x != nil {
-		return x.BudgetKey
-	}
-	return ""
 }
 
 func (x *Message) GetPlatform() string {
@@ -3388,7 +3374,7 @@ const file_gateway_v1_chat_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12@\n" +
 	"\x0elast_active_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\flastActiveAt\"\xea\x02\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\flastActiveAt\"\xdd\x02\n" +
 	"\aMessage\x12\x1d\n" +
 	"\n" +
 	"message_id\x18\x01 \x01(\tR\tmessageId\x12\x1b\n" +
@@ -3399,13 +3385,13 @@ const file_gateway_v1_chat_proto_rawDesc = "" +
 	"\x04from\x18\x05 \x01(\tR\x04from\x12\x12\n" +
 	"\x04text\x18\x06 \x01(\tR\x04text\x12\x12\n" +
 	"\x04page\x18\a \x01(\tR\x04page\x12*\n" +
-	"\x02at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x1d\n" +
-	"\n" +
-	"budget_key\x18\t \x01(\tR\tbudgetKey\x12\x1a\n" +
+	"\x02at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x1a\n" +
 	"\bplatform\x18\n" +
 	" \x01(\tR\bplatform\x12'\n" +
 	"\x05media\x18\v \x03(\v2\x11.gateway.v1.MediaR\x05media\x12\x1b\n" +
-	"\tsender_id\x18\f \x01(\tR\bsenderId\"|\n" +
+	"\tsender_id\x18\f \x01(\tR\bsenderIdJ\x04\b\t\x10\n" +
+	"R\n" +
+	"budget_key\"|\n" +
 	"\bToolCall\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1e\n" +

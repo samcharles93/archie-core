@@ -176,7 +176,7 @@ type Router struct {
 	// important enough to fail the turn over.
 	Log *slog.Logger
 	// Limiter enforces a per-(gateway, source) inbound budget, keyed by
-	// inboundBudgetKey. Nil disables it.
+	// sender. Nil disables it.
 	Limiter *ratelimit.Limiter
 	// Dedup declines a redelivered platform message inside its TTL. Nil disables
 	// it.
@@ -229,23 +229,14 @@ func (r *Router) SessionTracker() *sessionTracker {
 // budget, in place of normal dispatch.
 const rateLimitReply = "You're sending messages too quickly. Please wait a moment and try again."
 
-// checkRateLimit reports whether in is over its source's inbound budget.
-// A nil Limiter (rate limiting not configured) or no key to charge the
-// message against (see inboundBudgetKey) always allows.
+// checkRateLimit reports whether in is over its sender's inbound budget.
+// A nil Limiter (rate limiting not configured) or no sender always allows.
 func (r *Router) checkRateLimit(in Inbound) (blocked bool) {
-	key := inboundBudgetKey(in)
+	key := in.Message.SenderID
 	if r.Limiter == nil || key == "" {
 		return false
 	}
 	return !r.Limiter.Allow(r.gatewayName, key)
-}
-
-// inboundBudgetKey returns the channel's BudgetKey when set, else SenderID.
-func inboundBudgetKey(in Inbound) string {
-	if in.BudgetKey != "" {
-		return in.BudgetKey
-	}
-	return in.Message.SenderID
 }
 
 // Route dispatches msg and returns the reply. Gateway-local commands

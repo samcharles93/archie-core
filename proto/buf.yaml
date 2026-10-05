@@ -27,6 +27,9 @@ breaking:
   # Control-plane requests stopped naming their org or raw audit records: the
   # State Store derives the org from the caller, so those fields are removed
   # (numbers and names reserved).
+  #
+  # Message.budget_key went with the webhook chat channel (number and name
+  # reserved). An older channel extension that still sets it is ignored.
   ignore_only:
     FIELD_SAME_TYPE:
       - state/v1/state.proto
@@ -37,3 +40,4 @@ breaking:
     FIELD_NO_DELETE:
       - state/v1/state.proto
       - controlplane/v1/controlplane.proto
+      - gateway/v1/chat.proto

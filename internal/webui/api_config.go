@@ -77,8 +77,6 @@ func channelViewFromStatus(status status.Status) ChannelView {
 	switch status.ID {
 	case "telegram":
 		view.Description = "Talk to Archie and approve its work from your phone."
-	case "webhook":
-		view.Description = "Lets another service push messages to Archie over HTTP."
 	case "email":
 		view.Description = "Email Archie a task and receive replies through its inbound SMTP listener."
 	}
