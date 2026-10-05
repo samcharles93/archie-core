@@ -197,8 +197,7 @@ type Review struct {
 	ApproveBeforePost bool `toml:"approve_before_post" yaml:"approve_before_post"`
 }
 
-// Dispatch configures how archied discovers work and reflects task state
-// onto the forge via labels and reactions.
+// Dispatch configures how archied discovers work and reacts on pickup.
 type Dispatch struct {
 	// Trigger is how tasks are discovered: "assignee" (poll assigned
 	// issues), "label" (poll labelled issues), or "either" (both).
@@ -207,57 +206,6 @@ type Dispatch struct {
 	// ack_reaction = "off" in TOML to disable it; Load normalizes that
 	// sentinel to an empty string for callers.
 	AckReaction string `toml:"ack_reaction" json:"ack_reaction" yaml:"ack_reaction"`
-	// Labels maps state names ("queued", "working", "waiting", "pr",
-	// "parked") to their forge label strings. Each key is defaulted
-	// independently; missing keys fall back to the archie:*
-	// constants at call time via StateLabel().
-	Labels map[string]string `toml:"labels" json:"labels" yaml:"labels"`
-}
-
-// DispatchLabelDefaults returns a copy of the fallback label set, for the
-// configuration loader to fill absent entries with. A copy is returned so a
-// caller filling gaps cannot mutate the defaults for everyone else.
-func DispatchLabelDefaults() map[string]string {
-	return cloneStringMap(dispatchLabelDefaults)
-}
-
-// dispatchLabelDefaults is the fallback label set used when the user
-// hasn't configured explicit [dispatch.labels] entries.
-var dispatchLabelDefaults = map[string]string{
-	"queued":  "agent:queued",
-	"working": "agent:working",
-	"waiting": "agent:waiting",
-	"pr":      "agent:pr",
-	"parked":  "agent:parked",
-	"dead":    "agent:dead",
-}
-
-// StateLabel returns the configured label for a state name. Falls back
-// to the archie:* constant when the key is missing or empty.
-func (d Dispatch) StateLabel(state string) string {
-	if s, ok := d.Labels[state]; ok && s != "" {
-		return s
-	}
-	if s, ok := dispatchLabelDefaults[state]; ok {
-		return s
-	}
-	return ""
-}
-
-// LabelValues returns the set of all configured state label strings.
-// Used by SetStateLabel to detect and remove old state labels regardless
-// of naming convention.
-func (d Dispatch) LabelValues() []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, k := range []string{"queued", "working", "waiting", "pr", "parked", "dead"} {
-		v := d.StateLabel(k)
-		if v != "" && !seen[v] {
-			seen[v] = true
-			out = append(out, v)
-		}
-	}
-	return out
 }
 
 // MemoryConfig holds memory engine configuration.
@@ -553,7 +501,7 @@ func (c Config) ForTask() TaskConfig {
 		ModelLimits:  maps.Clone(c.ModelLimits),
 		Budgets:      c.Budgets,
 		MaxRetries:   c.MaxRetries,
-		Dispatch:     Dispatch{Trigger: c.Dispatch.Trigger, AckReaction: c.Dispatch.AckReaction, Labels: cloneStringMap(c.Dispatch.Labels)},
+		Dispatch:     Dispatch{Trigger: c.Dispatch.Trigger, AckReaction: c.Dispatch.AckReaction},
 		DiffCapLines: c.DiffCap(),
 		Notify:       c.Notify,
 		Forge:        TaskForge{Host: c.Forge.Host},
@@ -574,7 +522,7 @@ func (tc TaskConfig) ToConfig() Config {
 		ModelLimits:  maps.Clone(tc.ModelLimits),
 		Budgets:      tc.Budgets,
 		MaxRetries:   tc.MaxRetries,
-		Dispatch:     Dispatch{Trigger: tc.Dispatch.Trigger, AckReaction: tc.Dispatch.AckReaction, Labels: cloneStringMap(tc.Dispatch.Labels)},
+		Dispatch:     Dispatch{Trigger: tc.Dispatch.Trigger, AckReaction: tc.Dispatch.AckReaction},
 		DiffCapLines: &tc.DiffCapLines,
 		Notify:       tc.Notify,
 		Forge:        Forge{Host: tc.Forge.Host},
@@ -597,7 +545,6 @@ func (c Config) Clone() Config {
 	c.Models = cloneStringMap(c.Models)
 	c.ModelLimits = maps.Clone(c.ModelLimits)
 	c.Providers = maps.Clone(c.Providers)
-	c.Dispatch.Labels = cloneStringMap(c.Dispatch.Labels)
 	c.Repos = cloneRepos(c.Repos)
 	c.Identities = cloneIdentities(c.Identities)
 	c.Chat.Models = append([]string(nil), c.Chat.Models...)
@@ -653,7 +600,6 @@ func cloneIdentities(ids []IdentityConfig) []IdentityConfig {
 	for i, id := range ids {
 		id.Models = cloneStringMap(id.Models)
 		id.Providers = maps.Clone(id.Providers)
-		id.Dispatch.Labels = cloneStringMap(id.Dispatch.Labels)
 		id.Repos = cloneRepos(id.Repos)
 		id.DiffCapLines = cloneIntPtr(id.DiffCapLines)
 		out[i] = id

@@ -267,14 +267,6 @@ func applyDispatchDefaults(cfg *config.Config) {
 	case isOff(cfg.Dispatch.AckReaction):
 		cfg.Dispatch.AckReaction = ""
 	}
-	if cfg.Dispatch.Labels == nil {
-		cfg.Dispatch.Labels = map[string]string{}
-	}
-	for k, v := range config.DispatchLabelDefaults() {
-		if cfg.Dispatch.Labels[k] == "" {
-			cfg.Dispatch.Labels[k] = v
-		}
-	}
 }
 
 // applyIdentityDefaults fills omitted commit emails and copies a sole

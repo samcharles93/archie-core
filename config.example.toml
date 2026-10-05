@@ -82,21 +82,6 @@ trigger = "assignee"
 # setting this to "off" disables the pickup reactions.
 ack_reaction = "eyes"
 
-# dispatch.labels maps each task lifecycle state to the label
-# Archie applies on the issue.
-# You can rename labels to match your project's conventions,
-# or comment one out to skip that transition.
-# The labels are the *source of truth* for the dispatch loop: Archie
-# scans for issues bearing queued, then moves them through working →
-# waiting → pr → parked (→ dead when max_retries is exhausted).
-[dispatch.labels]
-queued = "archie:queued"
-working = "archie:working"
-waiting = "archie:waiting"
-pr = "archie:pr"
-parked = "archie:parked"
-# dead = "archie:dead"  # state label for a task that exhausted max_retries
-
 [models] # role -> ai-sdk runtime ref (used by agent workflows)
 triage  = "openai/gpt-5.4"
 planner = "openai/gpt-5.4"

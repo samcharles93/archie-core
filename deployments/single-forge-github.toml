@@ -45,13 +45,6 @@ token = { engine = "env", key = "ARCHIE_GITHUB_TOKEN" }
 trigger = "assignee"      # "assignee", "label", or "either"
 ack_reaction = "eyes"    # Emoji reaction on issue pickup
 
-[dispatch.labels]
-queued  = "archie:queued"
-working = "archie:working"
-waiting = "archie:waiting"
-pr      = "archie:pr"
-parked  = "archie:parked"
-
 [models]
 triage  = "openai/gpt-6-luna"
 planner = "openai/gpt-6-luna"

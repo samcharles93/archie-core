@@ -24,7 +24,7 @@ interface SchedulingPolicy {
   poll_interval: string;
   max_retries: number;
   label?: string;
-  dispatch: { trigger: string; ack_reaction: string; labels: Record<string, string> };
+  dispatch: { trigger: string; ack_reaction: string };
 }
 
 const store = useControlPlaneStore();
@@ -39,17 +39,6 @@ const triggers = [
   { value: "assignee", label: "Assignee" },
   { value: "label", label: "Label" },
   { value: "either", label: "Either" },
-];
-
-// The states the daemon labels issues with, in lifecycle order. Each swatch
-// uses the status colour the rest of the dashboard gives that state.
-const states = [
-  { key: "queued", name: "Queued", swatch: "bg-idle" },
-  { key: "working", name: "Working", swatch: "bg-info" },
-  { key: "waiting", name: "Waiting", swatch: "bg-warn" },
-  { key: "pr", name: "PR open", swatch: "bg-ok" },
-  { key: "parked", name: "Parked", swatch: "bg-fg-subtle" },
-  { key: "dead", name: "Dead", swatch: "bg-danger" },
 ];
 
 const issues = computed(() => store.issuesFor(KIND));
@@ -100,33 +89,6 @@ const labelIssue = computed(() => issue("label"));
           <Input id="sp-ack" v-model="policy.dispatch.ack_reaction" class="max-w-xs font-mono" />
           <DraftHint :kind="KIND" path="dispatch.ack_reaction" />
         </div>
-      </SettingRow>
-
-      <h2 class="mt-10 mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle uppercase">State labels</h2>
-      <SettingRow label="Forge labels">
-        <table class="w-full max-w-lg text-sm">
-          <tbody>
-            <tr v-for="state in states" :key="state.key" class="border-b border-border last:border-0">
-              <td class="w-36 py-1.5 pr-3">
-                <span class="inline-flex items-center gap-2">
-                  <span class="size-2 rounded-full" :class="state.swatch" aria-hidden="true" />
-                  <label :for="`sp-state-${state.key}`">{{ state.name }}</label>
-                </span>
-              </td>
-              <td class="py-1.5">
-                <div class="flex flex-wrap items-center gap-3">
-                  <Input
-                    :id="`sp-state-${state.key}`"
-                    :model-value="policy.dispatch.labels[state.key] ?? ''"
-                    class="font-mono"
-                    @update:model-value="policy.dispatch.labels[state.key] = String($event)"
-                  />
-                  <DraftHint :kind="KIND" :path="`dispatch.labels.${state.key}`" />
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
       </SettingRow>
 
       <h2 class="mt-10 mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle uppercase">Retries and polling</h2>

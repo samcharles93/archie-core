@@ -46,13 +46,6 @@ key = "ARCHIE_GITEA_TOKEN"
 trigger = "assignee"
 ack_reaction = "eyes"
 
-[dispatch.labels]
-queued = "agent:queued"
-working = "agent:working"
-waiting = "agent:waiting"
-pr = "agent:pr"
-parked = "agent:parked"
-
 # Stages run in sandboxed archie-agent containers over NATS. archied only
 # orchestrates: the agent image carries the toolchain and makes the model
 # calls, so gate commands resolve there, not in the native daemon.
