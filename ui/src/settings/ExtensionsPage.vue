@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { Plus } from "@lucide/vue";
 
 import PageHeader from "@/base/PageHeader.vue";
@@ -24,6 +24,8 @@ import ApplyStatusRows from "./ApplyStatusRows.vue";
 const KIND = "extension-settings";
 const store = useExtensionsStore();
 onMounted(store.load);
+
+const available = computed(() => store.catalogue.filter((entry) => !entry.installed));
 
 const name = ref("");
 const reference = ref("");
@@ -59,12 +61,34 @@ const tones = {
 
     <p v-if="store.error" role="alert" class="mb-4 text-sm text-danger">{{ store.error }}</p>
 
-    <form class="mb-6 flex flex-wrap gap-2" @submit.prevent="install">
-      <Input v-model="name" class="max-w-40" placeholder="Name" aria-label="Name" required />
-      <Input v-model="reference" class="max-w-80 font-mono" placeholder="registry/repo:tag" aria-label="Reference" required />
-      <Input v-model="digest" class="max-w-96 font-mono" placeholder="sha256:…" aria-label="Digest" required />
-      <Button type="submit" size="sm" :disabled="!!store.busy"><Plus data-icon="inline-start" /> Install</Button>
-    </form>
+    <section class="mb-6" aria-label="Marketplace">
+      <h2 class="mb-2 text-sm font-medium">Marketplace</h2>
+      <p v-if="store.catalogueError" class="text-sm text-fg-muted">{{ store.catalogueError }}</p>
+      <ul v-else class="divide-y divide-border rounded-lg border border-border bg-card">
+        <li v-for="entry in available" :key="entry.name" class="flex flex-wrap items-center gap-3 px-4 py-3">
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-sm font-medium">
+              {{ entry.name }}
+              <span class="font-mono text-xs text-fg-subtle">{{ entry.surface }} {{ entry.version }}</span>
+            </p>
+            <p class="text-xs text-fg-subtle">{{ entry.description }}</p>
+          </div>
+          <Button size="sm" :disabled="!!store.busy" @click="store.installFromCatalogue(entry.name)">
+            <Plus data-icon="inline-start" /> Install
+          </Button>
+        </li>
+        <li v-if="!available.length" class="px-4 py-3 text-sm text-fg-muted">Everything listed is installed.</li>
+      </ul>
+      <details class="mt-3">
+        <summary class="cursor-pointer text-xs text-fg-muted">Install by reference</summary>
+        <form class="mt-2 flex flex-wrap gap-2" @submit.prevent="install">
+          <Input v-model="name" class="max-w-40" placeholder="Name" aria-label="Name" required />
+          <Input v-model="reference" class="max-w-80 font-mono" placeholder="registry/repo:tag" aria-label="Reference" required />
+          <Input v-model="digest" class="max-w-96 font-mono" placeholder="sha256:…" aria-label="Digest" required />
+          <Button type="submit" size="sm" :disabled="!!store.busy"><Plus data-icon="inline-start" /> Install</Button>
+        </form>
+      </details>
+    </section>
 
     <ul class="divide-y divide-border rounded-lg border border-border bg-card" aria-label="Extensions">
       <li v-for="extension in store.extensions" :key="extension.name" class="flex flex-wrap items-center gap-3 px-4 py-3">

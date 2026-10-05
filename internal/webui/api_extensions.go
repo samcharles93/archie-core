@@ -267,3 +267,50 @@ func (s *Server) handleExtensionRemove(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, map[string]any{"name": name, "removed": true})
 }
+
+// catalogueView is one package the catalogue offers, marked when this org has
+// it installed.
+type catalogueView struct {
+	storepkg.CatalogueEntry
+	Installed bool `json:"installed"`
+}
+
+// handleCatalogue lists the packages the verified catalogue offers.
+func (s *Server) handleCatalogue(w http.ResponseWriter, r *http.Request) {
+	if !s.extensionsReady(w) {
+		return
+	}
+	catalogue, err := s.Packages.ListCatalogue(r.Context())
+	if err != nil {
+		http.Error(w, "catalogue unavailable: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	installed, err := s.Packages.ListInstalled(r.Context())
+	if err != nil {
+		writePackageError(w, err)
+		return
+	}
+	have := make(map[string]bool, len(installed))
+	for _, p := range installed {
+		have[p.Name] = true
+	}
+	out := make([]catalogueView, 0, len(catalogue.Packages))
+	for _, entry := range catalogue.Packages {
+		out = append(out, catalogueView{CatalogueEntry: entry, Installed: have[entry.Name]})
+	}
+	writeJSON(w, out)
+}
+
+// handleCatalogueInstall installs one catalogue package by name, at the digest
+// the verified catalogue pins.
+func (s *Server) handleCatalogueInstall(w http.ResponseWriter, r *http.Request) {
+	if !s.extensionsReady(w) {
+		return
+	}
+	p, err := s.Packages.InstallFromCatalogue(r.Context(), r.PathValue("name"))
+	if err != nil {
+		writePackageError(w, err)
+		return
+	}
+	writeJSON(w, extensionView(p, false))
+}

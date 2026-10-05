@@ -317,6 +317,8 @@ func (s *Server) registerHarnessRoutes(mux *http.ServeMux) {
 func (s *Server) registerConfigAndLogRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/extensions", s.handleExtensions)
 	mux.HandleFunc("POST /api/extensions", s.handleExtensionInstall)
+	mux.HandleFunc("GET /api/extensions/catalogue", s.handleCatalogue)
+	mux.HandleFunc("POST /api/extensions/catalogue/{name}/install", s.handleCatalogueInstall)
 	mux.HandleFunc("POST /api/extensions/{name}/accept", s.handleExtensionAccept)
 	mux.HandleFunc("PUT /api/extensions/{name}/enabled", s.handleExtensionEnabled)
 	mux.HandleFunc("DELETE /api/extensions/{name}", s.handleExtensionRemove)

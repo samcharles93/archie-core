@@ -176,3 +176,55 @@ func authorityPtr(value *pb.PackageAuthority) *storepkg.Authority {
 	authority := authorityValue(value)
 	return &authority
 }
+
+func (s *server) ListCatalogue(ctx context.Context, _ *pb.ListCatalogueRequest) (*pb.ListCatalogueResponse, error) {
+	if s.deps.Packages == nil {
+		return nil, status.Error(codes.Unavailable, "package store unavailable")
+	}
+	catalogue, err := s.deps.Packages.ListCatalogue(ctx)
+	if err != nil {
+		return nil, s.logErr("ListCatalogue", err)
+	}
+	out := make([]*pb.CatalogueEntry, 0, len(catalogue.Packages))
+	for _, e := range catalogue.Packages {
+		out = append(out, &pb.CatalogueEntry{
+			Name: e.Name, Surface: e.Surface, Version: e.Version,
+			Description: e.Description, Reference: e.Reference, Digest: e.Digest,
+		})
+	}
+	return &pb.ListCatalogueResponse{Packages: out}, nil
+}
+
+func (s *server) InstallFromCatalogue(ctx context.Context, request *pb.InstallFromCatalogueRequest) (*pb.InstallFromCatalogueResponse, error) {
+	if s.deps.Packages == nil {
+		return nil, status.Error(codes.Unavailable, "package store unavailable")
+	}
+	p, err := s.deps.Packages.InstallFromCatalogue(ctx, string(org.OrgFromContext(ctx)), request.GetName())
+	if err != nil {
+		return nil, s.logErr("InstallFromCatalogue", err)
+	}
+	return &pb.InstallFromCatalogueResponse{Package: packageProto(p, true)}, nil
+}
+
+func (c *Client) ListCatalogue(ctx context.Context) (storepkg.Catalogue, error) {
+	response, err := c.client.ListCatalogue(ctx, &pb.ListCatalogueRequest{})
+	if err != nil {
+		return storepkg.Catalogue{}, unmapError(err)
+	}
+	out := storepkg.Catalogue{Packages: make([]storepkg.CatalogueEntry, 0, len(response.GetPackages()))}
+	for _, e := range response.GetPackages() {
+		out.Packages = append(out.Packages, storepkg.CatalogueEntry{
+			Name: e.GetName(), Surface: e.GetSurface(), Version: e.GetVersion(),
+			Description: e.GetDescription(), Reference: e.GetReference(), Digest: e.GetDigest(),
+		})
+	}
+	return out, nil
+}
+
+func (c *Client) InstallFromCatalogue(ctx context.Context, name string) (storepkg.Installed, error) {
+	response, err := c.client.InstallFromCatalogue(ctx, &pb.InstallFromCatalogueRequest{Name: name})
+	if err != nil {
+		return storepkg.Installed{}, unmapError(err)
+	}
+	return packageValue(response.GetPackage())
+}

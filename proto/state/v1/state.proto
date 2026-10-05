@@ -14,6 +14,10 @@ import "google/protobuf/timestamp.proto";
 service StateStoreService {
   // Installed Archie packages. Administrative until org-scoped principals land.
   rpc InstallPackage(InstallPackageRequest) returns (InstallPackageResponse);
+  // ListCatalogue returns the packages the instance's verified catalogue
+  // offers; InstallFromCatalogue installs one by name at the digest it lists.
+  rpc ListCatalogue(ListCatalogueRequest) returns (ListCatalogueResponse);
+  rpc InstallFromCatalogue(InstallFromCatalogueRequest) returns (InstallFromCatalogueResponse);
   rpc GetInstalledPackage(GetInstalledPackageRequest) returns (GetInstalledPackageResponse);
   rpc ListInstalledPackages(ListInstalledPackagesRequest) returns (ListInstalledPackagesResponse);
   // AcceptPackageAuthority records the operator's accepted authority against
@@ -1306,6 +1310,18 @@ message InstallPackageRequest {
   string digest = 4;
 }
 message InstallPackageResponse { InstalledPackage package = 1; }
+message CatalogueEntry {
+  string name = 1;
+  string surface = 2;
+  string version = 3;
+  string description = 4;
+  string reference = 5;
+  string digest = 6;
+}
+message ListCatalogueRequest {}
+message ListCatalogueResponse { repeated CatalogueEntry packages = 1; }
+message InstallFromCatalogueRequest { string name = 1; }
+message InstallFromCatalogueResponse { InstalledPackage package = 1; }
 message GetInstalledPackageRequest {
   reserved 1;
   reserved "org_id";

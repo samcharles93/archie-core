@@ -60,6 +60,8 @@ type Manager interface {
 	ListInstalled(context.Context, string) ([]Installed, error)
 	RemoveInstalled(context.Context, string, string) error
 	AcceptPackageAuthority(ctx context.Context, orgID, name string, accepted Authority) (Installed, error)
+	ListCatalogue(ctx context.Context) (Catalogue, error)
+	InstallFromCatalogue(ctx context.Context, orgID, name string) (Installed, error)
 }
 
 // Installations is Manager as a remote caller sees it: the State Store acts
@@ -70,6 +72,8 @@ type Installations interface {
 	ListInstalled(ctx context.Context) ([]Installed, error)
 	RemoveInstalled(ctx context.Context, name string) error
 	AcceptPackageAuthority(ctx context.Context, name string, accepted Authority) (Installed, error)
+	ListCatalogue(ctx context.Context) (Catalogue, error)
+	InstallFromCatalogue(ctx context.Context, name string) (Installed, error)
 }
 
 // Service validates the registry content before persisting an installation.
@@ -81,6 +85,9 @@ type Service struct {
 	// and withdraws it again on removal. A family with no entry is stored but
 	// never projected: installing leaves it unused until a projector lands.
 	Projections map[string]FamilyProjector
+	// Catalogue lists the packages an operator can install by name. Nil
+	// leaves install by explicit reference and digest only.
+	Catalogue CatalogueSource
 }
 
 var _ Manager = Service{}

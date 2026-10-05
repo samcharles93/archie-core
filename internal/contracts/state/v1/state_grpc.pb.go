@@ -20,6 +20,8 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	StateStoreService_InstallPackage_FullMethodName             = "/state.v1.StateStoreService/InstallPackage"
+	StateStoreService_ListCatalogue_FullMethodName              = "/state.v1.StateStoreService/ListCatalogue"
+	StateStoreService_InstallFromCatalogue_FullMethodName       = "/state.v1.StateStoreService/InstallFromCatalogue"
 	StateStoreService_GetInstalledPackage_FullMethodName        = "/state.v1.StateStoreService/GetInstalledPackage"
 	StateStoreService_ListInstalledPackages_FullMethodName      = "/state.v1.StateStoreService/ListInstalledPackages"
 	StateStoreService_AcceptPackageAuthority_FullMethodName     = "/state.v1.StateStoreService/AcceptPackageAuthority"
@@ -156,6 +158,10 @@ const (
 type StateStoreServiceClient interface {
 	// Installed Archie packages. Administrative until org-scoped principals land.
 	InstallPackage(ctx context.Context, in *InstallPackageRequest, opts ...grpc.CallOption) (*InstallPackageResponse, error)
+	// ListCatalogue returns the packages the instance's verified catalogue
+	// offers; InstallFromCatalogue installs one by name at the digest it lists.
+	ListCatalogue(ctx context.Context, in *ListCatalogueRequest, opts ...grpc.CallOption) (*ListCatalogueResponse, error)
+	InstallFromCatalogue(ctx context.Context, in *InstallFromCatalogueRequest, opts ...grpc.CallOption) (*InstallFromCatalogueResponse, error)
 	GetInstalledPackage(ctx context.Context, in *GetInstalledPackageRequest, opts ...grpc.CallOption) (*GetInstalledPackageResponse, error)
 	ListInstalledPackages(ctx context.Context, in *ListInstalledPackagesRequest, opts ...grpc.CallOption) (*ListInstalledPackagesResponse, error)
 	// AcceptPackageAuthority records the operator's accepted authority against
@@ -384,6 +390,26 @@ func (c *stateStoreServiceClient) InstallPackage(ctx context.Context, in *Instal
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(InstallPackageResponse)
 	err := c.cc.Invoke(ctx, StateStoreService_InstallPackage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ListCatalogue(ctx context.Context, in *ListCatalogueRequest, opts ...grpc.CallOption) (*ListCatalogueResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCatalogueResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ListCatalogue_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) InstallFromCatalogue(ctx context.Context, in *InstallFromCatalogueRequest, opts ...grpc.CallOption) (*InstallFromCatalogueResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InstallFromCatalogueResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_InstallFromCatalogue_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1631,6 +1657,10 @@ func (c *stateStoreServiceClient) AssignAgent(ctx context.Context, in *AssignAge
 type StateStoreServiceServer interface {
 	// Installed Archie packages. Administrative until org-scoped principals land.
 	InstallPackage(context.Context, *InstallPackageRequest) (*InstallPackageResponse, error)
+	// ListCatalogue returns the packages the instance's verified catalogue
+	// offers; InstallFromCatalogue installs one by name at the digest it lists.
+	ListCatalogue(context.Context, *ListCatalogueRequest) (*ListCatalogueResponse, error)
+	InstallFromCatalogue(context.Context, *InstallFromCatalogueRequest) (*InstallFromCatalogueResponse, error)
 	GetInstalledPackage(context.Context, *GetInstalledPackageRequest) (*GetInstalledPackageResponse, error)
 	ListInstalledPackages(context.Context, *ListInstalledPackagesRequest) (*ListInstalledPackagesResponse, error)
 	// AcceptPackageAuthority records the operator's accepted authority against
@@ -1857,6 +1887,12 @@ type UnimplementedStateStoreServiceServer struct{}
 
 func (UnimplementedStateStoreServiceServer) InstallPackage(context.Context, *InstallPackageRequest) (*InstallPackageResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method InstallPackage not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ListCatalogue(context.Context, *ListCatalogueRequest) (*ListCatalogueResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListCatalogue not implemented")
+}
+func (UnimplementedStateStoreServiceServer) InstallFromCatalogue(context.Context, *InstallFromCatalogueRequest) (*InstallFromCatalogueResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method InstallFromCatalogue not implemented")
 }
 func (UnimplementedStateStoreServiceServer) GetInstalledPackage(context.Context, *GetInstalledPackageRequest) (*GetInstalledPackageResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetInstalledPackage not implemented")
@@ -2253,6 +2289,42 @@ func _StateStoreService_InstallPackage_Handler(srv interface{}, ctx context.Cont
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StateStoreServiceServer).InstallPackage(ctx, req.(*InstallPackageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ListCatalogue_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCatalogueRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ListCatalogue(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ListCatalogue_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ListCatalogue(ctx, req.(*ListCatalogueRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_InstallFromCatalogue_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InstallFromCatalogueRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).InstallFromCatalogue(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_InstallFromCatalogue_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).InstallFromCatalogue(ctx, req.(*InstallFromCatalogueRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -4406,6 +4478,14 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "InstallPackage",
 			Handler:    _StateStoreService_InstallPackage_Handler,
+		},
+		{
+			MethodName: "ListCatalogue",
+			Handler:    _StateStoreService_ListCatalogue_Handler,
+		},
+		{
+			MethodName: "InstallFromCatalogue",
+			Handler:    _StateStoreService_InstallFromCatalogue_Handler,
 		},
 		{
 			MethodName: "GetInstalledPackage",

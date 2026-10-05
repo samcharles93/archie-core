@@ -271,8 +271,9 @@ func (b *server) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	}
 	if b.pg != nil {
 		packages := storepkg.Service{
-			Registry: registry.OCIRegistry{},
-			Store:    postgres.NewInstalledPackages(b.pg),
+			Registry:  registry.OCIRegistry{},
+			Store:     postgres.NewInstalledPackages(b.pg),
+			Catalogue: registry.DefaultCatalogue(),
 		}
 		// A projection failure degrades the org resources a package would have
 		// contributed to, the way a group above degrades: the State Store boots

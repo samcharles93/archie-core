@@ -23,6 +23,17 @@ export interface Extension {
   enabled: boolean;
 }
 
+/** A package the verified catalogue offers. */
+export interface CatalogueEntry {
+  name: string;
+  surface: string;
+  version: string;
+  description: string;
+  reference: string;
+  digest: string;
+  installed: boolean;
+}
+
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, {
     ...init,
@@ -59,6 +70,8 @@ export function stage(extension: Extension): "accept" | "disabled" | "enabled" |
 
 export const useExtensionsStore = defineStore("extensions", () => {
   const extensions = ref<Extension[]>([]);
+  const catalogue = ref<CatalogueEntry[]>([]);
+  const catalogueError = ref("");
   const error = ref("");
   const busy = ref("");
 
@@ -68,6 +81,13 @@ export const useExtensionsStore = defineStore("extensions", () => {
       error.value = "";
     } catch (cause) {
       error.value = String((cause as Error).message || cause);
+    }
+    // The catalogue is remote; its failure leaves the installed list usable.
+    try {
+      catalogue.value = await call<CatalogueEntry[]>("/api/extensions/catalogue");
+      catalogueError.value = "";
+    } catch (cause) {
+      catalogueError.value = String((cause as Error).message || cause);
     }
   }
   async function mutate(key: string, action: () => Promise<unknown>): Promise<boolean> {
@@ -86,11 +106,15 @@ export const useExtensionsStore = defineStore("extensions", () => {
   const path = (name: string) => `/api/extensions/${encodeURIComponent(name)}`;
   return {
     extensions,
+    catalogue,
+    catalogueError,
     error,
     busy,
     load,
     install: (name: string, reference: string, digest: string) =>
       mutate("install", () => call("/api/extensions", { method: "POST", body: JSON.stringify({ name, reference, digest }) })),
+    installFromCatalogue: (name: string) =>
+      mutate(name, () => call(`/api/extensions/catalogue/${encodeURIComponent(name)}/install`, { method: "POST" })),
     accept: (name: string) => mutate(name, () => call(`${path(name)}/accept`, { method: "POST" })),
     setEnabled: (name: string, enabled: boolean) =>
       mutate(name, () => call(`${path(name)}/enabled`, { method: "PUT", body: JSON.stringify({ enabled }) })),
