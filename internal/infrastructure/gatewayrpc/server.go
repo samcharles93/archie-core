@@ -18,14 +18,15 @@ type server struct {
 	pb.UnimplementedChatServiceServer
 	chat     messaging.ChatContract
 	sessions messaging.SessionStore
+	catalog  Catalog
 }
 
-func RegisterServer(registrar grpc.ServiceRegistrar, chat messaging.ChatContract, sessions ...messaging.SessionStore) {
-	var ss messaging.SessionStore
-	if len(sessions) > 0 {
-		ss = sessions[0]
-	}
-	pb.RegisterChatServiceServer(registrar, &server{chat: chat, sessions: ss})
+// RegisterServer serves the Gateway chat contract. catalog supplies the
+// process-owned runtime surfaces (skill catalogue, curator registry, channel
+// reload) the dashboard reads over the same contract; a zero Catalog answers
+// empty lists and an Unavailable reload.
+func RegisterServer(registrar grpc.ServiceRegistrar, chat messaging.ChatContract, sessions messaging.SessionStore, catalog Catalog) {
+	pb.RegisterChatServiceServer(registrar, &server{chat: chat, sessions: sessions, catalog: catalog})
 }
 
 func (s *server) sessionStore() (messaging.SessionStore, error) {

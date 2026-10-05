@@ -15,6 +15,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/events"
 	infraaccess "github.com/samcharles93/archie-core/internal/infrastructure/access"
 	"github.com/samcharles93/archie-core/internal/infrastructure/captureintake"
+	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
 	"github.com/samcharles93/archie-core/internal/webhookguard"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
@@ -106,6 +107,7 @@ func compose(d deps) *webui.Server {
 	if d.Chat != nil {
 		srv.Chat = &webui.ChatService{Contract: d.Chat}
 	}
+	wireCatalog(d, srv)
 	// The policy chain: wired together or not at all.
 	srv.Refusals = refusalStore(d.Store)
 	if d.Access != nil {
@@ -117,6 +119,20 @@ func compose(d deps) *webui.Server {
 	wireTaskLogs(d, srv)
 	wireCaptureSurfaces(d, srv)
 	return srv
+}
+
+// wireCatalog attaches the Gateway-owned surfaces the dashboard reads over the
+// chat client: the skill catalogue, the curator registry and the channel
+// reload seam. A client that cannot answer them leaves those pages empty rather
+// than fabricating a set.
+func wireCatalog(d deps, srv *webui.Server) {
+	catalog, ok := d.Chat.(gatewayrpc.CatalogClient)
+	if !ok {
+		return
+	}
+	srv.Skills = skillCatalog{client: catalog}
+	srv.Curators = curatorStatus{client: catalog}
+	srv.ReloadChannel = catalog.ReloadChannel
 }
 
 // wireTaskLogs attaches the task-log read when the store client carries the

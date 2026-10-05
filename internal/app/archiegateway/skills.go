@@ -44,6 +44,7 @@ func (b *server) refreshSkills(ctx context.Context, applied *string) {
 		return
 	}
 	catalog = append(catalog, b.storedSkills(ctx, catalog)...)
+	b.setSkillList(catalog)
 	signature := catalogSignature(catalog)
 	if signature == *applied {
 		return

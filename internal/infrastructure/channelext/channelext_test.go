@@ -30,7 +30,7 @@ func (c *recordingChat) ApplyOperatorTaskAction(context.Context, taskactions.Act
 func TestChannelExtensionCannotActAsOperator(t *testing.T) {
 	chat := &recordingChat{}
 	server := grpc.NewServer()
-	gatewayrpc.RegisterServer(server, restricted{chat})
+	gatewayrpc.RegisterServer(server, restricted{chat}, nil, gatewayrpc.Catalog{})
 	lc := net.ListenConfig{}
 	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {

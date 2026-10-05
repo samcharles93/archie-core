@@ -27,7 +27,7 @@ func (b *server) serveGatewayListener(ctx context.Context, listener net.Listener
 	// begins accepting the moment it is called, and a unit whose
 	// TimeoutStartSec expires first would restart a healthy process.
 	b.announceReady()
-	return serveGateway(ctx, listener, contract, b.chatSessionStore, opts)
+	return serveGateway(ctx, listener, contract, b.chatSessionStore, b.chatCatalog(), opts)
 }
 
 func (b *server) startGatewayRuntime(ctx context.Context, actor gateway.ChatTaskActor) (gateway.ChatContract, error) {
@@ -107,9 +107,9 @@ func gatewayServerOpts(listen, token string) (opts []grpc.ServerOption, loopback
 	}, false, nil
 }
 
-func serveGateway(ctx context.Context, listener net.Listener, contract gateway.ChatContract, sessions gateway.SessionStore, opts []grpc.ServerOption) error {
+func serveGateway(ctx context.Context, listener net.Listener, contract gateway.ChatContract, sessions gateway.SessionStore, catalog gatewayrpc.Catalog, opts []grpc.ServerOption) error {
 	server := grpc.NewServer(opts...)
-	gatewayrpc.RegisterServer(server, contract, sessions)
+	gatewayrpc.RegisterServer(server, contract, sessions, catalog)
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- server.Serve(listener) }()
 	select {

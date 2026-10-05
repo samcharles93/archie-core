@@ -36,6 +36,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
 	"github.com/samcharles93/archie-core/internal/sdnotify"
 	"github.com/samcharles93/archie-core/internal/secret"
+	"github.com/samcharles93/archie-core/internal/skill"
 	"github.com/samcharles93/archie-core/internal/tools"
 	toolprovider "github.com/samcharles93/archie-core/internal/tools/provider"
 )
@@ -91,6 +92,10 @@ type server struct {
 	chatTasks           gateway.TaskCreator
 	chatController      *gateway.StoreTaskController
 	defaultChatIdentity string
+
+	// skillMu guards skillList, the catalogue refreshSkills last registered.
+	skillMu   sync.Mutex
+	skillList []skill.CatalogEntry
 
 	cleanups []func()
 }

@@ -40,6 +40,9 @@ const (
 	ChatService_SaveMessages_FullMethodName            = "/gateway.v1.ChatService/SaveMessages"
 	ChatService_ReplaceMessages_FullMethodName         = "/gateway.v1.ChatService/ReplaceMessages"
 	ChatService_SearchMessages_FullMethodName          = "/gateway.v1.ChatService/SearchMessages"
+	ChatService_ListSkills_FullMethodName              = "/gateway.v1.ChatService/ListSkills"
+	ChatService_CuratorHealth_FullMethodName           = "/gateway.v1.ChatService/CuratorHealth"
+	ChatService_ReloadChannel_FullMethodName           = "/gateway.v1.ChatService/ReloadChannel"
 )
 
 // ChatServiceClient is the client API for ChatService service.
@@ -67,6 +70,9 @@ type ChatServiceClient interface {
 	SaveMessages(ctx context.Context, in *SaveMessagesRequest, opts ...grpc.CallOption) (*SaveMessagesResponse, error)
 	ReplaceMessages(ctx context.Context, in *ReplaceMessagesRequest, opts ...grpc.CallOption) (*ReplaceMessagesResponse, error)
 	SearchMessages(ctx context.Context, in *SearchMessagesRequest, opts ...grpc.CallOption) (*SearchMessagesResponse, error)
+	ListSkills(ctx context.Context, in *ListSkillsRequest, opts ...grpc.CallOption) (*ListSkillsResponse, error)
+	CuratorHealth(ctx context.Context, in *CuratorHealthRequest, opts ...grpc.CallOption) (*CuratorHealthResponse, error)
+	ReloadChannel(ctx context.Context, in *ReloadChannelRequest, opts ...grpc.CallOption) (*ReloadChannelResponse, error)
 }
 
 type chatServiceClient struct {
@@ -296,6 +302,36 @@ func (c *chatServiceClient) SearchMessages(ctx context.Context, in *SearchMessag
 	return out, nil
 }
 
+func (c *chatServiceClient) ListSkills(ctx context.Context, in *ListSkillsRequest, opts ...grpc.CallOption) (*ListSkillsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSkillsResponse)
+	err := c.cc.Invoke(ctx, ChatService_ListSkills_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chatServiceClient) CuratorHealth(ctx context.Context, in *CuratorHealthRequest, opts ...grpc.CallOption) (*CuratorHealthResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CuratorHealthResponse)
+	err := c.cc.Invoke(ctx, ChatService_CuratorHealth_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chatServiceClient) ReloadChannel(ctx context.Context, in *ReloadChannelRequest, opts ...grpc.CallOption) (*ReloadChannelResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReloadChannelResponse)
+	err := c.cc.Invoke(ctx, ChatService_ReloadChannel_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ChatServiceServer is the server API for ChatService service.
 // All implementations must embed UnimplementedChatServiceServer
 // for forward compatibility.
@@ -321,6 +357,9 @@ type ChatServiceServer interface {
 	SaveMessages(context.Context, *SaveMessagesRequest) (*SaveMessagesResponse, error)
 	ReplaceMessages(context.Context, *ReplaceMessagesRequest) (*ReplaceMessagesResponse, error)
 	SearchMessages(context.Context, *SearchMessagesRequest) (*SearchMessagesResponse, error)
+	ListSkills(context.Context, *ListSkillsRequest) (*ListSkillsResponse, error)
+	CuratorHealth(context.Context, *CuratorHealthRequest) (*CuratorHealthResponse, error)
+	ReloadChannel(context.Context, *ReloadChannelRequest) (*ReloadChannelResponse, error)
 	mustEmbedUnimplementedChatServiceServer()
 }
 
@@ -393,6 +432,15 @@ func (UnimplementedChatServiceServer) ReplaceMessages(context.Context, *ReplaceM
 }
 func (UnimplementedChatServiceServer) SearchMessages(context.Context, *SearchMessagesRequest) (*SearchMessagesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SearchMessages not implemented")
+}
+func (UnimplementedChatServiceServer) ListSkills(context.Context, *ListSkillsRequest) (*ListSkillsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSkills not implemented")
+}
+func (UnimplementedChatServiceServer) CuratorHealth(context.Context, *CuratorHealthRequest) (*CuratorHealthResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CuratorHealth not implemented")
+}
+func (UnimplementedChatServiceServer) ReloadChannel(context.Context, *ReloadChannelRequest) (*ReloadChannelResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReloadChannel not implemented")
 }
 func (UnimplementedChatServiceServer) mustEmbedUnimplementedChatServiceServer() {}
 func (UnimplementedChatServiceServer) testEmbeddedByValue()                     {}
@@ -786,6 +834,60 @@ func _ChatService_SearchMessages_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ChatService_ListSkills_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSkillsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatServiceServer).ListSkills(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatService_ListSkills_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatServiceServer).ListSkills(ctx, req.(*ListSkillsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ChatService_CuratorHealth_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CuratorHealthRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatServiceServer).CuratorHealth(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatService_CuratorHealth_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatServiceServer).CuratorHealth(ctx, req.(*CuratorHealthRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ChatService_ReloadChannel_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReloadChannelRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatServiceServer).ReloadChannel(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatService_ReloadChannel_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatServiceServer).ReloadChannel(ctx, req.(*ReloadChannelRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ChatService_ServiceDesc is the grpc.ServiceDesc for ChatService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -872,6 +974,18 @@ var ChatService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SearchMessages",
 			Handler:    _ChatService_SearchMessages_Handler,
+		},
+		{
+			MethodName: "ListSkills",
+			Handler:    _ChatService_ListSkills_Handler,
+		},
+		{
+			MethodName: "CuratorHealth",
+			Handler:    _ChatService_CuratorHealth_Handler,
+		},
+		{
+			MethodName: "ReloadChannel",
+			Handler:    _ChatService_ReloadChannel_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

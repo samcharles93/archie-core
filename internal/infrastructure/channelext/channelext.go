@@ -82,7 +82,7 @@ func (c *Channel) Start(ctx context.Context, chat messaging.ChatContract, lifecy
 	id := ext.broker.NextId()
 	go ext.broker.AcceptAndServe(id, func(opts []grpc.ServerOption) *grpc.Server {
 		server := grpc.NewServer(opts...)
-		gatewayrpc.RegisterServer(server, restricted{chat})
+		gatewayrpc.RegisterServer(server, restricted{chat}, nil, gatewayrpc.Catalog{})
 		return server
 	})
 
