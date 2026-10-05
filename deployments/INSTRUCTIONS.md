@@ -28,9 +28,10 @@ as a host binary. Pull it from GHCR: `ghcr.io/samcharles93/archie-agent`.
 1. Pick a starting configuration. The full set of annotated templates lives
    in this repository's `deployments/` directory on GitHub
    (<https://github.com/samcharles93/archie-core/tree/main/deployments>) —
-   `single-forge-github.toml`, `multi-forge-github-gitea.toml`,
-   `local-ollama-standalone.toml`, and `docker-nats-stack.toml` cover the
-   common cases. Copy whichever fits to:
+   `standalone.toml` (no forge, the simplest start),
+   `single-forge-github.toml`, `multi-forge-github-gitea.toml` and
+   `docker-nats-stack.toml` cover the common cases. Every one needs
+   PostgreSQL 18 at `database_url`. Copy whichever fits to:
 
    ```bash
    mkdir -p ~/.config/archie

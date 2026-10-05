@@ -400,6 +400,16 @@ else
   echo "  [SKIP] ${ARCHIE_CONFIG_DIR}/config.toml already exists (preserving user config)."
 fi
 
+# Every service fails closed without PostgreSQL. The generated database_url
+# matches the Compose postgres service, so start it when Docker can.
+if command -v docker &>/dev/null && [ -f "${SRC_DIR}/docker-compose.yml" ]; then
+  echo "==> Starting PostgreSQL 18 (docker compose up -d postgres)..."
+  docker compose -f "${SRC_DIR}/docker-compose.yml" up -d postgres ||
+    echo "  [WARN] Could not start PostgreSQL. Start it before the services, or point database_url at your own PostgreSQL 18."
+else
+  echo "  [WARN] Docker not found: point database_url in ${ARCHIE_CONFIG_DIR}/config.toml at a PostgreSQL 18 server before starting the services."
+fi
+
 # 6. Seed skills, personas, memories, and onboarding tasks
 echo "==> Seeding skills and templates..."
 

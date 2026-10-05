@@ -94,41 +94,50 @@ approve the binding.
 Sources default to signed delivery; an unsigned source must be explicitly
 approved. Binding changes require re-approval before they can dispatch work.
 
-## Develop locally
+## Run it on a server
 
-The repository requires Go 1.27, [Task](https://taskfile.dev/), Node.js and npm,
-and Docker with a running daemon. The development stack starts PostgreSQL 18
-through Docker Compose. See [AGENTS.md](AGENTS.md) for the tools the quality
-gate needs.
+You need Linux, PostgreSQL 18, Docker (agents run in containers) and a model:
+local [Ollama](https://ollama.com) or a hosted provider API key.
 
-```bash
-task dev
-```
+1. **Install.** From a clone (needs Go 1.27, git and jq):
 
-Open <http://localhost:5173> for the dashboard with Vite hot reload. `task dev`
-starts the daemon, Gateway, State Store, UI service, and frontend development
-server; it uses [`deployments/dev.toml`](deployments/dev.toml) as a local
-configuration overlay. Set credentials and other required settings in your local
-Archie configuration as needed.
+   ```bash
+   git clone https://github.com/samcharles93/archie-core && cd archie-core
+   ./install.sh
+   ```
 
-Useful checks:
+   It builds the five services into `~/.local/bin`, asks for a forge (choose
+   **None** if you only want event-driven automation) and a model, writes
+   `~/.config/archie/config.toml`, starts PostgreSQL with Docker Compose, and
+   installs and starts systemd user units. Use `--no-systemd` to run the
+   processes yourself. A prebuilt release archive works too; its
+   `INSTRUCTIONS.md` covers that path.
 
-```bash
-task build       # build the service and agent binaries in bin/
-task test        # run the short Go test suite
-task check       # run the repository quality gate
-```
+2. **Check it is up.**
 
-## Deploy
+   ```bash
+   systemctl --user status archied archie-state-store archie-gateway archie-ui archie-messaging
+   curl -s http://127.0.0.1:8485/health/detailed
+   ```
 
-Start with the [deployment examples](deployments/README.md). They cover a single
-GitHub forge, multiple GitHub and Gitea identities, local Ollama, and an
-external NATS stack. Copy a suitable template to
-`${XDG_CONFIG_HOME:-~/.config}/archie/config.toml`, then set its repository,
-model, credential, and service settings for your environment. The examples
-describe the required PostgreSQL connection and how to start each process. A
-[systemd user service guide](deployments/systemd-user-service.md) is available,
-but systemd is optional.
+3. **Open the dashboard** at <http://127.0.0.1:8484>. It binds loopback by
+   default; tunnel to it (`ssh -L 8484:127.0.0.1:8484 server`) or see
+   [deployments](deployments/README.md#running-the-dashboard) to expose it
+   with a token.
+
+4. **Automate your first event** with
+   [Your first playbook](docs/guides/first-playbook.md): send a webhook, map
+   its fields, bind it to a workflow and watch the task run.
+
+To write the config by hand instead, start from
+[`deployments/standalone.toml`](deployments/standalone.toml) (no forge) or
+another [deployment template](deployments/README.md).
+
+## Develop
+
+`task dev` starts every service with Vite hot reload at
+<http://localhost:5173>, using [`deployments/dev.toml`](deployments/dev.toml).
+`task check` is the quality gate; [AGENTS.md](AGENTS.md) lists its tools.
 
 ## Documentation
 

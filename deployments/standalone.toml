@@ -1,8 +1,10 @@
 # ==============================================================================
-# Self-Hosted Ollama + Standalone Mode Deployment Example
+# Minimal event-driven deployment: no forge, no repositories
 #
-# Runs local open-weights models via Ollama (e.g. llama3, qwen2.5) with forge
-# polling disabled (standalone execution mode).
+# Events arrive as webhooks at the dashboard and run workflows. Models run
+# locally through Ollama; for a hosted provider replace [providers.ollama] with
+# e.g. [providers.openai] class = "openai", api_key_env = "OPENAI_API_KEY"
+# and change the model names to "openai/<model>".
 # ==============================================================================
 
 # Standalone still needs a bot identity: it names the agent that chat turns and
@@ -12,7 +14,7 @@ bot_user = "archie"
 
 work_dir = "~/.local/share/archie/work"
 state_dir = "~/.local/share/archie"   # NATS store, task logs
-# The State Store's PostgreSQL connection (required; Postgres-only epic).
+# PostgreSQL 18 connection (required).
 # `docker compose up -d postgres` provides this local default; point it at
 # your own Postgres 18 server otherwise.
 database_url = "postgres://archie:archie@127.0.0.1:5432/archie?sslmode=disable"

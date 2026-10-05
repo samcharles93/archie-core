@@ -14,7 +14,7 @@
 # serve from. Required: each fails closed without it.
 # `docker compose up -d postgres` starts a matching local postgres:18 with this
 # default URL.
-# database_url = "postgres://archie:archie@127.0.0.1:5432/archie?sslmode=disable"
+database_url = "postgres://archie:archie@127.0.0.1:5432/archie?sslmode=disable"
 
 # skills_dir = "~/.local/share/archie/skills"  # SKILL.md search path; defaults under work_dir when unset
 # workflow_routing_file = "~/.local/share/archie/workflow-routing.yaml"   # kind->workflow rebinding (bug/feature)

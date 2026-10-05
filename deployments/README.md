@@ -10,8 +10,9 @@ This directory contains configuration templates and guides for different deploym
 - **[`multi-forge-github-gitea.toml`](./multi-forge-github-gitea.toml)**:
   Multi-identity deployment running GitHub and a self-hosted Gitea instance simultaneously with distinct bot accounts, tokens, and repository sets.
 
-- **[`local-ollama-standalone.toml`](./local-ollama-standalone.toml)**:
-  Self-hosted deployment running local LLM models via Ollama (e.g., `llama3`, `qwen2.5`) with optional standalone (forge-disabled) operation.
+- **[`standalone.toml`](./standalone.toml)**: start here. Event-driven
+  automation with no forge or repositories, local Ollama models, loopback
+  services and no tokens.
 
 - **[`docker-nats-stack.toml`](./docker-nats-stack.toml)**:
   Host-run `archied` orchestrating sandboxed `archie-agent` containers over the repository's Compose-managed NATS service. Copy to `~/.config/archie/config.toml`, start NATS with Compose, then start `archied` on the host.
@@ -42,9 +43,9 @@ archied -config ~/.config/archie/config.toml
 systemctl --user start archied
 ```
 
-The templates use the extracted Gateway Service by default. Start
-`archie-gateway` before `archied`; it owns the conversation tables and
-serves the `ChatContract` gRPC API on the configured target.
+Start order does not matter: a service waits for its peers and reports them as
+degraded meanwhile. Every template needs PostgreSQL 18 at `database_url`;
+`docker compose up -d postgres` provides the default one.
 
 The State Store service (`archie-state-store`) owns the task data in the
 PostgreSQL database `database_url` names and serves the `StateStore` gRPC
