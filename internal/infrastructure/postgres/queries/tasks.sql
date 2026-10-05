@@ -158,6 +158,31 @@ RETURNING *;
 UPDATE tasks SET status = 'queued', workflow = 'remediate', park_reason = '', park_class = 'needs_human', review_payload = $2, retry_mode = 'continue_pushed_work', resume_from = '', resume_results = '{}', updated_at = now()
 WHERE id = $1 AND status = 'pr_open';
 
+-- name: AppendPendingReview :execrows
+-- A distinct review that arrived while a remediation owned the task. The two
+-- containment tests are the dedup: a re-delivered reaction, or a poll that
+-- re-publishes a review already queued, appends nothing, and one already
+-- active in review_payload is not queued to run a second time.
+UPDATE tasks SET pending_reviews = CASE
+        WHEN review_payload = $2::text THEN pending_reviews
+        WHEN pending_reviews @> jsonb_build_array($2::text) THEN pending_reviews
+        ELSE pending_reviews || jsonb_build_array($2::text)
+    END,
+    updated_at = now()
+WHERE id = $1 AND status IN ('queued', 'running') AND workflow = 'remediate';
+
+-- name: PromotePendingReview :execrows
+-- The run that owned the task returned it to pr_open with reviews still
+-- waiting: the oldest becomes the active payload and the task is queued
+-- again, so it is remediated after the run that just finished.
+UPDATE tasks SET status = 'queued', workflow = 'remediate', park_reason = '',
+    park_class = 'needs_human',
+    review_payload = pending_reviews->>0, pending_reviews = pending_reviews - 0,
+    retry_mode = 'continue_pushed_work', resume_from = '', resume_results = '{}',
+    updated_at = now()
+WHERE id = $1 AND status = 'pr_open' AND workflow = 'remediate'
+  AND jsonb_array_length(pending_reviews) > 0;
+
 -- name: UpdateReviewPayloadTask :execrows
 UPDATE tasks SET review_payload = $2, updated_at = now()
 WHERE id = $1 AND status = 'queued' AND workflow = 'remediate';

@@ -422,6 +422,7 @@ type Task struct {
 	RetryMode                 string
 	ResumeFrom                string
 	ResumeResults             []byte
+	PendingReviews            []byte
 }
 
 type ToolCall struct {

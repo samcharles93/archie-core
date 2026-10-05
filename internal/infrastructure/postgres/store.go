@@ -241,6 +241,24 @@ func (s *Store) Transition(ctx context.Context, taskID int64, from, to, detail s
 	}); err != nil {
 		return err
 	}
+	// A remediate run that finished with reviews still waiting behind it
+	// hands the task straight back to the queue, oldest first. The run itself
+	// cannot know they are there: they arrived while it held the task, and
+	// only the state store owns both halves of the queue.
+	if to == workflow.StatusPROpen {
+		promoted, err := q.PromotePendingReview(ctx, taskID)
+		if err != nil {
+			return err
+		}
+		if promoted > 0 {
+			if err := q.InsertTransition(ctx, postgresdb.InsertTransitionParams{
+				TaskID: taskID, FromStatus: workflow.StatusPROpen, ToStatus: workflow.StatusQueued,
+				Detail: "queued the next review",
+			}); err != nil {
+				return err
+			}
+		}
+	}
 	return tx.Commit(ctx)
 }
 
@@ -312,7 +330,10 @@ func (s *Store) Update(ctx context.Context, t *workflow.Task) error {
 }
 
 // BeginRemediation queues a remediate run carrying the review unit in the same
-// guarded write, so a claimed remediation always has its input.
+// guarded write, so a claimed remediation always has its input. When a
+// remediation already owns the task, the unit is queued behind the run in
+// flight instead of refused: a review that arrives mid-remediation is
+// remediated after it, never dropped.
 func (s *Store) BeginRemediation(ctx context.Context, taskID int64, payload string) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -322,7 +343,22 @@ func (s *Store) BeginRemediation(ctx context.Context, taskID int64, payload stri
 	q := postgresdb.New(tx)
 
 	if err := guardTransition(ctx, q, taskID, workflow.StatusPROpen, workflow.StatusQueued); err != nil {
-		return err
+		if !errors.Is(err, storecontract.ErrStaleTransition) {
+			return err
+		}
+		// A remediation already owns the task. Runs against one task are
+		// serialised, so queue the review behind the current one rather than
+		// dropping it; Transition promotes it when that run finishes.
+		n, err := q.AppendPendingReview(ctx, postgresdb.AppendPendingReviewParams{
+			ID: taskID, Column2: clip(payload, 4000),
+		})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return storecontract.ErrStaleTransition
+		}
+		return tx.Commit(ctx)
 	}
 	n, err := q.BeginRemediationTask(ctx, postgresdb.BeginRemediationTaskParams{
 		ID: taskID, ReviewPayload: clip(payload, 4000),

@@ -102,7 +102,10 @@ type ReviewGateResponder interface {
 
 // RemediationStarter queues a review-triggered remediation for an Archie-owned
 // open-PR task: one guarded transition that carries the JSON-encoded review
-// unit in the same write, so a claimed remediation always has its input.
+// unit in the same write, so a claimed remediation always has its input. Runs
+// for one task are serialised, so a distinct review that arrives while a
+// remediation owns the task is queued behind it and remediated once that run
+// finishes; a re-delivered unit is absorbed, not queued twice.
 // UpdateReviewPayload appends late-arriving comments to a still-queued unit.
 type RemediationStarter interface {
 	BeginRemediation(ctx context.Context, taskID int64, payload string) error

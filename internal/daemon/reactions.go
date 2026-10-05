@@ -132,10 +132,10 @@ func (c *reactionConsumer) handleReview(ctx context.Context, msg eventbus.Messag
 	}
 	if err := c.remediations.BeginRemediation(ctx, task.ID, payload); err != nil {
 		if errors.Is(err, storecontract.ErrStaleTransition) {
-			// Already queued or claimed: a re-delivered review, or a second
-			// reaction for a review whose unit is pending. The guarded
-			// transition is the dedup.
-			c.log.Debug("remediation already pending", "task", task.ID, "review", e.ReviewID)
+			// The task left the states a remediation can start or queue
+			// behind, so the reaction resolves to no work. A review that
+			// arrives mid-run is absorbed by the store, not dropped here.
+			c.log.Debug("task does not accept remediation", "task", task.ID, "review", e.ReviewID)
 			_ = msg.Ack()
 			return
 		}
