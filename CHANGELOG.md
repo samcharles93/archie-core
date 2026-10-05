@@ -5,6 +5,14 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.47.1] - 2026-10-06
+
+### archied
+
+- The bundled PostgreSQL has no network and publishes no port: the services reach it through its Unix socket under `~/.local/share/archie/postgres`, so it no longer collides with another PostgreSQL on 5432. Leaving the database question blank in `archied setup` selects it.
+- The installer does not start the services when the bundled PostgreSQL fails to start; it names the command to read its logs.
+- On hosts that restrict unprivileged user namespaces (Ubuntu 23.10+), the installer prints an AppArmor profile allowing them for the Archie binaries only.
+
 ## [1.47.0] - 2026-10-06
 
 ### archied
