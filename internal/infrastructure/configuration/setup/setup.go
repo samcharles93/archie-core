@@ -144,8 +144,9 @@ func RunParams(ctx context.Context, p Prompter, discovery ModelDiscovery, secret
 }
 
 // stepDatabase returns the PostgreSQL URL. A blank answer on a fresh install
-// means the bundled Compose database with a generated password, which goes to
-// the env file as POSTGRES_PASSWORD for Compose to initialise it with.
+// means the bundled Compose database with a generated password. The password
+// goes only to the env file as PGPASSWORD, which pgx and Compose both read, so
+// config.toml holds no secret.
 func stepDatabase(ctx context.Context, p Prompter, secrets SecretSink, existing, param string) (string, error) {
 	if strings.TrimSpace(param) != "" {
 		return param, nil
@@ -166,8 +167,8 @@ func stepDatabase(ctx context.Context, p Prompter, secrets SecretSink, existing,
 		return "", fmt.Errorf("setup: generate database password: %w", err)
 	}
 	password := hex.EncodeToString(pw)
-	if err := secrets.Put("env", "POSTGRES_PASSWORD", password); err != nil {
+	if err := secrets.Put("env", "PGPASSWORD", password); err != nil {
 		return "", fmt.Errorf("setup: store database password: %w", err)
 	}
-	return "postgres://archie:" + password + "@127.0.0.1:5432/archie?sslmode=disable", nil
+	return "postgres://archie@127.0.0.1:5432/archie?sslmode=disable", nil
 }
