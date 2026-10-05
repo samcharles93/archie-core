@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/empty";
 import { StatusPill } from "@/components/ui/status-pill";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/api";
 import { delivered } from "@/lib/delivered";
 import { compact } from "@/lib/format";
@@ -77,7 +76,16 @@ const selected = ref("");
 watchEffect(() => {
   if (!selected.value && rows.value.length) selected.value = rows.value[0]!.id;
 });
-const current = computed(() => rows.value.find((r) => r.id === selected.value));
+// Whether this workflow is still the one archie ships: "Edited" when it has
+// been changed, "Custom" when archie ships nothing by that name.
+const provenance = computed(() => {
+  const shippedYAML = store.shippedWorkflows().definitions.find((d) => d.id === selected.value)?.yaml;
+  const storedYAML = (store.stateFor("workflow-definitions").resource?.value as WorkflowDefinitionCollection | undefined)
+    ?.definitions.find((d) => d.id === selected.value)?.yaml;
+  if (storedYAML === undefined) return "";
+  if (shippedYAML === undefined) return "Custom";
+  return shippedYAML === storedYAML ? "" : "Edited";
+});
 // A workflow the server does not list yet (a new, unsaved one) has no
 // enabled state to show.
 const enabled = computed(() => data.value.definitions?.find((d) => d.id === selected.value)?.enabled);
@@ -91,13 +99,11 @@ async function setEnabled(value: boolean) {
 }
 const stages = computed(() => (data.value.stages ?? []).filter((s) => s.workflow === selected.value));
 const workflowRuns = computed(() => runs.value.filter((t) => t.workflow === selected.value));
-const tab = ref("definition");
 
 function create() {
   let n = 1;
   while (stored.value.some((d) => d.id === `workflow-${n}`)) n++;
   selected.value = `workflow-${n}`;
-  tab.value = "definition";
 }
 async function restoreShipped() {
   const shipped = store.shippedWorkflows();
@@ -154,23 +160,14 @@ const rate = (deliveredRuns = 0, total = 0) => (total ? deliveredRuns / total : 
       <section v-else class="min-w-0 rounded-lg border border-border bg-card px-5 py-4" aria-label="Workflow">
         <header class="mb-2 flex flex-wrap items-center gap-2">
           <h2 class="font-mono text-[15px] font-medium">{{ selected }}</h2>
-          <StatusPill v-if="current?.origin">{{ current.origin }}</StatusPill>
-          <span v-if="current" class="ml-auto text-xs text-fg-subtle">{{ current.runs || 0 }} runs</span>
-          <label v-if="enabled !== undefined" class="flex items-center gap-2 text-xs text-fg-muted">
+          <StatusPill v-if="provenance">{{ provenance }}</StatusPill>
+          <label v-if="enabled !== undefined" class="ml-auto flex items-center gap-2 text-xs text-fg-muted">
             Enabled
             <Switch :model-value="enabled" aria-label="Workflow enabled" @update:model-value="setEnabled" />
           </label>
         </header>
-        <Tabs v-model="tab">
-          <TabsList>
-            <TabsTrigger value="definition">Definition</TabsTrigger>
-            <TabsTrigger value="performance">Performance</TabsTrigger>
-            <TabsTrigger value="runs">Runs <span class="ml-1 font-mono text-xs text-fg-subtle">{{ workflowRuns.length }}</span></TabsTrigger>
-          </TabsList>
-          <TabsContent value="definition" class="pt-4">
-            <WorkflowEditor v-model:selected="selected" />
-          </TabsContent>
-          <TabsContent value="performance" class="grid gap-4 pt-4">
+        <WorkflowEditor v-model:selected="selected" :runs-count="workflowRuns.length">
+          <template #performance>
             <Empty v-if="!stages.length">
               <EmptyHeader>
                 <EmptyTitle>No stage timings yet</EmptyTitle>
@@ -180,8 +177,8 @@ const rate = (deliveredRuns = 0, total = 0) => (total ? deliveredRuns / total : 
               <SlowestStagesCard :stages="stages" />
               <StageFailuresCard :stages="stages" />
             </template>
-          </TabsContent>
-          <TabsContent value="runs" class="pt-4">
+          </template>
+          <template #runs>
             <Empty v-if="!workflowRuns.length">
               <EmptyHeader>
                 <EmptyTitle>No runs yet</EmptyTitle>
@@ -194,8 +191,8 @@ const rate = (deliveredRuns = 0, total = 0) => (total ? deliveredRuns / total : 
                 <StatusPill>{{ statusLabel(t.status ?? "") }}</StatusPill>
               </li>
             </ul>
-          </TabsContent>
-        </Tabs>
+          </template>
+        </WorkflowEditor>
       </section>
     </div>
   </div>

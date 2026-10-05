@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { RotateCcw, Trash2 } from "@lucide/vue";
+import { Ellipsis, RotateCcw, Trash2 } from "@lucide/vue";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -39,6 +44,7 @@ const shipped = computed<WorkflowDefinitionCollection>(() =>
 );
 // Which definition is open belongs to the page, which also lists them.
 const selected = defineModel<string>("selected", { required: true });
+defineProps<{ runsCount?: number }>();
 const id = ref("");
 const yaml = ref("");
 const selectedStep = ref<StepPath | null>(null);
@@ -96,11 +102,9 @@ async function save(next: WorkflowDefinitionCollection): Promise<boolean> {
 }
 
 async function saveDraft(): Promise<void> {
-  const nextID = id.value.trim();
-  if (!nextID) {
-    localError.value = "Workflow ID is required.";
-    return;
-  }
+  // The id is the one the YAML declares; renaming is editing it there.
+  const nextID = parsed.value.ok ? parsed.value.id : "";
+  if (!nextID) return;
   const previous = selected.value;
   let next = collection.value;
   if (previous && previous !== nextID)
@@ -112,8 +116,8 @@ async function saveDraft(): Promise<void> {
 }
 
 async function remove(): Promise<void> {
+  if (!selected.value || !window.confirm(`Delete the ${selected.value} workflow?`)) return;
   if (
-    !selected.value ||
     !(await save(removeWorkflowDefinition(collection.value, selected.value)))
   )
     return;
@@ -138,6 +142,8 @@ async function restoreOne(): Promise<void> {
 // not served, so a save the server refuses still reports its own reason below.
 const vocabulary = computed(() => store.stepTypes());
 const parsed = computed(() => parseWorkflowYaml(yaml.value, vocabulary.value));
+const stored = computed(() => collection.value.definitions.find((entry) => entry.id === selected.value)?.yaml);
+const dirty = computed(() => yaml.value !== (stored.value ?? ""));
 const view = ref("canvas");
 const lines = computed(() => yamlLines(yaml.value));
 
@@ -152,39 +158,49 @@ function syncScroll(event: Event): void {
 
 <template>
   <form class="space-y-4" @submit.prevent="saveDraft">
-    <div class="space-y-1.5">
-      <Label for="workflow-id">ID</Label>
-      <Input id="workflow-id" v-model="id" name="workflow-id" required autocomplete="off" class="max-w-sm font-mono" />
-    </div>
     <Tabs v-model="view" class="space-y-1.5">
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <TabsList>
           <TabsTrigger value="canvas">Canvas</TabsTrigger>
           <TabsTrigger value="yaml">YAML</TabsTrigger>
+          <TabsTrigger v-if="$slots.performance" value="performance">Performance</TabsTrigger>
+          <TabsTrigger v-if="$slots.runs" value="runs">Runs <span class="ml-1 font-mono text-xs text-fg-subtle">{{ runsCount ?? 0 }}</span></TabsTrigger>
         </TabsList>
-        <!-- Step settings are the server's to check, on save. -->
-        <span
-          class="ml-auto text-xs"
-          :class="parsed.ok ? 'text-ok' : 'text-danger'"
-          role="status"
-          >{{ parsed.ok ? "✓" : "✕" }} {{ validationLabel(parsed) }}</span
+        <select
+          v-if="runs.length && view === 'canvas'"
+          :value="watched"
+          aria-label="Run shown on the canvas"
+          class="h-8 max-w-72 rounded-md border border-input bg-background px-2 text-[13px]"
+          @change="pick(($event.target as HTMLSelectElement).value)"
         >
+          <option value="">Definition only</option>
+          <option v-for="run in runs" :key="run.id" :value="String(run.id)">
+            Run #{{ run.id }} {{ run.title || "" }}{{ run.status ? ` · ${run.status}` : "" }}
+          </option>
+        </select>
+        <template v-if="view === 'canvas' || view === 'yaml'">
+        <span v-if="!parsed.ok" class="ml-auto max-w-md truncate text-xs text-danger" role="status" :title="validationLabel(parsed)">
+          {{ validationLabel(parsed) }}
+        </span>
+        <span v-else-if="dirty" class="ml-auto text-xs text-fg-subtle">Unsaved changes</span>
+        <span v-else class="ml-auto" />
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <Button type="button" variant="ghost" size="icon-sm" aria-label="More"><Ellipsis /></Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" class="w-48">
+            <DropdownMenuItem v-if="dirty" @select="load(selected)"><RotateCcw /> Discard changes</DropdownMenuItem>
+            <DropdownMenuItem v-if="shippedEntry" @select="restoreOne"><RotateCcw /> Restore shipped version</DropdownMenuItem>
+            <DropdownMenuSeparator v-if="dirty || shippedEntry" />
+            <DropdownMenuItem variant="destructive" @select="remove"><Trash2 /> Delete workflow</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Button type="submit" size="sm" :disabled="state.saving || !parsed.ok || !dirty">
+          <Spinner v-if="state.saving" data-icon="inline-start" /> Save
+        </Button>
+        </template>
       </div>
       <TabsContent value="canvas" class="space-y-2">
-        <label class="flex items-center gap-2 text-sm">
-          <span class="text-muted-foreground">Watching</span>
-          <select
-            :value="watched"
-            class="h-8 max-w-md min-w-60 rounded-md border border-input bg-background px-2 text-sm"
-            @change="pick(($event.target as HTMLSelectElement).value)"
-          >
-            <option value="">No run, definition only</option>
-            <option v-for="run in runs" :key="run.id" :value="String(run.id)">
-              #{{ run.id }} {{ run.title || "untitled" }}{{ run.status ? ` · ${run.status}` : "" }}
-            </option>
-          </select>
-          <span v-if="!runs.length" class="text-xs text-fg-subtle">This workflow has not run yet.</span>
-        </label>
         <div class="relative">
           <WorkflowCanvas
             :yaml="yaml"
@@ -217,6 +233,8 @@ function syncScroll(event: Event): void {
           </Transition>
         </div>
       </TabsContent>
+      <TabsContent value="performance" class="grid gap-4"><slot name="performance" /></TabsContent>
+      <TabsContent value="runs"><slot name="runs" /></TabsContent>
       <TabsContent value="yaml">
       <!--
         A gutter and a highlighted layer behind the live textarea, so the YAML
@@ -269,27 +287,8 @@ function syncScroll(event: Event): void {
       </div>
       </TabsContent>
     </Tabs>
-    <details v-if="vocabulary.length" class="text-sm">
-      <summary class="cursor-pointer text-fg-subtle">Step types ({{ vocabulary.length }})</summary>
-      <ul class="mt-2 flex flex-wrap gap-1.5" aria-label="Step types">
-        <li
-          v-for="info in vocabulary"
-          :key="info.name"
-          class="rounded border border-border bg-secondary px-2 py-0.5 font-mono text-xs"
-          :title="info.needs_repository ? 'Needs a repository' : 'Runs without a repository'"
-        >{{ info.name }}<span v-if="!info.needs_repository" class="text-fg-subtle"> · no repo</span></li>
-      </ul>
-    </details>
     <p v-if="localError || state.error" class="text-sm text-danger" role="alert">
       {{ localError || state.error }}
     </p>
-    <div class="flex flex-wrap items-center gap-2 border-t border-border pt-4">
-      <span v-if="state.resource" class="mr-auto font-mono text-xs text-fg-subtle">Version {{ state.resource.version }}</span>
-      <Button v-if="selected" type="button" variant="ghost" class="text-danger" @click="remove"><Trash2 /> Remove</Button>
-      <Button v-if="shippedEntry" type="button" variant="outline" @click="restoreOne"><RotateCcw /> Restore this workflow</Button>
-      <!-- A definition the page can see is wrong is not submitted for the
-           server to refuse: the indicator above the editor says what to fix. -->
-      <Button type="submit" :disabled="state.saving || !parsed.ok"><Spinner v-if="state.saving" data-icon="inline-start" /> Validate &amp; save</Button>
-    </div>
   </form>
 </template>
