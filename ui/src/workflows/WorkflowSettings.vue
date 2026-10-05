@@ -59,6 +59,17 @@ const MODES = [
   { value: "none", label: "None", hint: "Scratch workspace, no clone" },
 ];
 const repository = computed(() => text("repository") || "required");
+
+// needs is the workflow's declared harness requirements: captures (a stage
+// returns structured output through capture tools) and the largest gate-retry
+// budget any stage declares.
+const needs = computed<{ captures?: boolean; gate_retries?: number }>(() => {
+  const value = workflowField(props.yaml, "needs");
+  return value && typeof value === "object" ? (value as { captures?: boolean; gate_retries?: number }) : {};
+});
+function setNeeds(next: { captures?: boolean; gate_retries?: number }): void {
+  set("needs", next);
+}
 </script>
 
 <template>
@@ -147,6 +158,27 @@ const repository = computed(() => text("repository") || "required");
               placeholder="default"
               class="h-7 w-44 rounded-md border border-input bg-background px-2 text-[13px]"
               @change="set('profile', ($event.target as HTMLInputElement).value.trim())"
+            />
+          </label>
+        </div>
+      </section>
+
+      <section class="space-y-1.5">
+        <div class="text-xs font-medium text-muted-foreground">Run needs</div>
+        <div class="divide-y divide-border rounded-md border border-border">
+          <label class="flex min-h-10 items-center gap-3 px-3 py-1.5">
+            <span class="flex-1 text-[13px]" title="A stage returns structured output through capture tools.">Captures</span>
+            <Switch :model-value="needs.captures === true" @update:model-value="setNeeds({ ...needs, captures: $event || undefined })" />
+          </label>
+          <label class="flex min-h-10 items-center gap-3 px-3 py-1.5">
+            <span class="flex-1 text-[13px]" title="The largest gate-retry budget any stage declares.">Gate retries</span>
+            <input
+              type="number"
+              min="0"
+              placeholder="0"
+              class="h-7 w-20 rounded-md border border-input bg-background px-2 text-right text-[13px]"
+              :value="needs.gate_retries ?? ''"
+              @input="setNeeds({ ...needs, gate_retries: ($event.target as HTMLInputElement).value === '' ? undefined : Number(($event.target as HTMLInputElement).value) })"
             />
           </label>
         </div>

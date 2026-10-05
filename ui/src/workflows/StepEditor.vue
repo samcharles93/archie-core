@@ -4,6 +4,7 @@ import { CircleHelp, Trash2, X } from "@lucide/vue";
 import { parse, stringify } from "yaml";
 
 import { Button } from "@/components/ui/button";
+import { DurationInput } from "@/components/ui/duration-input";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -58,6 +59,11 @@ function write(next: StepRecord): void {
 }
 function setField(key: string, value: unknown): void {
   write({ ...step.value, [key]: value });
+}
+// Retry is one object: a field edit merges into it so attempts and backoff do
+// not clobber each other, and clearing both drops the key.
+function setRetry(next: { attempts?: number; backoff?: string }): void {
+  setField("retry", { ...(step.value.retry as object), ...next });
 }
 function setSetting(key: string, value: unknown): void {
   write({ ...step.value, settings: { ...settings.value, [key]: value } });
@@ -246,7 +252,15 @@ const text = (key: string) => (typeof settings.value[key] === "string" ? (settin
               placeholder="1"
               class="h-7 w-20 rounded-md border border-input bg-background px-2 text-right text-[13px]"
               :value="(step.retry as { attempts?: number } | undefined)?.attempts ?? ''"
-              @input="setField('retry', ($event.target as HTMLInputElement).value === '' ? undefined : { ...(step.retry as object), attempts: Number(($event.target as HTMLInputElement).value) })"
+              @input="setRetry({ attempts: ($event.target as HTMLInputElement).value === '' ? undefined : Number(($event.target as HTMLInputElement).value) })"
+            />
+          </label>
+          <label class="flex min-h-10 items-center gap-3 px-3 py-1.5">
+            <span class="flex-1 text-[13px]">Retry backoff</span>
+            <DurationInput
+              :model-value="(step.retry as { backoff?: string } | undefined)?.backoff ?? ''"
+              :units="['s', 'm', 'h']"
+              @update:model-value="setRetry({ backoff: $event || undefined })"
             />
           </label>
         </div>
