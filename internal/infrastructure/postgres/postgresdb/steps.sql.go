@@ -54,7 +54,7 @@ func (q *Queries) CancelAttemptSteps(ctx context.Context, arg CancelAttemptSteps
 
 const finishStepExecution = `-- name: FinishStepExecution :execrows
 UPDATE step_executions
-SET status = $1, detail = $2, tokens_used = $3, finished_at = now()
+SET status = $1, detail = $2, tokens_used = $3, results = $6, finished_at = now()
 WHERE id = $4 AND status = $5
 `
 
@@ -64,6 +64,7 @@ type FinishStepExecutionParams struct {
 	TokensUsed int64
 	ID         int64
 	Status_2   string
+	Results    []byte
 }
 
 func (q *Queries) FinishStepExecution(ctx context.Context, arg FinishStepExecutionParams) (int64, error) {
@@ -73,6 +74,7 @@ func (q *Queries) FinishStepExecution(ctx context.Context, arg FinishStepExecuti
 		arg.TokensUsed,
 		arg.ID,
 		arg.Status_2,
+		arg.Results,
 	)
 	if err != nil {
 		return 0, err
@@ -155,6 +157,35 @@ func (q *Queries) InterruptAttemptSteps(ctx context.Context, arg InterruptAttemp
 		return nil, err
 	}
 	return items, nil
+}
+
+const latestStageResults = `-- name: LatestStageResults :one
+SELECT status, results FROM step_executions
+WHERE execution_id = $1 AND depth = 0 AND kind = 'stage' AND name = $2
+  AND status IN ('succeeded', 'failed')
+ORDER BY attempt DESC, id DESC
+LIMIT 1
+`
+
+type LatestStageResultsParams struct {
+	ExecutionID int64
+	Name        string
+}
+
+type LatestStageResultsRow struct {
+	Status  string
+	Results []byte
+}
+
+// The most recent finished run of a root stage, across attempts: a resumed
+// attempt skips the stages before its resume point, so the last attempt that
+// ran this stage may be an earlier one. NULL results mean that run did not
+// move past the stage.
+func (q *Queries) LatestStageResults(ctx context.Context, arg LatestStageResultsParams) (LatestStageResultsRow, error) {
+	row := q.db.QueryRow(ctx, latestStageResults, arg.ExecutionID, arg.Name)
+	var i LatestStageResultsRow
+	err := row.Scan(&i.Status, &i.Results)
+	return i, err
 }
 
 const listStepExecutions = `-- name: ListStepExecutions :many
@@ -316,12 +347,30 @@ SELECT id, org_id, workspace_id, execution_id, attempt, parent_id, depth, kind, 
 FROM step_executions WHERE id = $1 FOR UPDATE
 `
 
+type LockStepExecutionRow struct {
+	ID                int64
+	OrgID             string
+	WorkspaceID       string
+	ExecutionID       int64
+	Attempt           int64
+	ParentID          pgtype.Int8
+	Depth             int32
+	Kind              string
+	Name              string
+	CalledExecutionID int64
+	Status            string
+	Detail            string
+	TokensUsed        int64
+	StartedAt         pgtype.Timestamptz
+	FinishedAt        pgtype.Timestamptz
+}
+
 // FOR UPDATE, shared by a start's parent check and a finish's guarded write:
 // the row is held for the caller's transaction, so the state a check reads is
 // the state the guarded write sees.
-func (q *Queries) LockStepExecution(ctx context.Context, id int64) (StepExecution, error) {
+func (q *Queries) LockStepExecution(ctx context.Context, id int64) (LockStepExecutionRow, error) {
 	row := q.db.QueryRow(ctx, lockStepExecution, id)
-	var i StepExecution
+	var i LockStepExecutionRow
 	err := row.Scan(
 		&i.ID,
 		&i.OrgID,

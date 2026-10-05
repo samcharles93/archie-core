@@ -60,6 +60,17 @@ type StepFinish struct {
 	// TokensUsed is the usage the step itself accounted. Stages record none;
 	// the agent runtime records its own calls' usage.
 	TokensUsed int64
+	// Results is the run's step results as JSON after a stage the run moves
+	// past; nil otherwise. A resumed attempt starts from them.
+	Results []byte
+}
+
+// Resume is where a retried attempt starts: at stage From, with the results
+// recorded after stage After, the one before it. After is empty when From is
+// the first stage. An empty From runs the workflow from its first stage.
+type Resume struct {
+	From  string
+	After string
 }
 
 // StepExecution is one recorded step: ListSteps' read, the dashboard run

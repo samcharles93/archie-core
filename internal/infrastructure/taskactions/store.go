@@ -8,6 +8,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 type Store struct{ storecontract.TaskStore }
@@ -17,7 +18,9 @@ func (s Store) TaskByID(ctx context.Context, id int64) (*taskactions.Task, error
 	if err != nil || t == nil {
 		return nil, err
 	}
-	return &taskactions.Task{ID: t.ID, Owner: t.Owner, Repo: t.Repo, Identity: t.Identity, Status: t.Status, ParkReason: t.ParkReason, IssueNumber: t.IssueNumber, RetryCount: t.RetryCount, Attempt: t.Attempt, Branch: t.Branch, RetryMode: t.RetryMode, ForgeBacked: t.IsForgeBacked(), ReviewGate: t.ReviewGate, RereviewRounds: t.RereviewRounds}, nil
+	// A pinned definition that no longer parses offers no resume points.
+	stages, _ := workflow.StageNames(t.WorkflowDefinitionYAML)
+	return &taskactions.Task{ID: t.ID, Owner: t.Owner, Repo: t.Repo, Identity: t.Identity, Status: t.Status, ParkReason: t.ParkReason, IssueNumber: t.IssueNumber, RetryCount: t.RetryCount, Attempt: t.Attempt, Branch: t.Branch, RetryMode: t.RetryMode, ForgeBacked: t.IsForgeBacked(), ReviewGate: t.ReviewGate, RereviewRounds: t.RereviewRounds, Stages: stages}, nil
 }
 
 // CancelExecution delegates to the store.

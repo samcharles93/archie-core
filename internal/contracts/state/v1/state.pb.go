@@ -1743,7 +1743,11 @@ type Task struct {
 	// action writes it and the daemon's prepareWorkspace reads it, so it must
 	// cross the wire for a retry to land on the source the operator chose. The
 	// empty string reads as refresh_onto_base.
-	RetryMode     string `protobuf:"bytes,41,opt,name=retry_mode,json=retryMode,proto3" json:"retry_mode,omitempty"`
+	RetryMode string `protobuf:"bytes,41,opt,name=retry_mode,json=retryMode,proto3" json:"retry_mode,omitempty"`
+	// resume_from is the stage the next attempt starts at; empty runs every
+	// stage. resume_results are the step results (JSON) it starts with.
+	ResumeFrom    string `protobuf:"bytes,42,opt,name=resume_from,json=resumeFrom,proto3" json:"resume_from,omitempty"`
+	ResumeResults []byte `protobuf:"bytes,43,opt,name=resume_results,json=resumeResults,proto3" json:"resume_results,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2064,6 +2068,20 @@ func (x *Task) GetRetryMode() string {
 		return x.RetryMode
 	}
 	return ""
+}
+
+func (x *Task) GetResumeFrom() string {
+	if x != nil {
+		return x.ResumeFrom
+	}
+	return ""
+}
+
+func (x *Task) GetResumeResults() []byte {
+	if x != nil {
+		return x.ResumeResults
+	}
+	return nil
 }
 
 // Event mirrors internal/events.Event. Data is carried as a JSON object
@@ -3995,12 +4013,15 @@ type FinishStepRequest struct {
 	// execution_id names the run the step belongs to. The grant check verifies
 	// it against the credential, and the store verifies the step really is that
 	// execution's, so a caller cannot move another run's step by naming it.
-	ExecutionId   int64  `protobuf:"varint,1,opt,name=execution_id,json=executionId,proto3" json:"execution_id,omitempty"`
-	StepId        int64  `protobuf:"varint,2,opt,name=step_id,json=stepId,proto3" json:"step_id,omitempty"`
-	From          string `protobuf:"bytes,3,opt,name=from,proto3" json:"from,omitempty"`
-	To            string `protobuf:"bytes,4,opt,name=to,proto3" json:"to,omitempty"`
-	Detail        string `protobuf:"bytes,5,opt,name=detail,proto3" json:"detail,omitempty"`
-	TokensUsed    int64  `protobuf:"varint,6,opt,name=tokens_used,json=tokensUsed,proto3" json:"tokens_used,omitempty"`
+	ExecutionId int64  `protobuf:"varint,1,opt,name=execution_id,json=executionId,proto3" json:"execution_id,omitempty"`
+	StepId      int64  `protobuf:"varint,2,opt,name=step_id,json=stepId,proto3" json:"step_id,omitempty"`
+	From        string `protobuf:"bytes,3,opt,name=from,proto3" json:"from,omitempty"`
+	To          string `protobuf:"bytes,4,opt,name=to,proto3" json:"to,omitempty"`
+	Detail      string `protobuf:"bytes,5,opt,name=detail,proto3" json:"detail,omitempty"`
+	TokensUsed  int64  `protobuf:"varint,6,opt,name=tokens_used,json=tokensUsed,proto3" json:"tokens_used,omitempty"`
+	// results is the run's step results (JSON, by step id) after a stage the
+	// run moves past; empty otherwise. A resumed attempt starts from them.
+	Results       []byte `protobuf:"bytes,7,opt,name=results,proto3" json:"results,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4075,6 +4096,13 @@ func (x *FinishStepRequest) GetTokensUsed() int64 {
 		return x.TokensUsed
 	}
 	return 0
+}
+
+func (x *FinishStepRequest) GetResults() []byte {
+	if x != nil {
+		return x.Results
+	}
+	return nil
 }
 
 type FinishStepResponse struct {
@@ -5214,7 +5242,11 @@ type RetryTaskRequest struct {
 	Workflow   string                 `protobuf:"bytes,3,opt,name=workflow,proto3" json:"workflow,omitempty"`
 	// retry_mode is the operator's worktree choice (taskstate.RetryMode) the
 	// requeue persists. Empty reads as refresh_onto_base.
-	RetryMode     string `protobuf:"bytes,4,opt,name=retry_mode,json=retryMode,proto3" json:"retry_mode,omitempty"`
+	RetryMode string `protobuf:"bytes,4,opt,name=retry_mode,json=retryMode,proto3" json:"retry_mode,omitempty"`
+	// resume_from is the stage the attempt starts at, and resume_after the
+	// stage before it whose recorded results it starts with (task.Resume).
+	ResumeFrom    string `protobuf:"bytes,5,opt,name=resume_from,json=resumeFrom,proto3" json:"resume_from,omitempty"`
+	ResumeAfter   string `protobuf:"bytes,6,opt,name=resume_after,json=resumeAfter,proto3" json:"resume_after,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5273,6 +5305,20 @@ func (x *RetryTaskRequest) GetWorkflow() string {
 func (x *RetryTaskRequest) GetRetryMode() string {
 	if x != nil {
 		return x.RetryMode
+	}
+	return ""
+}
+
+func (x *RetryTaskRequest) GetResumeFrom() string {
+	if x != nil {
+		return x.ResumeFrom
+	}
+	return ""
+}
+
+func (x *RetryTaskRequest) GetResumeAfter() string {
+	if x != nil {
+		return x.ResumeAfter
 	}
 	return ""
 }
@@ -13008,8 +13054,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x06tokens\x18\x01 \x03(\v2\x17.state.v1.PersonalTokenR\x06tokens\",\n" +
 	"\x1aRevokePersonalTokenRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\x1d\n" +
-	"\x1bRevokePersonalTokenResponse\"\xea\n" +
-	"\n" +
+	"\x1bRevokePersonalTokenResponse\"\xb2\v\n" +
 	"\x04Task\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
 	"\x05owner\x18\x02 \x01(\tR\x05owner\x12\x12\n" +
@@ -13065,7 +13110,10 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"reviewGate\x12'\n" +
 	"\x0frereview_rounds\x18( \x01(\x03R\x0erereviewRounds\x12\x1d\n" +
 	"\n" +
-	"retry_mode\x18) \x01(\tR\tretryMode\"\xf8\x02\n" +
+	"retry_mode\x18) \x01(\tR\tretryMode\x12\x1f\n" +
+	"\vresume_from\x18* \x01(\tR\n" +
+	"resumeFrom\x12%\n" +
+	"\x0eresume_results\x18+ \x01(\fR\rresumeResults\"\xf8\x02\n" +
 	"\x05Event\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12*\n" +
 	"\x02at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x12\n" +
@@ -13237,7 +13285,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x13called_execution_id\x18\x06 \x01(\x03R\x11calledExecutionId\"S\n" +
 	"\x11StartStepResponse\x12\x17\n" +
 	"\astep_id\x18\x01 \x01(\x03R\x06stepId\x12%\n" +
-	"\x05event\x18\x02 \x01(\v2\x0f.state.v1.EventR\x05event\"\xac\x01\n" +
+	"\x05event\x18\x02 \x01(\v2\x0f.state.v1.EventR\x05event\"\xc6\x01\n" +
 	"\x11FinishStepRequest\x12!\n" +
 	"\fexecution_id\x18\x01 \x01(\x03R\vexecutionId\x12\x17\n" +
 	"\astep_id\x18\x02 \x01(\x03R\x06stepId\x12\x12\n" +
@@ -13245,7 +13293,8 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x02to\x18\x04 \x01(\tR\x02to\x12\x16\n" +
 	"\x06detail\x18\x05 \x01(\tR\x06detail\x12\x1f\n" +
 	"\vtokens_used\x18\x06 \x01(\x03R\n" +
-	"tokensUsed\";\n" +
+	"tokensUsed\x12\x18\n" +
+	"\aresults\x18\a \x01(\fR\aresults\";\n" +
 	"\x12FinishStepResponse\x12%\n" +
 	"\x05event\x18\x01 \x01(\v2\x0f.state.v1.EventR\x05event\"Y\n" +
 	"\x16CancelExecutionRequest\x12\x17\n" +
@@ -13320,14 +13369,17 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"fromStatus\x12%\n" +
 	"\x05audit\x18\x03 \x01(\v2\x0f.state.v1.EventR\x05audit\"0\n" +
 	"\x13ArchiveTaskResponse\x12\x19\n" +
-	"\bevent_id\x18\x01 \x01(\x03R\aeventId\"\x87\x01\n" +
+	"\bevent_id\x18\x01 \x01(\x03R\aeventId\"\xcb\x01\n" +
 	"\x10RetryTaskRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\x03R\x06taskId\x12\x1f\n" +
 	"\vfrom_status\x18\x02 \x01(\tR\n" +
 	"fromStatus\x12\x1a\n" +
 	"\bworkflow\x18\x03 \x01(\tR\bworkflow\x12\x1d\n" +
 	"\n" +
-	"retry_mode\x18\x04 \x01(\tR\tretryMode\"\x13\n" +
+	"retry_mode\x18\x04 \x01(\tR\tretryMode\x12\x1f\n" +
+	"\vresume_from\x18\x05 \x01(\tR\n" +
+	"resumeFrom\x12!\n" +
+	"\fresume_after\x18\x06 \x01(\tR\vresumeAfter\"\x13\n" +
 	"\x11RetryTaskResponse\"\x96\x01\n" +
 	"\x18RespondReviewGateRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\x03R\x06taskId\x12\x1f\n" +

@@ -114,6 +114,13 @@ A run ends at the first step that sets an outcome: `workflow.finish`,
 completes, with the last step's summary as its detail. A step that fails parks
 the run unless it continues on failure.
 
+A parked run can be retried from a top-level step instead of from the start.
+The steps before it are skipped and their results stay available to
+references. The resume point is named by the step's id (else its type), so
+give an id to any step whose type appears twice. A run with a repository
+resumes only on its pushed branch: work an earlier step did not push is not
+there.
+
 ## Step types
 
 ### `agent.run`

@@ -68,6 +68,24 @@ export function withRuns(graph: WorkflowGraph, stages: StageRun[]): WorkflowGrap
   };
 }
 
+/** How a parked run can restart at a step: the top-level step it stopped at
+ * resumes, earlier ones re-run. Later steps, and runs that are not parked,
+ * offer nothing. */
+export interface Restart {
+  label: "Resume from here" | "Re-run from here";
+  from: string;
+}
+
+export function restartAt(graph: WorkflowGraph, path: (string | number)[]): Restart | null {
+  const top = (data: StepNodeData) => (data.path && data.path.length >= 2 ? Number(data.path[1]) : -1);
+  const node = graph.nodes.find((candidate) => JSON.stringify(candidate.data.path) === JSON.stringify(path))?.data;
+  if (!node?.stage) return null;
+  const stopped = Math.max(-1, ...graph.nodes.filter((candidate) => candidate.data.run).map((candidate) => top(candidate.data)));
+  const at = top(node);
+  if (at < 0 || at > stopped) return null;
+  return { label: at === stopped ? "Resume from here" : "Re-run from here", from: node.stage };
+}
+
 export interface GraphNode {
   id: string;
   type: "step" | "add";

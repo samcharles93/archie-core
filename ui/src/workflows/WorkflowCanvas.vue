@@ -3,7 +3,7 @@ import { computed, ref, watch } from "vue";
 import { VueFlow, type NodeMouseEvent, type VueFlowStore } from "@vue-flow/core";
 import { Background } from "@vue-flow/background";
 import { Controls } from "@vue-flow/controls";
-import { ArrowDown, ArrowUp, Copy, Pencil, Trash2 } from "@lucide/vue";
+import { ArrowDown, ArrowUp, Copy, Pencil, RotateCcw, Trash2 } from "@lucide/vue";
 import "@vue-flow/core/dist/style.css";
 import "@vue-flow/controls/dist/style.css";
 
@@ -23,7 +23,7 @@ import InsertEdge from "./InsertEdge.vue";
 import StepNode from "./StepNode.vue";
 import StepTypeItems from "./StepTypeItems.vue";
 import type { StepPath } from "./workflow-edit";
-import { stepTitle, withRuns, workflowGraph, type StageRun, type StepNodeData } from "./workflow-graph";
+import { restartAt, stepTitle, withRuns, workflowGraph, type StageRun, type StepNodeData } from "./workflow-graph";
 import type { WorkflowTrigger } from "./workflow-triggers";
 
 const props = defineProps<{
@@ -33,6 +33,8 @@ const props = defineProps<{
   triggers?: WorkflowTrigger[];
   /** Step type names; when given, the canvas offers editing. */
   types?: string[];
+  /** The watched run is parked, so its steps offer to restart it. */
+  restartable?: boolean;
 }>();
 const emit = defineEmits<{
   edit: [StepPath];
@@ -41,6 +43,7 @@ const emit = defineEmits<{
   duplicate: [StepPath];
   move: [StepPath, -1 | 1];
   remove: [StepPath];
+  restart: [from: string];
 }>();
 
 const NODE_WIDTH = 240;
@@ -122,6 +125,7 @@ function onNodeClick({ node }: NodeMouseEvent): void {
   if (editable.value && path) emit("edit", path);
 }
 const menuPath = computed(() => menu.value.step?.path);
+const restart = computed(() => (props.restartable && menuPath.value ? restartAt(graph.value, menuPath.value) : null));
 const topIndex = computed(() => (menuPath.value?.length === 2 ? Number(menuPath.value[1]) : undefined));
 </script>
 
@@ -162,6 +166,10 @@ const topIndex = computed(() => (menuPath.value?.length === 2 ? Number(menuPath.
       <DropdownMenuContent class="w-56" align="start">
         <template v-if="menu.step?.kind === 'step' && menuPath">
           <DropdownMenuLabel class="truncate">{{ menu.step.title || stepTitle(menu.step.type) }}</DropdownMenuLabel>
+          <template v-if="restart">
+            <DropdownMenuItem @select="emit('restart', restart.from)"><RotateCcw /> {{ restart.label }}</DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </template>
           <DropdownMenuItem @select="emit('edit', menuPath)"><Pencil /> Edit</DropdownMenuItem>
           <template v-if="topIndex !== undefined">
             <DropdownMenuSub>

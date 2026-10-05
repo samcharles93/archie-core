@@ -159,7 +159,8 @@ export const api = {
   // taskAction posts an operator action. A review-gate answer may carry a
   // payload: the instructions a rereview requires, and the finding keys an
   // approve posts (an absent selection means every offered finding). A retry
-  // carries the worktree mode the operator chose. Every other action sends
+  // carries the worktree mode the operator chose, and may name the step it
+  // resumes from. Every other action sends
   // none.
   taskAction: <T = unknown>(
     id: string,
@@ -168,6 +169,7 @@ export const api = {
       instructions?: string;
       findings?: string[];
       retry_mode?: string;
+      resume_from?: string;
     },
   ) =>
     request<T>(`/api/tasks/${encodeURIComponent(id)}/action`, {

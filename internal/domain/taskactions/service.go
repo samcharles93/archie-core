@@ -5,9 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/domain/identity"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	workflowtask "github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/taskstate"
@@ -43,6 +45,9 @@ type Task struct {
 	// service reads it to refuse a re-review at the cap before the guarded
 	// write, and the write itself re-checks it in the row.
 	RereviewRounds int
+	// Stages are the pinned definition's stage names in order, the resume
+	// points a retry may name.
+	Stages []string
 	// Attempt is the run the operator acted on. It is stamped onto the event
 	// this action records so an intervention is attributable to the run it
 	// changed course -- without it a retry or a stop is indistinguishable
@@ -66,6 +71,9 @@ type ActionPayload struct {
 	// task's branch. It is empty -- the explicit default, refresh -- for every
 	// other action.
 	RetryMode taskstate.RetryMode
+	// ResumeFrom is the stage a retry starts at, keeping the results of the
+	// stages before it. Empty runs every stage.
+	ResumeFrom string
 }
 
 // Actor is who performed an action and the principal whose authority allowed
@@ -169,7 +177,7 @@ type Store interface {
 	Requeue(context.Context, int64, string, string) error
 	// RetryTask requeues a parked task, records the operator's worktree mode
 	// for the next dispatch and increments retry_count in one guarded write.
-	RetryTask(context.Context, int64, string, string, string) error
+	RetryTask(context.Context, int64, string, string, string, workflowtask.Resume) error
 	// RespondReviewGate is the guarded review gate response write
 	// (internal/domain/storecontract.ReviewGateResponder): it records the
 	// answered document, and for a re-review increments rereview_rounds and
@@ -376,6 +384,17 @@ func (s Service) applyRetry(ctx context.Context, task *Task, actor Actor, o outc
 	if !ok {
 		return o, fmt.Errorf("unknown retry mode %q: %w", requested, ErrConflict)
 	}
+	resume, err := resumePoint(task.Stages, payload.ResumeFrom)
+	if err != nil {
+		return o, fmt.Errorf("%w: %w", err, ErrConflict)
+	}
+	// The skipped steps' work must be on the branch the attempt continues.
+	if resume.From != "" && task.Owner != "" {
+		if strings.TrimSpace(task.Branch) == "" {
+			return o, fmt.Errorf("resuming from %q needs the earlier steps' work pushed, and task %d has no pushed branch: %w", resume.From, task.ID, ErrConflict)
+		}
+		mode = taskstate.RetryContinuePushedWork
+	}
 	if mode == taskstate.RetryContinuePushedWork && strings.TrimSpace(task.Branch) == "" {
 		return o, fmt.Errorf("task %d has no pushed branch to continue: %w", task.ID, ErrConflict)
 	}
@@ -393,10 +412,49 @@ func (s Service) applyRetry(ctx context.Context, task *Task, actor Actor, o outc
 		}
 		return o, fmt.Errorf("%w: %s", ErrConflict, reason)
 	}
-	err := s.Store.RetryTask(ctx, task.ID, "parked", "", string(mode))
+	err = s.Store.RetryTask(ctx, task.ID, "parked", "", string(mode), resume)
+	if errors.Is(err, storecontract.ErrResumeIncomplete) {
+		err = fmt.Errorf("%q did not complete in its last run, so there is nothing to resume from: %w", resume.After, ErrConflict)
+	}
 	o.event.Kind, o.event.Detail = events.KindTaskRetried, actor.describe("retried")
 	o.event.Data = map[string]any{"retry_count": task.RetryCount + 1, "previous_reason": task.ParkReason, "retry_mode": string(mode)}
+	if resume.From != "" {
+		o.event.Data["resume_from"] = resume.From
+	}
 	return o, err
+}
+
+// resumePoint resolves a resume stage against the pinned definition's stages.
+// Stage names are how runs are recorded, so a name two stages share cannot
+// say which one to resume.
+func resumePoint(stages []string, from string) (workflowtask.Resume, error) {
+	if from == "" {
+		return workflowtask.Resume{}, nil
+	}
+	at := slices.Index(stages, from)
+	if at < 0 {
+		return workflowtask.Resume{}, fmt.Errorf("the pinned workflow has no step %q", from)
+	}
+	resume := workflowtask.Resume{From: from}
+	if at > 0 {
+		resume.After = stages[at-1]
+	}
+	for _, name := range []string{resume.From, resume.After} {
+		if name != "" && countOf(stages, name) > 1 {
+			return workflowtask.Resume{}, fmt.Errorf("several steps run as %q; give each an id to resume there", name)
+		}
+	}
+	return resume, nil
+}
+
+func countOf(stages []string, name string) int {
+	n := 0
+	for _, stage := range stages {
+		if stage == name {
+			n++
+		}
+	}
+	return n
 }
 
 func (s Service) applyStop(ctx context.Context, task *Task, actor Actor, o outcome) (outcome, error) {

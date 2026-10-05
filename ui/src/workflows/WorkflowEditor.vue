@@ -14,7 +14,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import StepRun from "./StepRun.vue";
-import { withRuns, workflowGraph } from "./workflow-graph";
+import { restartAt, withRuns, workflowGraph } from "./workflow-graph";
+import { api } from "@/lib/api";
 import StepEditor from "./StepEditor.vue";
 import WorkflowSettings from "./WorkflowSettings.vue";
 import RunWorkflowButton from "./RunWorkflowButton.vue";
@@ -67,7 +68,26 @@ function openStep(path: StepPath): void {
  selectedStep.value = path;
  stepTab.value = selectedNode.value?.run && watchedRun.value ? "run" : "definition";
 }
-watch(watched, () => { selectedStep.value = null; });
+watch(watched, () => { selectedStep.value = null; restartError.value = ""; });
+
+// A parked run restarts at a step through the retry action, keeping the
+// results of the steps before it.
+const restartable = computed(() => watchedRun.value?.status === "parked");
+const selectedRestart = computed(() => restartable.value && selectedStep.value ? restartAt(withRuns(workflowGraph(yaml.value), stages.value), selectedStep.value) : null);
+const restarting = ref(false);
+const restartError = ref("");
+async function restartFrom(from: string): Promise<void> {
+  restartError.value = "";
+  restarting.value = true;
+  try {
+    await api.taskAction(watched.value, "retry", { resume_from: from });
+    await refresh();
+  } catch (err) {
+    restartError.value = err instanceof Error ? err.message : "Restart failed";
+  } finally {
+    restarting.value = false;
+  }
+}
 const triggers = useWorkflowTriggers(selected);
 
 // Canvas edits are edits to the YAML; a newly placed step opens for editing.
@@ -229,13 +249,16 @@ function syncScroll(event: Event): void {
         <!-- The canvas takes the height the viewport has left, so the page
              itself does not scroll; the canvas pans. -->
         <div class="relative h-[calc(100dvh-20.5rem)] min-h-[26rem]">
+          <p v-if="restartError" role="alert" class="absolute bottom-3 left-14 z-10 max-w-xl rounded-md border border-danger/40 bg-card px-3 py-2 text-sm text-danger shadow-lg">{{ restartError }}</p>
           <WorkflowCanvas
             :yaml="yaml"
             :stages="stages"
             :selected="selectedStep"
             :triggers="triggers"
             :types="stepTypeNames"
+            :restartable="restartable"
             @edit="openStep"
+            @restart="restartFrom"
             @settings="selectedStep = null; settingsOpen = true"
             @insert="insertAt"
             @duplicate="duplicateAt"
@@ -263,6 +286,7 @@ function syncScroll(event: Event): void {
                 <div class="flex items-center gap-2 border-b border-border px-3 py-2">
                   <Tabs v-model="stepTab"><TabsList><TabsTrigger value="run">Run</TabsTrigger><TabsTrigger value="definition">Definition</TabsTrigger></TabsList></Tabs>
                   <span class="min-w-0 flex-1 truncate text-xs" :title="selectedNode.run.name">{{ selectedNode.run.name }}</span>
+                  <Button v-if="selectedRestart" type="button" size="sm" variant="outline" :disabled="restarting" @click="restartFrom(selectedRestart.from)"><RotateCcw /> {{ selectedRestart.label }}</Button>
                   <Button type="button" variant="ghost" size="icon-sm" aria-label="Close step details" @click="selectedStep = null"><X /></Button>
                 </div>
                 <div v-if="stepTab === 'run'" class="min-h-0 w-[32rem] max-w-[calc(100vw-3rem)] flex-1 overflow-y-auto">

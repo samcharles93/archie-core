@@ -252,7 +252,7 @@ func (s *server) FinishStep(ctx context.Context, r *pb.FinishStepRequest) (*pb.F
 	event, err := s.deps.Steps.FinishStep(ctx, task.StepFinish{
 		StepID: r.StepId, ExecutionID: r.ExecutionId,
 		From: taskstate.StepStatus(r.From), To: taskstate.StepStatus(r.To),
-		Detail: r.Detail, TokensUsed: r.TokensUsed,
+		Detail: r.Detail, TokensUsed: r.TokensUsed, Results: r.Results,
 	})
 	if err != nil {
 		return nil, s.logErr("FinishStep", err)
@@ -335,7 +335,7 @@ func (s *server) ArchiveTask(ctx context.Context, r *pb.ArchiveTaskRequest) (*pb
 }
 
 func (s *server) RetryTask(ctx context.Context, r *pb.RetryTaskRequest) (*pb.RetryTaskResponse, error) {
-	if err := s.deps.Tasks.RetryTask(ctx, r.TaskId, r.FromStatus, r.Workflow, r.RetryMode); err != nil {
+	if err := s.deps.Tasks.RetryTask(ctx, r.TaskId, r.FromStatus, r.Workflow, r.RetryMode, task.Resume{From: r.ResumeFrom, After: r.ResumeAfter}); err != nil {
 		return nil, s.logErr("RetryTask", err)
 	}
 	return &pb.RetryTaskResponse{}, nil

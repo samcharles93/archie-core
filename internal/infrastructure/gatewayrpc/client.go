@@ -103,6 +103,7 @@ func (c *Client) ApplyOperatorTaskAction(ctx context.Context, actor taskactions.
 		Instructions: res.Instructions,
 		Findings:     res.Findings,
 		RetryMode:    string(res.RetryMode),
+		ResumeFrom:   res.ResumeFrom,
 	})
 	if err != nil {
 		return messaging.TaskActionResult{}, taskActionError(err)

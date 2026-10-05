@@ -187,6 +187,7 @@ func (s *Store) FinishStep(ctx context.Context, finish task.StepFinish) (events.
 	n, err := q.FinishStepExecution(ctx, postgresdb.FinishStepExecutionParams{
 		Status: string(finish.To), Detail: clip(finish.Detail, 4000), TokensUsed: finish.TokensUsed,
 		ID: finish.StepID, Status_2: string(finish.From),
+		Results: finish.Results,
 	})
 	if err != nil {
 		return events.Event{}, err

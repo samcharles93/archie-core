@@ -40,7 +40,7 @@ FROM step_executions WHERE id = $1 FOR UPDATE;
 
 -- name: FinishStepExecution :execrows
 UPDATE step_executions
-SET status = $1, detail = $2, tokens_used = $3, finished_at = now()
+SET status = $1, detail = $2, tokens_used = $3, results = $6, finished_at = now()
 WHERE id = $4 AND status = $5;
 -- name: CancelAttemptSteps :many
 -- The half of CancelExecution that cancels the current attempt's
@@ -87,3 +87,14 @@ ORDER BY attempt, id;
 SELECT id, called_execution_id FROM step_executions
 WHERE execution_id = $1 AND attempt = $2
   AND kind = 'call' AND status IN ('pending', 'running') AND called_execution_id <> 0;
+
+-- name: LatestStageResults :one
+-- The most recent finished run of a root stage, across attempts: a resumed
+-- attempt skips the stages before its resume point, so the last attempt that
+-- ran this stage may be an earlier one. NULL results mean that run did not
+-- move past the stage.
+SELECT status, results FROM step_executions
+WHERE execution_id = $1 AND depth = 0 AND kind = 'stage' AND name = $2
+  AND status IN ('succeeded', 'failed')
+ORDER BY attempt DESC, id DESC
+LIMIT 1;

@@ -150,7 +150,7 @@ func (c *Client) CancelExecution(ctx context.Context, taskID int64, reason, to s
 func (c *Client) FinishStep(ctx context.Context, s task.StepFinish) (events.Event, error) {
 	r, err := c.client.FinishStep(ctx, &pb.FinishStepRequest{
 		ExecutionId: s.ExecutionID, StepId: s.StepID,
-		From: string(s.From), To: string(s.To), Detail: s.Detail, TokensUsed: s.TokensUsed,
+		From: string(s.From), To: string(s.To), Detail: s.Detail, TokensUsed: s.TokensUsed, Results: s.Results,
 	})
 	if err != nil {
 		return events.Event{}, unmapError(err)
@@ -207,8 +207,11 @@ func (c *Client) ArchiveTask(ctx context.Context, taskID int64, fromStatus strin
 	return r.EventId, nil
 }
 
-func (c *Client) RetryTask(ctx context.Context, taskID int64, fromStatus, wf, retryMode string) error {
-	_, err := c.client.RetryTask(ctx, &pb.RetryTaskRequest{TaskId: taskID, FromStatus: fromStatus, Workflow: wf, RetryMode: retryMode})
+func (c *Client) RetryTask(ctx context.Context, taskID int64, fromStatus, wf, retryMode string, resume task.Resume) error {
+	_, err := c.client.RetryTask(ctx, &pb.RetryTaskRequest{
+		TaskId: taskID, FromStatus: fromStatus, Workflow: wf, RetryMode: retryMode,
+		ResumeFrom: resume.From, ResumeAfter: resume.After,
+	})
 	return unmapError(err)
 }
 

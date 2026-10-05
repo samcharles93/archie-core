@@ -171,7 +171,7 @@ func compileStep(step StepRecord, registry StepRegistry) (Stage, error) {
 		return Stage{}, fmt.Errorf("build workflow step %q: %w", step.Type, err)
 	}
 	// Settings are built per run, with every reference resolved.
-	return wrapStep(step, step.Type, func(ctx context.Context, tc *TaskContext) error {
+	return wrapStep(step, func(ctx context.Context, tc *TaskContext) error {
 		stage, err := factory(renderSettings(step.Settings, tc))
 		if err != nil {
 			return fmt.Errorf("step %q settings: %w", step.Type, err)
@@ -180,12 +180,22 @@ func compileStep(step StepRecord, registry StepRegistry) (Stage, error) {
 	}), nil
 }
 
+// StageName is the name a step runs and is recorded under: its id, else its
+// type, else "parallel".
+func (step StepRecord) StageName() string {
+	switch {
+	case step.ID != "":
+		return step.ID
+	case step.Parallel != nil:
+		return "parallel"
+	}
+	return step.Type
+}
+
 // wrapStep applies the controls every step shares around its body: when,
 // retry, and recording its result under its id.
-func wrapStep(step StepRecord, name string, body func(context.Context, *TaskContext) error) Stage {
-	if step.ID != "" {
-		name = step.ID
-	}
+func wrapStep(step StepRecord, body func(context.Context, *TaskContext) error) Stage {
+	name := step.StageName()
 	// ParseDefinition has already refused a condition or backoff that does
 	// not parse.
 	when, _ := parseCondition(step.When)
@@ -241,7 +251,7 @@ func compileParallel(step StepRecord, registry StepRegistry) (Stage, error) {
 			branches[i] = append(branches[i], stage)
 		}
 	}
-	return wrapStep(step, "parallel", func(ctx context.Context, tc *TaskContext) error {
+	return wrapStep(step, func(ctx context.Context, tc *TaskContext) error {
 		clones := make([]*TaskContext, len(branches))
 		errs := make([]error, len(branches))
 		var wg sync.WaitGroup

@@ -86,9 +86,11 @@ type TaskArchiver interface {
 // TaskRetryer atomically requeues recoverable work and accounts for the new
 // attempt so a partial write cannot evade the retry cap. retryMode is the
 // operator's worktree choice for the next dispatch (taskstate.RetryMode),
-// persisted on the row so the daemon reads it instead of inferring it.
+// persisted on the row so the daemon reads it instead of inferring it. resume
+// is where the attempt starts; a resume whose After stage did not complete in
+// its last run is refused with ErrResumeIncomplete.
 type TaskRetryer interface {
-	RetryTask(ctx context.Context, taskID int64, fromStatus, workflow, retryMode string) error
+	RetryTask(ctx context.Context, taskID int64, fromStatus, workflow, retryMode string, resume task.Resume) error
 }
 
 // ReviewGateResponder records the operator's review-gate answer. A re-review
@@ -401,6 +403,9 @@ var (
 	// store does not record or a step whose identifying fields do not resolve.
 	// Distinct from the transition sentinels, which cover a row's state.
 	ErrInvalidStep = errors.New("store: invalid step execution request")
+	// ErrResumeIncomplete is returned when a retry resumes after a stage whose
+	// last run did not complete, so there are no results to start from.
+	ErrResumeIncomplete = errors.New("store: the step before the resume point did not complete in its last run")
 	// ErrBindingNotFound is returned when a binding ID does not exist.
 	ErrBindingNotFound = errors.New("store: binding not found")
 	// ErrBindingOverlap is returned when a binding's matcher overlaps an

@@ -35,6 +35,7 @@ type actionRequest struct {
 	Instructions string              `json:"instructions,omitempty"`
 	Findings     []string            `json:"findings,omitempty"`
 	RetryMode    taskstate.RetryMode `json:"retry_mode,omitempty"`
+	ResumeFrom   string              `json:"resume_from,omitempty"`
 }
 
 type actorPayload struct {
@@ -120,6 +121,7 @@ func Register(nc *nats.Conn, service taskactions.Service, log *slog.Logger) (fun
 				Instructions: req.Instructions,
 				Findings:     req.Findings,
 				RetryMode:    req.RetryMode,
+				ResumeFrom:   req.ResumeFrom,
 			})
 			natsrpc.Respond(msg, log, "taskactions", actionResponse{
 				Envelope: natsrpc.NewEnvelope(err),
@@ -153,6 +155,7 @@ func (c Client) ApplyChatTaskAction(ctx context.Context, scope *string, actor ta
 		Instructions: res.Instructions,
 		Findings:     res.Findings,
 		RetryMode:    res.RetryMode,
+		ResumeFrom:   res.ResumeFrom,
 		Actor: &actorPayload{
 			ID:        string(actor.Identity),
 			Kind:      string(actor.Kind),

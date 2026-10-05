@@ -3,10 +3,12 @@ package workflow
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"maps"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -301,7 +303,12 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 	tc.runInterface, tc.runInterfaceSet = wf.Interface, true
 	log := tc.Log.With("workflow", wf.Name, "repo", tc.Repo.FullName(), "issue", t.IssueNumber)
 
-	for _, stage := range wf.Stages {
+	stages, err := tc.resumeStages(wf.Stages)
+	if err != nil {
+		park(ctx, tc, err.Error())
+		return
+	}
+	for _, stage := range stages {
 		tc.Stage = stage.Name
 		if err := tc.Store.Update(ctx, t); err != nil {
 			park(ctx, tc, fmt.Sprintf("persist task before stage %s: %v", stage.Name, err))
@@ -359,7 +366,7 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 		// failed recording write parks the execution, like a failed start.
 		finishEvent, recordErr := tc.Store.FinishStep(ctx, StepFinish{
 			StepID: stepID, ExecutionID: t.ID,
-			From: taskstate.StepRunning, To: finishTo, Detail: finishDetail,
+			From: taskstate.StepRunning, To: finishTo, Detail: finishDetail, Results: tc.resultsAfter(stage, err),
 		})
 		if recordErr != nil {
 			stageLog.Error("stage finish could not be recorded", "stage", stage.Name, "err", recordErr)
@@ -375,6 +382,38 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 	// Running out of steps is success: the last step's summary says what was done.
 	tc.Outcome = Outcome{Status: StatusCompleted, Detail: tc.stepResult.Summary}
 	finish(ctx, tc, log)
+}
+
+// resultsAfter is what a stage records for a later attempt resumed after it:
+// the results so far when the run moves past the stage, else nothing.
+func (tc *TaskContext) resultsAfter(stage Stage, err error) []byte {
+	if err != nil && !stage.ContinueOnFailure {
+		return nil
+	}
+	// StepResult holds strings and decoded JSON values, which always marshal.
+	results, _ := json.Marshal(tc.stepResults)
+	return results
+}
+
+// resumeStages returns the stages this attempt runs: all of them, or those
+// from the task's resume point on, with the results the stages before it
+// recorded loaded so their references still resolve.
+func (tc *TaskContext) resumeStages(stages []Stage) ([]Stage, error) {
+	from := tc.Task.ResumeFrom
+	if from == "" {
+		return stages, nil
+	}
+	at := slices.IndexFunc(stages, func(s Stage) bool { return s.Name == from })
+	if at < 0 {
+		return nil, fmt.Errorf("resume point %q is not a step of this workflow", from)
+	}
+	if len(tc.Task.ResumeResults) > 0 {
+		if err := json.Unmarshal(tc.Task.ResumeResults, &tc.stepResults); err != nil {
+			return nil, fmt.Errorf("resume results: %w", err)
+		}
+	}
+	tc.Log.Info("resuming", "from", from, "skipped", at)
+	return stages[at:], nil
 }
 
 // endsRun applies a recorded stage's result: a failure parks unless the stage

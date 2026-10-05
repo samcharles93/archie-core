@@ -96,6 +96,20 @@ func ParseDefinition(src string, registry StepRegistry) (YAMLDefinition, error) 
 	return definition, nil
 }
 
+// StageNames returns the names a definition's steps run under, in order. It
+// reads a definition already pinned, so it decodes without validating.
+func StageNames(src string) ([]string, error) {
+	var definition YAMLDefinition
+	if err := yaml.Unmarshal([]byte(src), &definition); err != nil {
+		return nil, fmt.Errorf("parse workflow YAML: %w", err)
+	}
+	names := make([]string, len(definition.Steps))
+	for i, step := range definition.Steps {
+		names[i] = step.StageName()
+	}
+	return names, nil
+}
+
 // ParseAndCompile validates and compiles one definition in a single operation.
 func ParseAndCompile(src string, registry StepRegistry) (Workflow, error) {
 	definition, err := ParseDefinition(src, registry)

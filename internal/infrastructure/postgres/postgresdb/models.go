@@ -361,6 +361,7 @@ type StepExecution struct {
 	TokensUsed        int64
 	StartedAt         pgtype.Timestamptz
 	FinishedAt        pgtype.Timestamptz
+	Results           []byte
 }
 
 type SysAudit struct {
@@ -419,6 +420,8 @@ type Task struct {
 	ReviewGate                string
 	RereviewRounds            int64
 	RetryMode                 string
+	ResumeFrom                string
+	ResumeResults             []byte
 }
 
 type ToolCall struct {

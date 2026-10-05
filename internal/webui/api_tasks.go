@@ -188,6 +188,8 @@ type taskActionRequest struct {
 	Findings []string `json:"findings"`
 	// RetryMode is the worktree mode for a retry; empty means refresh_onto_base.
 	RetryMode string `json:"retry_mode"`
+	// ResumeFrom is the step a retry starts at; empty runs every step.
+	ResumeFrom string `json:"resume_from"`
 }
 
 func (s *Server) handleTaskAction(w http.ResponseWriter, r *http.Request) {
@@ -251,7 +253,7 @@ func decodeTaskAction(w http.ResponseWriter, r *http.Request) (taskstate.Action,
 		http.Error(w, "a re-review needs instructions", http.StatusBadRequest)
 		return "", taskactions.ActionPayload{}, false
 	}
-	return action, taskactions.ActionPayload{Instructions: req.Instructions, Findings: req.Findings, RetryMode: taskstate.RetryMode(req.RetryMode)}, true
+	return action, taskactions.ActionPayload{Instructions: req.Instructions, Findings: req.Findings, RetryMode: taskstate.RetryMode(req.RetryMode), ResumeFrom: req.ResumeFrom}, true
 }
 
 func taskMutation(action taskstate.Action) bool {

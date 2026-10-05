@@ -399,6 +399,10 @@ message Task {
   // cross the wire for a retry to land on the source the operator chose. The
   // empty string reads as refresh_onto_base.
   string retry_mode = 41;
+  // resume_from is the stage the next attempt starts at; empty runs every
+  // stage. resume_results are the step results (JSON) it starts with.
+  string resume_from = 42;
+  bytes resume_results = 43;
 }
 
 // Event mirrors internal/events.Event. Data is carried as a JSON object
@@ -646,6 +650,9 @@ message FinishStepRequest {
   string to = 4;
   string detail = 5;
   int64 tokens_used = 6;
+  // results is the run's step results (JSON, by step id) after a stage the
+  // run moves past; empty otherwise. A resumed attempt starts from them.
+  bytes results = 7;
 }
 message FinishStepResponse {
   // event is the transition's stage_finish row, already persisted.
@@ -750,6 +757,10 @@ message RetryTaskRequest {
   // retry_mode is the operator's worktree choice (taskstate.RetryMode) the
   // requeue persists. Empty reads as refresh_onto_base.
   string retry_mode = 4;
+  // resume_from is the stage the attempt starts at, and resume_after the
+  // stage before it whose recorded results it starts with (task.Resume).
+  string resume_from = 5;
+  string resume_after = 6;
 }
 message RetryTaskResponse {}
 

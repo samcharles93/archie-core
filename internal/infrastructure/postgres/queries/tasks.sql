@@ -155,7 +155,7 @@ RETURNING *;
 -- A remediation must continue the branch its pull request lives on, so it
 -- records that dispatch mode explicitly (taskstate.RetryContinuePushedWork)
 -- rather than leaving prepareWorkspace to infer it from the workflow.
-UPDATE tasks SET status = 'queued', workflow = 'remediate', park_reason = '', park_class = 'needs_human', review_payload = $2, retry_mode = 'continue_pushed_work', updated_at = now()
+UPDATE tasks SET status = 'queued', workflow = 'remediate', park_reason = '', park_class = 'needs_human', review_payload = $2, retry_mode = 'continue_pushed_work', resume_from = '', resume_results = '{}', updated_at = now()
 WHERE id = $1 AND status = 'pr_open';
 
 -- name: UpdateReviewPayloadTask :execrows
@@ -176,6 +176,7 @@ WHERE id = @id AND status = @from_status;
 UPDATE tasks SET status = 'queued', retry_count = retry_count + 1,
     workflow = CASE WHEN @workflow::text = '' THEN workflow ELSE @workflow::text END,
     retry_mode = @retry_mode::text,
+    resume_from = @resume_from::text, resume_results = @resume_results::jsonb,
     park_reason = '', park_class = 'needs_human', updated_at = now()
 WHERE id = @id AND status = @from_status;
 

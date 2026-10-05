@@ -112,6 +112,7 @@ func (s *server) ApplyOperatorTaskAction(ctx context.Context, r *pb.ApplyOperato
 		Instructions: r.Instructions,
 		Findings:     r.Findings,
 		RetryMode:    taskstate.RetryMode(r.RetryMode),
+		ResumeFrom:   r.ResumeFrom,
 	})
 	if err != nil {
 		return nil, taskActionStatus(err)

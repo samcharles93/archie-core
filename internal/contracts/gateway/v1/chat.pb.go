@@ -1732,7 +1732,9 @@ type ApplyOperatorTaskActionRequest struct {
 	// (taskstate.RetryMode): refresh onto the base branch or continue the work
 	// already pushed on the task's branch. It is empty for every other action,
 	// and chat carries no mode syntax -- an empty value means refresh_onto_base.
-	RetryMode     string `protobuf:"bytes,8,opt,name=retry_mode,json=retryMode,proto3" json:"retry_mode,omitempty"`
+	RetryMode string `protobuf:"bytes,8,opt,name=retry_mode,json=retryMode,proto3" json:"retry_mode,omitempty"`
+	// resume_from is the stage a retry starts at; empty runs every stage.
+	ResumeFrom    string `protobuf:"bytes,9,opt,name=resume_from,json=resumeFrom,proto3" json:"resume_from,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1819,6 +1821,13 @@ func (x *ApplyOperatorTaskActionRequest) GetFindings() []string {
 func (x *ApplyOperatorTaskActionRequest) GetRetryMode() string {
 	if x != nil {
 		return x.RetryMode
+	}
+	return ""
+}
+
+func (x *ApplyOperatorTaskActionRequest) GetResumeFrom() string {
+	if x != nil {
+		return x.ResumeFrom
 	}
 	return ""
 }
@@ -3056,7 +3065,7 @@ const file_gateway_v1_chat_proto_rawDesc = "" +
 	"\x17ApplyTaskActionResponse\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\x03R\x06taskId\x12\x16\n" +
 	"\x06action\x18\x02 \x01(\tR\x06action\x12\x18\n" +
-	"\amessage\x18\x03 \x01(\tR\amessage\"\x8d\x02\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\"\xae\x02\n" +
 	"\x1eApplyOperatorTaskActionRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\x03R\x06taskId\x12\x16\n" +
 	"\x06action\x18\x02 \x01(\tR\x06action\x12\x19\n" +
@@ -3067,7 +3076,9 @@ const file_gateway_v1_chat_proto_rawDesc = "" +
 	"\finstructions\x18\x06 \x01(\tR\finstructions\x12\x1a\n" +
 	"\bfindings\x18\a \x03(\tR\bfindings\x12\x1d\n" +
 	"\n" +
-	"retry_mode\x18\b \x01(\tR\tretryMode\"l\n" +
+	"retry_mode\x18\b \x01(\tR\tretryMode\x12\x1f\n" +
+	"\vresume_from\x18\t \x01(\tR\n" +
+	"resumeFrom\"l\n" +
 	"\x1fApplyOperatorTaskActionResponse\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\x03R\x06taskId\x12\x16\n" +
 	"\x06action\x18\x02 \x01(\tR\x06action\x12\x18\n" +

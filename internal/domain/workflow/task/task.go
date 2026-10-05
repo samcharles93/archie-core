@@ -64,6 +64,11 @@ type Task struct {
 	// RetryMode is the worktree mode for the next dispatch; empty means
 	// RefreshOntoBase.
 	RetryMode string `json:"retry_mode"`
+	// ResumeFrom is the stage this attempt starts at; empty runs every stage.
+	// ResumeResults are the step results (JSON, by step id) the attempt starts
+	// with, so steps it skips still answer their references.
+	ResumeFrom    string          `json:"resume_from,omitempty"`
+	ResumeResults json.RawMessage `json:"resume_results,omitempty"`
 	// WatchCommentID is the poll backstop's high-water mark over forge
 	// review-comment IDs for this task (pr-review-remediation.md decision
 	// 2's persisted per-task cursor; the comment-watch design it was

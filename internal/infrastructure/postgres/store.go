@@ -99,6 +99,8 @@ func taskFromRow(t postgresdb.Task) *workflow.Task {
 		ParkReason:                t.ParkReason,
 		RetryCount:                int(t.RetryCount),
 		RetryMode:                 t.RetryMode,
+		ResumeFrom:                t.ResumeFrom,
+		ResumeResults:             t.ResumeResults,
 		WatchCommentID:            t.WatchCommentID,
 		ReviewCursor:              t.ReviewCursor,
 		Source:                    t.Source,
@@ -384,12 +386,35 @@ func (s *Store) Requeue(ctx context.Context, taskID int64, fromStatus, wf string
 // transaction, under the same table check Requeue applies. retryMode is the
 // operator's worktree choice for the next dispatch; the store persists it
 // unread so the daemon's prepareWorkspace reads the mode the operator set.
-func (s *Store) RetryTask(ctx context.Context, taskID int64, fromStatus, wf, retryMode string) error {
+// A resume copies the results recorded after its After stage onto the row, in
+// the same transaction, so the attempt starts from what that stage left.
+func (s *Store) RetryTask(ctx context.Context, taskID int64, fromStatus, wf, retryMode string, resume task.Resume) error {
 	return s.requeue(ctx, taskID, fromStatus, wf, "retried "+wf, func(q *postgresdb.Queries) (int64, error) {
+		results, err := resumeResults(ctx, q, taskID, resume)
+		if err != nil {
+			return 0, err
+		}
 		return q.RetryTask(ctx, postgresdb.RetryTaskParams{
 			ID: taskID, Workflow: wf, FromStatus: fromStatus, RetryMode: retryMode,
+			ResumeFrom: resume.From, ResumeResults: results,
 		})
 	})
+}
+
+// resumeResults reads the results a resumed attempt starts with: those of the
+// After stage's most recent finished run, which must have completed.
+func resumeResults(ctx context.Context, q *postgresdb.Queries, taskID int64, resume task.Resume) ([]byte, error) {
+	if resume.From == "" || resume.After == "" {
+		return []byte("{}"), nil
+	}
+	row, err := q.LatestStageResults(ctx, postgresdb.LatestStageResultsParams{ExecutionID: taskID, Name: resume.After})
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && row.Results == nil) {
+		return nil, fmt.Errorf("%w: %q", storecontract.ErrResumeIncomplete, resume.After)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return row.Results, nil
 }
 
 // RespondReviewGate records the operator's gate answer and requeues, counting

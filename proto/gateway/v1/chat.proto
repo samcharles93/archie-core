@@ -187,6 +187,8 @@ message ApplyOperatorTaskActionRequest {
   // already pushed on the task's branch. It is empty for every other action,
   // and chat carries no mode syntax -- an empty value means refresh_onto_base.
   string retry_mode = 8;
+  // resume_from is the stage a retry starts at; empty runs every stage.
+  string resume_from = 9;
 }
 message ApplyOperatorTaskActionResponse { int64 task_id = 1; string action = 2; string message = 3; }
 message SaveSessionResponse {}
