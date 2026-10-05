@@ -134,6 +134,12 @@ type Daemon struct {
 	// reactionConsumer is built lazily by drainReactions and kept for its
 	// lifetime drop counter.
 	reactionConsumer *reactionConsumer
+
+	// lastPolled remembers each repo's eligible issues from its previous
+	// complete poll, under the dispatch rule that produced them, so only an
+	// issue that was eligible and dropped out reads as withdrawn.
+	lastPolledMu sync.Mutex
+	lastPolled   map[string]polledIssues
 	// reactionPublisher is built lazily by scanPRReviews; an indirection
 	// only so tests can swap the delivery without the bus.
 	reactionPublisher ReactionPublisher
@@ -438,7 +444,7 @@ func (d *Daemon) pollForIdentity(ctx context.Context, id *IdentityRunner) {
 	for _, repo := range id.Repos {
 		issues, complete := d.pollIssuesWithConfig(ctx, id.Forge, cfg, repo)
 		if complete {
-			d.withdrawUnpolled(ctx, repo, string(id.ID), issues)
+			d.withdrawUnpolled(ctx, repo, string(id.ID), dispatchRule(cfg), issues)
 		}
 		for _, is := range issues {
 			labels := strings.Join(is.Labels, ",")
@@ -1065,7 +1071,7 @@ func (d *Daemon) poll(ctx context.Context) {
 	for _, repo := range d.Cfg.Get().Repos {
 		issues, complete := d.pollIssues(ctx, repo)
 		if complete {
-			d.withdrawUnpolled(ctx, repo, "", issues)
+			d.withdrawUnpolled(ctx, repo, "", dispatchRule(d.Cfg.Get()), issues)
 		}
 		for _, is := range issues {
 			labels := strings.Join(is.Labels, ",")
@@ -1076,16 +1082,48 @@ func (d *Daemon) poll(ctx context.Context) {
 	}
 }
 
+// polledIssues is one repo's eligible issues under one dispatch rule.
+type polledIssues struct {
+	rule     string
+	eligible map[int]bool
+}
+
+// rememberPoll records a repo's latest eligible set and returns the previous
+// one, reporting whether it was taken under the same rule.
+func (d *Daemon) rememberPoll(key string, current polledIssues) (polledIssues, bool) {
+	d.lastPolledMu.Lock()
+	defer d.lastPolledMu.Unlock()
+	previous, seen := d.lastPolled[key]
+	if d.lastPolled == nil {
+		d.lastPolled = map[string]polledIssues{}
+	}
+	d.lastPolled[key] = current
+	return previous, seen && previous.rule == current.rule
+}
+
+// dispatchRule identifies the rule a poll selects issues by.
+func dispatchRule(cfg config.Config) string {
+	return cfg.Dispatch.Trigger + "\x00" + cfg.Label + "\x00" + cfg.BotUser
+}
+
 // withdrawUnpolled declines the queued or running work of an identity's
 // issues in repo that a complete poll no longer returns: the issue was
 // closed, unlabelled or unassigned.
-func (d *Daemon) withdrawUnpolled(ctx context.Context, repo config.Repo, identity string, polled []forge.Issue) {
+func (d *Daemon) withdrawUnpolled(ctx context.Context, repo config.Repo, identity, rule string, polled []forge.Issue) {
 	if d.WithdrawTask == nil {
 		return
 	}
 	eligible := make(map[int]bool, len(polled))
 	for _, is := range polled {
 		eligible[is.Number] = true
+	}
+	// Only an issue the same rule found eligible last time and no longer
+	// finds was withdrawn. A changed label, trigger or bot user, or the first
+	// poll after a restart, only records the new set: tasks picked up under
+	// the old rule were not withdrawn by anyone.
+	previous, sameRule := d.rememberPoll(identity+"\x00"+repo.FullName(), polledIssues{rule: rule, eligible: eligible})
+	if !sameRule {
+		return
 	}
 	active, err := d.Store.TasksPage(ctx, storecontract.TaskPage{
 		Statuses: []string{taskstate.Queued, taskstate.Running}, Limit: 500,
@@ -1096,7 +1134,7 @@ func (d *Daemon) withdrawUnpolled(ctx context.Context, repo config.Repo, identit
 	}
 	for _, t := range active {
 		if t.Owner != repo.Owner || t.Repo != repo.Name || t.Identity != identity ||
-			!t.IsForgeBacked() || t.PRNumber > 0 || eligible[t.IssueNumber] {
+			!t.IsForgeBacked() || t.PRNumber > 0 || eligible[t.IssueNumber] || !previous.eligible[t.IssueNumber] {
 			continue
 		}
 		if err := d.WithdrawTask(ctx, t.ID, "the issue is no longer assigned, labelled or open"); err != nil {
