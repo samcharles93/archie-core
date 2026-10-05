@@ -69,6 +69,62 @@ steps:
 			},
 			wantErr: "calls itself through",
 		},
+		{
+			name: "a later step reads a waited call's declared output",
+			defs: map[string]string{
+				"caller": `id: caller
+repository: none
+steps:
+  - {id: check, type: workflow.call, settings: {workflow: callee, wait: true}}
+  - type: agent.run
+    settings: {mission: "{{ steps.check.result.verdict }}"}
+`,
+				"callee": `id: callee
+repository: none
+outputs: {verdict: {type: string}}
+steps:
+  - type: workflow.finish
+`,
+			},
+		},
+		{
+			name: "a call result field the callee does not declare is refused",
+			defs: map[string]string{
+				"caller": `id: caller
+repository: none
+steps:
+  - {id: check, type: workflow.call, settings: {workflow: callee, wait: true}}
+  - type: agent.run
+    settings: {mission: "{{ steps.check.result.verdit }}"}
+`,
+				"callee": `id: callee
+repository: none
+outputs: {verdict: {type: string}}
+steps:
+  - type: workflow.finish
+`,
+			},
+			wantErr: `the workflow call "check" declares no output "verdit"`,
+		},
+		{
+			name: "a call that does not wait has no result",
+			defs: map[string]string{
+				"caller": `id: caller
+repository: none
+steps:
+  - {id: check, type: workflow.call, settings: {workflow: callee, wait: false}}
+  - type: agent.run
+    settings: {mission: "{{ steps.check.result.verdict }}"}
+`,
+				"callee": `id: callee
+repository: none
+outputs: {verdict: {type: string}}
+steps:
+  - type: workflow.finish
+`,
+			},
+			wantErr: `call "check" does not wait, so it has no result`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

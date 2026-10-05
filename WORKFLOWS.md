@@ -74,9 +74,9 @@ Any string setting may contain `{{ path }}`, replaced when the step runs:
 | `task.issue`, `task.pr` | Issue and pull request numbers. |
 | `task.plan` | The plan a `human.approve` step handed over (an approved PRD). |
 | `task.review` | The review comments a remediation round addresses. |
-| `inputs.<name>` | A declared input. |
+| `inputs.<name>` | A declared input; an undeclared one is refused at save. |
 | `steps.<id>.summary` | What an earlier step reported, e.g. an agent's finish summary or a gate's output. |
-| `steps.<id>.result.<field>` | A field of an earlier agent's structured result. |
+| `steps.<id>.result.<field>` | A field of an earlier agent's structured result, or an output of an earlier `workflow.call` that waits. A field the agent's `result` schema or the callee's `outputs` does not declare is refused at save. |
 
 Only earlier steps may be referenced; a reference to a later or unknown step is
 refused when the definition is saved. A value that does not exist at run time

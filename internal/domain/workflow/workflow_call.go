@@ -154,8 +154,9 @@ func runWorkflowCall(ctx context.Context, s workflowCallSettings, tc *TaskContex
 		}
 		return err
 	}
-	if err := tc.finishChildStep(ctx, callStep, taskstate.StepSucceeded,
-		fmt.Sprintf("%q (task %d) finished", s.Workflow, callee.ID), 0); err != nil {
+	// Later steps read the callee's outputs as this step's result.
+	tc.stepResult = StepResult{Summary: fmt.Sprintf("%q (task %d) finished", s.Workflow, callee.ID), Result: calleeOutputs}
+	if err := tc.finishChildStep(ctx, callStep, taskstate.StepSucceeded, tc.stepResult.Summary, 0); err != nil {
 		return fmt.Errorf("%s: could not be closed: %w", WorkflowCallStepName, err)
 	}
 	return nil
@@ -266,6 +267,7 @@ func callSucceeded(status string) bool {
 func validateWorkflowCalls(parsed map[string]YAMLDefinition) error {
 	calls := make(map[string][]string, len(parsed))
 	for id, d := range parsed {
+		results := map[string]callResult{}
 		err := walkSteps(d.Steps, fmt.Sprintf("workflow %q", id), func(where string, step StepRecord) error {
 			if step.Type != WorkflowCallStepName {
 				return nil
@@ -285,13 +287,71 @@ func validateWorkflowCalls(parsed map[string]YAMLDefinition) error {
 				return err
 			}
 			calls[id] = append(calls[id], s.Workflow)
+			if step.ID != "" {
+				results[step.ID] = callResult{wait: s.Wait, outputs: callee.Outputs}
+			}
 			return nil
 		})
 		if err != nil {
 			return err
 		}
+		if err := checkCallResultReferences(d, fmt.Sprintf("workflow %q", id), results); err != nil {
+			return err
+		}
 	}
 	return refuseCallCycles(calls)
+}
+
+// callResult is what a workflow.call step leaves as its result: the callee's
+// declared outputs, and only when the call waits for them.
+type callResult struct {
+	wait    bool
+	outputs map[string]task.OutputSpec
+}
+
+// checkCallResultReferences refuses a reference to a call's result field the
+// callee does not declare as an output, or to the result of a call that does
+// not wait and so has none, in settings and when conditions alike.
+func checkCallResultReferences(d YAMLDefinition, where string, results map[string]callResult) error {
+	if len(results) == 0 {
+		return nil
+	}
+	check := func(at, path string) error {
+		parts := strings.Split(path, ".")
+		if len(parts) < 4 || parts[0] != "steps" || parts[2] != "result" {
+			return nil
+		}
+		call, ok := results[parts[1]]
+		switch {
+		case !ok:
+			return nil
+		case !call.wait:
+			return fmt.Errorf("%s: reference {{ %s }}: call %q does not wait, so it has no result", at, path, parts[1])
+		}
+		if _, declared := call.outputs[parts[3]]; !declared {
+			return fmt.Errorf("%s: reference {{ %s }}: the workflow call %q declares no output %q", at, path, parts[1], parts[3])
+		}
+		return nil
+	}
+	return walkSteps(d.Steps, where, func(at string, step StepRecord) error {
+		var problem error
+		settings := step.Settings
+		walkStrings(&settings, func(value string) string {
+			for _, match := range referencePattern.FindAllStringSubmatch(value, -1) {
+				if err := check(at, match[1]); err != nil && problem == nil {
+					problem = err
+				}
+			}
+			return value
+		})
+		if problem != nil || step.When == "" {
+			return problem
+		}
+		if c, err := parseCondition(step.When); err == nil {
+			return check(at+" when", c.path)
+		}
+		return nil
+	})
 }
 
 // walkSteps visits each step a definition carries in order, descending into
