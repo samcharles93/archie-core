@@ -20,6 +20,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
+	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/source"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/storepkg"
@@ -133,6 +134,9 @@ type Deps struct {
 	// Denials records and lists denial records. Optional: nil disables the
 	// pair with codes.Unavailable.
 	Denials access.DenialStore
+	// Orgs persists orgs, workspaces, memberships and agent assignments.
+	// Optional: nil answers the org RPCs with codes.Unavailable.
+	Orgs org.Repository
 	// TaskLogs reads task attempt logs. Nil answers ReadTaskLog with
 	// Unavailable.
 	TaskLogs storecontract.TaskLogStore

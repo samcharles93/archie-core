@@ -15,6 +15,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
+	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/storepkg"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -125,6 +126,10 @@ type Server struct {
 	Access     access.Authorizer
 	Principals access.PrincipalSource
 	Denials    access.DenialRecorder
+
+	// Orgs serves the org pages: the caller's org, its workspaces, members and
+	// agent assignments. Nil answers the org routes Unavailable.
+	Orgs org.API
 
 	// Events publishes operator actions so they reach the task timeline and
 	// the live activity stream. Optional: nil means the action is recorded
@@ -323,6 +328,14 @@ func (s *Server) registerConfigAndLogRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/control-plane/resources/{kind}/commands/{command}", s.handleControlPlaneCommand)
 	mux.HandleFunc("GET /api/control-plane/audit", s.handleAudit)
 	mux.HandleFunc("GET /api/identities", s.handleIdentitiesList)
+	mux.HandleFunc("GET /api/orgs", s.handleOrgsList)
+	mux.HandleFunc("GET /api/orgs/{id}", s.handleOrgGet)
+	mux.HandleFunc("GET /api/orgs/{id}/workspaces", s.handleOrgWorkspacesList)
+	mux.HandleFunc("POST /api/orgs/{id}/workspaces", s.handleOrgWorkspaceCreate)
+	mux.HandleFunc("GET /api/orgs/{id}/members", s.handleOrgMembersList)
+	mux.HandleFunc("PUT /api/orgs/{id}/members/{identity}", s.handleOrgMemberSet)
+	mux.HandleFunc("DELETE /api/orgs/{id}/members/{identity}", s.handleOrgMemberRemove)
+	mux.HandleFunc("PUT /api/orgs/{id}/agents/{identity}", s.handleOrgAgentAssign)
 	mux.HandleFunc("GET /api/tokens", s.handlePersonalTokensList)
 	mux.HandleFunc("POST /api/tokens", s.handlePersonalTokenCreate)
 	mux.HandleFunc("DELETE /api/tokens/{id}", s.handlePersonalTokenRevoke)

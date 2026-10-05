@@ -145,6 +145,40 @@ export const api = {
     request<{ version: number }>("/api/access/policies", { method: "PUT", body: policy }),
   deletePolicy: (policy: unknown) =>
     request<void>("/api/access/policies", { method: "DELETE", body: policy, parse: false }),
+  orgs: <T = unknown>() => request<T>("/api/orgs"),
+  org: <T = unknown>(id: string) => request<T>(`/api/orgs/${encodeURIComponent(id)}`),
+  orgWorkspaces: <T = unknown>(id: string) =>
+    request<T>(`/api/orgs/${encodeURIComponent(id)}/workspaces`),
+  createOrgWorkspace: <T = unknown>(
+    id: string,
+    workspace: { id: string; name: string; environment?: string },
+  ) =>
+    request<T>(`/api/orgs/${encodeURIComponent(id)}/workspaces`, {
+      method: "POST",
+      body: workspace,
+    }),
+  orgMembers: <T = unknown>(id: string) =>
+    request<T>(`/api/orgs/${encodeURIComponent(id)}/members`),
+  setOrgMember: <T = unknown>(
+    id: string,
+    identity: string,
+    member: { role: string; workspace?: string },
+  ) =>
+    request<T>(
+      `/api/orgs/${encodeURIComponent(id)}/members/${encodeURIComponent(identity)}`,
+      { method: "PUT", body: member },
+    ),
+  removeOrgMember: (id: string, identity: string, workspace?: string) =>
+    request<void>(
+      `/api/orgs/${encodeURIComponent(id)}/members/${encodeURIComponent(identity)}` +
+        qs({ workspace }),
+      { method: "DELETE", parse: false },
+    ),
+  assignOrgAgent: <T = unknown>(id: string, identity: string) =>
+    request<T>(
+      `/api/orgs/${encodeURIComponent(id)}/agents/${encodeURIComponent(identity)}`,
+      { method: "PUT" },
+    ),
   summary: <T = unknown>() => request<T>("/api/summary"),
   tasks: <T = unknown>() => request<T>("/api/tasks"),
   // taskPage reads one page of the board; next is the cursor for the page

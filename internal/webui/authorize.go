@@ -136,6 +136,8 @@ func routeOverride(action access.Action, path string) (access.Action, access.Res
 		return policyAction(action), access.KindPolicy, "", true
 	case matchPrefix(path, "/api/identities"):
 		return actionManage(action), access.KindIdentity, segmentValue(path, 2), true
+	case matchPrefix(path, "/api/orgs"):
+		return orgRouteAction(action), access.KindOrg, segmentValue(path, 2), true
 	case matchPrefix(path, "/api/extensions"):
 		// Installing and enabling an extension runs a process on the host, so it
 		// is the same administration as editing a control-plane resource.
@@ -143,10 +145,7 @@ func routeOverride(action access.Action, path string) (access.Action, access.Res
 	case matchPrefix(path, "/api/control-plane/resources"):
 		return actionManage(action), access.KindPolicy, segmentValue(path, 3), true
 	case matchPrefix(path, "/api/chat"):
-		if action == access.ActionCreate {
-			return access.ActionRun, access.KindWorkflow, "", true
-		}
-		return access.ActionRead, access.KindDashboard, "", true
+		return chatRoute(action)
 	case matchSegment(path, "/api/sources/", "/secret"):
 		return access.ActionUpdate, access.KindSecret, segmentValue(path, 2), true
 	case matchPrefix(path, "/api/harness/terminal"):
@@ -177,6 +176,25 @@ func bindingCommand(action access.Action, path string) (access.Action, bool) {
 		return access.ActionUpdate, true
 	}
 	return action, false
+}
+
+// orgRouteAction maps an org request: reads are org reads, and every mutation
+// of the org's workspaces, members or agents is an update of the org itself,
+// so the read/edit role policies decide it.
+func orgRouteAction(action access.Action) access.Action {
+	if action == access.ActionRead {
+		return access.ActionRead
+	}
+	return access.ActionUpdate
+}
+
+// chatRoute maps a chat request: posting runs a workflow, anything else reads
+// the dashboard.
+func chatRoute(action access.Action) (access.Action, access.ResourceKind, string, bool) {
+	if action == access.ActionCreate {
+		return access.ActionRun, access.KindWorkflow, "", true
+	}
+	return access.ActionRead, access.KindDashboard, "", true
 }
 
 // kindOf maps a collection route onto the resource kind it addresses.

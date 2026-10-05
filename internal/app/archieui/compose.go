@@ -10,6 +10,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/storepkg"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -84,6 +85,7 @@ func compose(d deps) *webui.Server {
 	if policies, ok := d.Store.(access.PolicyStore); ok {
 		srv.Policies = policies
 	}
+	wireOrgSurface(srv, d.Store)
 	if presence, ok := d.Store.(storecontract.PresenceStore); ok {
 		srv.Presence = presence
 	}
@@ -119,6 +121,14 @@ func compose(d deps) *webui.Server {
 	wireTaskLogs(d, srv)
 	wireCaptureSurfaces(d, srv)
 	return srv
+}
+
+// wireOrgSurface attaches the dashboard's org surface when the state client
+// carries it.
+func wireOrgSurface(srv *webui.Server, store storecontract.TaskStore) {
+	if orgs, ok := store.(org.API); ok {
+		srv.Orgs = orgs
+	}
 }
 
 // wireCatalog attaches the Gateway-owned surfaces the dashboard reads over the

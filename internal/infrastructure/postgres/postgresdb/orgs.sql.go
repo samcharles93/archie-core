@@ -30,7 +30,7 @@ func (q *Queries) EnsureAgentOrgMembership(ctx context.Context) error {
 const ensureMembership = `-- name: EnsureMembership :exec
 INSERT INTO memberships (identity_id, org_id, workspace_id, role)
 VALUES ($1, $2, $3, $4)
-ON CONFLICT DO NOTHING
+ON CONFLICT (identity_id, org_id, COALESCE(workspace_id, '')) DO UPDATE SET role = excluded.role
 `
 
 type EnsureMembershipParams struct {
@@ -40,6 +40,8 @@ type EnsureMembershipParams struct {
 	Role        string
 }
 
+// Grant or change a role: a membership that already exists moves to the
+// supplied role, so the same call is both create and update.
 func (q *Queries) EnsureMembership(ctx context.Context, arg EnsureMembershipParams) error {
 	_, err := q.db.Exec(ctx, ensureMembership,
 		arg.IdentityID,
@@ -106,6 +108,48 @@ func (q *Queries) InsertWorkspace(ctx context.Context, arg InsertWorkspaceParams
 	return err
 }
 
+const listMembers = `-- name: ListMembers :many
+SELECT m.identity_id, i.kind, i.display_name, m.workspace_id, m.role
+FROM memberships m
+JOIN identities i ON i.id = m.identity_id
+WHERE m.org_id = $1
+ORDER BY m.created_at, m.identity_id, m.workspace_id
+`
+
+type ListMembersRow struct {
+	IdentityID  string
+	Kind        string
+	DisplayName string
+	WorkspaceID pgtype.Text
+	Role        string
+}
+
+func (q *Queries) ListMembers(ctx context.Context, orgID string) ([]ListMembersRow, error) {
+	rows, err := q.db.Query(ctx, listMembers, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMembersRow
+	for rows.Next() {
+		var i ListMembersRow
+		if err := rows.Scan(
+			&i.IdentityID,
+			&i.Kind,
+			&i.DisplayName,
+			&i.WorkspaceID,
+			&i.Role,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMembershipsByIdentity = `-- name: ListMembershipsByIdentity :many
 SELECT identity_id, org_id, workspace_id, role, created_at
 FROM memberships WHERE identity_id = $1 ORDER BY created_at, org_id
@@ -127,6 +171,35 @@ func (q *Queries) ListMembershipsByIdentity(ctx context.Context, identityID stri
 			&i.Role,
 			&i.CreatedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrgAgents = `-- name: ListOrgAgents :many
+SELECT identity_id, org_id FROM org_agents WHERE org_id = $1 ORDER BY identity_id
+`
+
+type ListOrgAgentsRow struct {
+	IdentityID string
+	OrgID      string
+}
+
+func (q *Queries) ListOrgAgents(ctx context.Context, orgID string) ([]ListOrgAgentsRow, error) {
+	rows, err := q.db.Query(ctx, listOrgAgents, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrgAgentsRow
+	for rows.Next() {
+		var i ListOrgAgentsRow
+		if err := rows.Scan(&i.IdentityID, &i.OrgID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -222,6 +295,24 @@ func (q *Queries) ListWorkspaces(ctx context.Context, orgID string) ([]Workspace
 		return nil, err
 	}
 	return items, nil
+}
+
+const removeMembership = `-- name: RemoveMembership :exec
+DELETE FROM memberships
+WHERE identity_id = $1 AND org_id = $2 AND COALESCE(workspace_id, '') = $3::text
+`
+
+type RemoveMembershipParams struct {
+	IdentityID  string
+	OrgID       string
+	WorkspaceID string
+}
+
+// The workspace is matched through the same COALESCE the unique index uses, so
+// an org-wide membership (NULL) and the empty string are the same target.
+func (q *Queries) RemoveMembership(ctx context.Context, arg RemoveMembershipParams) error {
+	_, err := q.db.Exec(ctx, removeMembership, arg.IdentityID, arg.OrgID, arg.WorkspaceID)
+	return err
 }
 
 const resolveIdentityOrg = `-- name: ResolveIdentityOrg :one

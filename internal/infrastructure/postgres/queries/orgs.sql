@@ -20,9 +20,27 @@ SELECT id, org_id, name, environment, created_at, updated_at
 FROM workspaces WHERE org_id = $1 ORDER BY created_at, id;
 
 -- name: EnsureMembership :exec
+-- Grant or change a role: a membership that already exists moves to the
+-- supplied role, so the same call is both create and update.
 INSERT INTO memberships (identity_id, org_id, workspace_id, role)
 VALUES ($1, $2, $3, $4)
-ON CONFLICT DO NOTHING;
+ON CONFLICT (identity_id, org_id, COALESCE(workspace_id, '')) DO UPDATE SET role = excluded.role;
+
+-- name: ListMembers :many
+SELECT m.identity_id, i.kind, i.display_name, m.workspace_id, m.role
+FROM memberships m
+JOIN identities i ON i.id = m.identity_id
+WHERE m.org_id = $1
+ORDER BY m.created_at, m.identity_id, m.workspace_id;
+
+-- name: RemoveMembership :exec
+-- The workspace is matched through the same COALESCE the unique index uses, so
+-- an org-wide membership (NULL) and the empty string are the same target.
+DELETE FROM memberships
+WHERE identity_id = $1 AND org_id = $2 AND COALESCE(workspace_id, '') = sqlc.arg(workspace_id)::text;
+
+-- name: ListOrgAgents :many
+SELECT identity_id, org_id FROM org_agents WHERE org_id = $1 ORDER BY identity_id;
 
 -- name: ListMembershipsByIdentity :many
 SELECT identity_id, org_id, workspace_id, role, created_at

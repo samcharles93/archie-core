@@ -11,7 +11,7 @@ import (
 
 // Repository persists the tenant boundary. A store that implements it owns
 // ID conflict rules (org and workspace IDs are caller-provided and unique).
-type Repository interface {
+type Repository interface { //nolint:interfacebloat // one tenant-boundary store contract: orgs, workspaces, memberships and agent assignments
 	// CreateOrg inserts a new org; re-creating an existing ID is an error.
 	CreateOrg(context.Context, Org) (Org, error)
 	// GetOrg returns one org by ID, or ErrOrgNotFound.
@@ -23,8 +23,15 @@ type Repository interface {
 	// ListWorkspaces returns an org's workspaces, oldest first.
 	ListWorkspaces(context.Context, OrgID) ([]Workspace, error)
 	// EnsureMembership grants an identity a role in an org, or in one
-	// workspace of it; an identical existing membership is not an error.
+	// workspace of it, changing the role of an existing membership; an
+	// identical existing membership is not an error.
 	EnsureMembership(context.Context, Membership) error
+	// ListMembers returns an org's memberships with the identity each names.
+	ListMembers(context.Context, OrgID) ([]Member, error)
+	// RemoveMembership revokes one membership; a missing one is not an error.
+	RemoveMembership(context.Context, Membership) error
+	// ListOrgAgents returns the agent and service identities assigned to an org.
+	ListOrgAgents(context.Context, OrgID) ([]AgentAssignment, error)
 	// AssignAgent records the one org an agent or service identity serves,
 	// replacing any prior assignment for that identity.
 	AssignAgent(context.Context, AgentAssignment) error
@@ -32,6 +39,20 @@ type Repository interface {
 	// for an agent, or the org of one of its memberships for a person.
 	// An identity in no org resolves to DefaultOrgID.
 	OrgForIdentity(context.Context, identity.IdentityID) (OrgID, error)
+}
+
+// API is the org surface a remote caller uses: the subset of Repository the
+// State Store contract carries. It is the dashboard's read and write surface;
+// the assignment list has no RPC and stays off it.
+type API interface {
+	ListOrgs(context.Context) ([]Org, error)
+	GetOrg(context.Context, OrgID) (Org, error)
+	ListWorkspaces(context.Context, OrgID) ([]Workspace, error)
+	CreateWorkspace(context.Context, Workspace) (Workspace, error)
+	ListMembers(context.Context, OrgID) ([]Member, error)
+	EnsureMembership(context.Context, Membership) error
+	RemoveMembership(context.Context, Membership) error
+	AssignAgent(context.Context, AgentAssignment) error
 }
 
 // Upgrader performs the resumable default org/workspace upgrade.

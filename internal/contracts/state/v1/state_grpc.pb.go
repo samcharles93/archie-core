@@ -127,6 +127,15 @@ const (
 	StateStoreService_EnsureShippedOrgPolicies_FullMethodName   = "/state.v1.StateStoreService/EnsureShippedOrgPolicies"
 	StateStoreService_RecordDenial_FullMethodName               = "/state.v1.StateStoreService/RecordDenial"
 	StateStoreService_ListDenials_FullMethodName                = "/state.v1.StateStoreService/ListDenials"
+	StateStoreService_ListOrgs_FullMethodName                   = "/state.v1.StateStoreService/ListOrgs"
+	StateStoreService_GetOrg_FullMethodName                     = "/state.v1.StateStoreService/GetOrg"
+	StateStoreService_CreateOrg_FullMethodName                  = "/state.v1.StateStoreService/CreateOrg"
+	StateStoreService_ListWorkspaces_FullMethodName             = "/state.v1.StateStoreService/ListWorkspaces"
+	StateStoreService_CreateWorkspace_FullMethodName            = "/state.v1.StateStoreService/CreateWorkspace"
+	StateStoreService_ListMembers_FullMethodName                = "/state.v1.StateStoreService/ListMembers"
+	StateStoreService_SetMembership_FullMethodName              = "/state.v1.StateStoreService/SetMembership"
+	StateStoreService_RemoveMembership_FullMethodName           = "/state.v1.StateStoreService/RemoveMembership"
+	StateStoreService_AssignAgent_FullMethodName                = "/state.v1.StateStoreService/AssignAgent"
 )
 
 // StateStoreServiceClient is the client API for StateStoreService service.
@@ -339,6 +348,20 @@ type StateStoreServiceClient interface {
 	EnsureShippedOrgPolicies(ctx context.Context, in *EnsureShippedOrgPoliciesRequest, opts ...grpc.CallOption) (*EnsureShippedOrgPoliciesResponse, error)
 	RecordDenial(ctx context.Context, in *RecordDenialRequest, opts ...grpc.CallOption) (*RecordDenialResponse, error)
 	ListDenials(ctx context.Context, in *ListDenialsRequest, opts ...grpc.CallOption) (*ListDenialsResponse, error)
+	// Orgs, workspaces, memberships and agent assignments
+	// (docs/prds/orgs-and-access.md). Every request names an org, but the
+	// State Store acts in the org the caller's principal carries: a request
+	// org that is not the caller's is ignored, so the contract cannot reach
+	// another tenant. Instance-admin widening is a later change.
+	ListOrgs(ctx context.Context, in *ListOrgsRequest, opts ...grpc.CallOption) (*ListOrgsResponse, error)
+	GetOrg(ctx context.Context, in *GetOrgRequest, opts ...grpc.CallOption) (*GetOrgResponse, error)
+	CreateOrg(ctx context.Context, in *CreateOrgRequest, opts ...grpc.CallOption) (*CreateOrgResponse, error)
+	ListWorkspaces(ctx context.Context, in *ListWorkspacesRequest, opts ...grpc.CallOption) (*ListWorkspacesResponse, error)
+	CreateWorkspace(ctx context.Context, in *CreateWorkspaceRequest, opts ...grpc.CallOption) (*CreateWorkspaceResponse, error)
+	ListMembers(ctx context.Context, in *ListMembersRequest, opts ...grpc.CallOption) (*ListMembersResponse, error)
+	SetMembership(ctx context.Context, in *SetMembershipRequest, opts ...grpc.CallOption) (*SetMembershipResponse, error)
+	RemoveMembership(ctx context.Context, in *RemoveMembershipRequest, opts ...grpc.CallOption) (*RemoveMembershipResponse, error)
+	AssignAgent(ctx context.Context, in *AssignAgentRequest, opts ...grpc.CallOption) (*AssignAgentResponse, error)
 }
 
 type stateStoreServiceClient struct {
@@ -1456,6 +1479,96 @@ func (c *stateStoreServiceClient) ListDenials(ctx context.Context, in *ListDenia
 	return out, nil
 }
 
+func (c *stateStoreServiceClient) ListOrgs(ctx context.Context, in *ListOrgsRequest, opts ...grpc.CallOption) (*ListOrgsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListOrgsResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ListOrgs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) GetOrg(ctx context.Context, in *GetOrgRequest, opts ...grpc.CallOption) (*GetOrgResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetOrgResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_GetOrg_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) CreateOrg(ctx context.Context, in *CreateOrgRequest, opts ...grpc.CallOption) (*CreateOrgResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateOrgResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_CreateOrg_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ListWorkspaces(ctx context.Context, in *ListWorkspacesRequest, opts ...grpc.CallOption) (*ListWorkspacesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListWorkspacesResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ListWorkspaces_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) CreateWorkspace(ctx context.Context, in *CreateWorkspaceRequest, opts ...grpc.CallOption) (*CreateWorkspaceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateWorkspaceResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_CreateWorkspace_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ListMembers(ctx context.Context, in *ListMembersRequest, opts ...grpc.CallOption) (*ListMembersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListMembersResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ListMembers_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) SetMembership(ctx context.Context, in *SetMembershipRequest, opts ...grpc.CallOption) (*SetMembershipResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetMembershipResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_SetMembership_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) RemoveMembership(ctx context.Context, in *RemoveMembershipRequest, opts ...grpc.CallOption) (*RemoveMembershipResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoveMembershipResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_RemoveMembership_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) AssignAgent(ctx context.Context, in *AssignAgentRequest, opts ...grpc.CallOption) (*AssignAgentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AssignAgentResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_AssignAgent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // StateStoreServiceServer is the server API for StateStoreService service.
 // All implementations must embed UnimplementedStateStoreServiceServer
 // for forward compatibility.
@@ -1666,6 +1779,20 @@ type StateStoreServiceServer interface {
 	EnsureShippedOrgPolicies(context.Context, *EnsureShippedOrgPoliciesRequest) (*EnsureShippedOrgPoliciesResponse, error)
 	RecordDenial(context.Context, *RecordDenialRequest) (*RecordDenialResponse, error)
 	ListDenials(context.Context, *ListDenialsRequest) (*ListDenialsResponse, error)
+	// Orgs, workspaces, memberships and agent assignments
+	// (docs/prds/orgs-and-access.md). Every request names an org, but the
+	// State Store acts in the org the caller's principal carries: a request
+	// org that is not the caller's is ignored, so the contract cannot reach
+	// another tenant. Instance-admin widening is a later change.
+	ListOrgs(context.Context, *ListOrgsRequest) (*ListOrgsResponse, error)
+	GetOrg(context.Context, *GetOrgRequest) (*GetOrgResponse, error)
+	CreateOrg(context.Context, *CreateOrgRequest) (*CreateOrgResponse, error)
+	ListWorkspaces(context.Context, *ListWorkspacesRequest) (*ListWorkspacesResponse, error)
+	CreateWorkspace(context.Context, *CreateWorkspaceRequest) (*CreateWorkspaceResponse, error)
+	ListMembers(context.Context, *ListMembersRequest) (*ListMembersResponse, error)
+	SetMembership(context.Context, *SetMembershipRequest) (*SetMembershipResponse, error)
+	RemoveMembership(context.Context, *RemoveMembershipRequest) (*RemoveMembershipResponse, error)
+	AssignAgent(context.Context, *AssignAgentRequest) (*AssignAgentResponse, error)
 	mustEmbedUnimplementedStateStoreServiceServer()
 }
 
@@ -1999,6 +2126,33 @@ func (UnimplementedStateStoreServiceServer) RecordDenial(context.Context, *Recor
 }
 func (UnimplementedStateStoreServiceServer) ListDenials(context.Context, *ListDenialsRequest) (*ListDenialsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListDenials not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ListOrgs(context.Context, *ListOrgsRequest) (*ListOrgsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListOrgs not implemented")
+}
+func (UnimplementedStateStoreServiceServer) GetOrg(context.Context, *GetOrgRequest) (*GetOrgResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetOrg not implemented")
+}
+func (UnimplementedStateStoreServiceServer) CreateOrg(context.Context, *CreateOrgRequest) (*CreateOrgResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateOrg not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ListWorkspaces(context.Context, *ListWorkspacesRequest) (*ListWorkspacesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListWorkspaces not implemented")
+}
+func (UnimplementedStateStoreServiceServer) CreateWorkspace(context.Context, *CreateWorkspaceRequest) (*CreateWorkspaceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateWorkspace not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ListMembers(context.Context, *ListMembersRequest) (*ListMembersResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListMembers not implemented")
+}
+func (UnimplementedStateStoreServiceServer) SetMembership(context.Context, *SetMembershipRequest) (*SetMembershipResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetMembership not implemented")
+}
+func (UnimplementedStateStoreServiceServer) RemoveMembership(context.Context, *RemoveMembershipRequest) (*RemoveMembershipResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RemoveMembership not implemented")
+}
+func (UnimplementedStateStoreServiceServer) AssignAgent(context.Context, *AssignAgentRequest) (*AssignAgentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AssignAgent not implemented")
 }
 func (UnimplementedStateStoreServiceServer) mustEmbedUnimplementedStateStoreServiceServer() {}
 func (UnimplementedStateStoreServiceServer) testEmbeddedByValue()                           {}
@@ -3944,6 +4098,168 @@ func _StateStoreService_ListDenials_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StateStoreService_ListOrgs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListOrgsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ListOrgs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ListOrgs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ListOrgs(ctx, req.(*ListOrgsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_GetOrg_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetOrgRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).GetOrg(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_GetOrg_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).GetOrg(ctx, req.(*GetOrgRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_CreateOrg_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateOrgRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).CreateOrg(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_CreateOrg_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).CreateOrg(ctx, req.(*CreateOrgRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ListWorkspaces_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListWorkspacesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ListWorkspaces(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ListWorkspaces_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ListWorkspaces(ctx, req.(*ListWorkspacesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_CreateWorkspace_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateWorkspaceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).CreateWorkspace(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_CreateWorkspace_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).CreateWorkspace(ctx, req.(*CreateWorkspaceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ListMembers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMembersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ListMembers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ListMembers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ListMembers(ctx, req.(*ListMembersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_SetMembership_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetMembershipRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).SetMembership(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_SetMembership_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).SetMembership(ctx, req.(*SetMembershipRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_RemoveMembership_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveMembershipRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).RemoveMembership(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_RemoveMembership_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).RemoveMembership(ctx, req.(*RemoveMembershipRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_AssignAgent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AssignAgentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).AssignAgent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_AssignAgent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).AssignAgent(ctx, req.(*AssignAgentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // StateStoreService_ServiceDesc is the grpc.ServiceDesc for StateStoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -4370,6 +4686,42 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListDenials",
 			Handler:    _StateStoreService_ListDenials_Handler,
+		},
+		{
+			MethodName: "ListOrgs",
+			Handler:    _StateStoreService_ListOrgs_Handler,
+		},
+		{
+			MethodName: "GetOrg",
+			Handler:    _StateStoreService_GetOrg_Handler,
+		},
+		{
+			MethodName: "CreateOrg",
+			Handler:    _StateStoreService_CreateOrg_Handler,
+		},
+		{
+			MethodName: "ListWorkspaces",
+			Handler:    _StateStoreService_ListWorkspaces_Handler,
+		},
+		{
+			MethodName: "CreateWorkspace",
+			Handler:    _StateStoreService_CreateWorkspace_Handler,
+		},
+		{
+			MethodName: "ListMembers",
+			Handler:    _StateStoreService_ListMembers_Handler,
+		},
+		{
+			MethodName: "SetMembership",
+			Handler:    _StateStoreService_SetMembership_Handler,
+		},
+		{
+			MethodName: "RemoveMembership",
+			Handler:    _StateStoreService_RemoveMembership_Handler,
+		},
+		{
+			MethodName: "AssignAgent",
+			Handler:    _StateStoreService_AssignAgent_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

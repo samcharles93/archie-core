@@ -424,6 +424,9 @@ func (b *server) accessDeps(deps *staterpc.Deps) {
 	if ds, ok := b.st.(access.DenialStore); ok {
 		deps.Denials = ds
 	}
+	if os, ok := b.st.(org.Repository); ok {
+		deps.Orgs = os
+	}
 }
 
 // serveStateStore registers the StateStore gRPC service and serves it until

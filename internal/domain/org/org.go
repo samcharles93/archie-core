@@ -101,6 +101,16 @@ type Membership struct {
 	Role        Role                `json:"role"`
 }
 
+// Member is one identity's membership in an org or workspace, with the
+// identity's display name and kind for the dashboard.
+type Member struct {
+	IdentityID  identity.IdentityID `json:"identity_id"`
+	Kind        identity.Kind       `json:"kind"`
+	DisplayName string              `json:"display_name"`
+	WorkspaceID WorkspaceID         `json:"workspace_id,omitempty"`
+	Role        Role                `json:"role"`
+}
+
 // Validate requires an identity, an org and a shipped role.
 func (m Membership) Validate() error {
 	if m.IdentityID == "" {

@@ -142,6 +142,49 @@ func (s *Store) AssignAgent(ctx context.Context, value org.AgentAssignment) erro
 	})
 }
 
+// ListMembers returns an org's memberships with the identity each names.
+func (s *Store) ListMembers(ctx context.Context, id org.OrgID) ([]org.Member, error) {
+	rows, err := s.queries().ListMembers(ctx, string(id))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]org.Member, 0, len(rows))
+	for _, r := range rows {
+		var ws org.WorkspaceID
+		if r.WorkspaceID.Valid {
+			ws = org.WorkspaceID(r.WorkspaceID.String)
+		}
+		out = append(out, org.Member{
+			IdentityID: identity.IdentityID(r.IdentityID), Kind: identity.Kind(r.Kind),
+			DisplayName: r.DisplayName, WorkspaceID: ws, Role: org.Role(r.Role),
+		})
+	}
+	return out, nil
+}
+
+// RemoveMembership revokes one membership; a missing one is not an error.
+func (s *Store) RemoveMembership(ctx context.Context, value org.Membership) error {
+	if value.IdentityID == "" || value.OrgID == "" {
+		return fmt.Errorf("%w: identity and org are required", org.ErrInvalidMembership)
+	}
+	return s.queries().RemoveMembership(ctx, postgresdb.RemoveMembershipParams{
+		IdentityID: string(value.IdentityID), OrgID: string(value.OrgID), WorkspaceID: string(value.WorkspaceID),
+	})
+}
+
+// ListOrgAgents returns the agent and service identities assigned to an org.
+func (s *Store) ListOrgAgents(ctx context.Context, id org.OrgID) ([]org.AgentAssignment, error) {
+	rows, err := s.queries().ListOrgAgents(ctx, string(id))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]org.AgentAssignment, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, org.AgentAssignment{IdentityID: identity.IdentityID(r.IdentityID), OrgID: org.OrgID(r.OrgID)})
+	}
+	return out, nil
+}
+
 // EnsureAgentOrgMembership grants every agent identity the shipped developer
 // role in the org it serves. It runs at the State Store's boot, after the
 // default-org upgrade, so dispatch's chain has a principal to evaluate.
