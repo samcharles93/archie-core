@@ -1,5 +1,7 @@
 package webui
 
+import "github.com/samcharles93/archie-core/internal/infrastructure/configuration"
+
 // ConfigFieldType is how the frontend's generic renderer decides what
 // control to show for a field. FieldStructured fields (repositories,
 // models, providers) opt out of the generic renderer entirely and keep
@@ -101,7 +103,6 @@ func configFieldDescriptors() []ConfigSection {
 			Fields: []ConfigField{
 				{Key: "work_dir", Label: "Work directory", Type: FieldString},
 				{Key: "state_dir", Label: "State directory", Description: "Embedded NATS store, task logs and the readiness disk probe.", Type: FieldString},
-				{Key: "database_url", Label: "PostgreSQL URL", Description: "The State Store's database connection; set at boot, restart required.", Type: FieldString},
 			},
 		},
 		{
@@ -132,7 +133,6 @@ func configFieldValues(view ConfigView) map[string]any {
 		"budgets.gate_max_failures": view.Budgets.GateMaxFailures,
 		"work_dir":                  view.Storage.WorkDir,
 		"state_dir":                 view.Storage.StateDir,
-		"database_url":              view.Storage.DatabaseURL,
 		"web.listen":                view.Web.Listen,
 	}
 }
@@ -146,7 +146,7 @@ func buildConfigSchema(view ConfigView) []ConfigSection {
 		for j := range sections[i].Fields {
 			f := &sections[i].Fields[j]
 			f.Value = values[f.Key]
-			f.LockedReason = view.Locked[f.Key]
+			f.LockedReason = configuration.DeniedKeys[f.Key]
 		}
 	}
 	return sections

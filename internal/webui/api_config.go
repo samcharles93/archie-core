@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"net/http"
 	"strings"
 
@@ -224,10 +223,9 @@ type ReviewView struct {
 // StorageView is where archied keeps its state on disk. All paths, no
 // secrets.
 type StorageView struct {
-	WorkDir     string `json:"work_dir"`
-	StateDir    string `json:"state_dir"`
-	DatabaseURL string `json:"database_url"`
-	SkillsDir   string `json:"skills_dir,omitempty"`
+	WorkDir   string `json:"work_dir"`
+	StateDir  string `json:"state_dir"`
+	SkillsDir string `json:"skills_dir,omitempty"`
 }
 
 // ContainersView is how sandboxed task execution is configured.
@@ -349,10 +347,9 @@ func BuildConfigView(in ConfigViewInput) ConfigView {
 			ApproveBeforePost: cfg.Review.ApproveBeforePost,
 		},
 		Storage: StorageView{
-			WorkDir:     cfg.WorkDir,
-			StateDir:    cfg.StateDir,
-			DatabaseURL: cfg.DatabaseURL,
-			SkillsDir:   cfg.SkillsDir,
+			WorkDir:   cfg.WorkDir,
+			StateDir:  cfg.StateDir,
+			SkillsDir: cfg.SkillsDir,
 		},
 		Containers: ContainersView{
 			Image:          cfg.Containers.Image,
@@ -374,9 +371,9 @@ func BuildConfigView(in ConfigViewInput) ConfigView {
 		},
 		Provenance: provenance,
 		Reload:     in.Reload,
-		Locked:     lockedConfigKeys(),
 	}
 	view.Schema = buildConfigSchema(view)
+	view.Locked = lockedSchemaKeys(view.Schema)
 	return view
 }
 
@@ -442,12 +439,21 @@ func RemoteConfigView(snapshots storecontract.ConfigSnapshotStore) ConfigViewSou
 	}
 }
 
-// lockedConfigKeys returns the dotted config keys that stay bootstrap-owned,
-// with the reason shown in the UI. These are the daemon's own startup inputs,
-// which the control plane deliberately does not manage.
-func lockedConfigKeys() map[string]string {
-	out := make(map[string]string, len(configuration.DeniedKeys))
-	maps.Copy(out, configuration.DeniedKeys)
+// lockedSchemaKeys returns the bootstrap-owned keys the schema exposes a row
+// for, with the reason shown in the UI. Keys the dashboard no longer renders,
+// such as the database URL, are omitted rather than advertised.
+func lockedSchemaKeys(sections []ConfigSection) map[string]string {
+	out := make(map[string]string)
+	for _, s := range sections {
+		for _, f := range s.Fields {
+			if reason, ok := configuration.DeniedKeys[f.Key]; ok {
+				out[f.Key] = reason
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
 	return out
 }
 
