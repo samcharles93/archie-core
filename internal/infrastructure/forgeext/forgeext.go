@@ -206,6 +206,13 @@ func (f *Forge) CreatePR(ctx context.Context, owner, repo, title, head, base, bo
 	return int(resp.GetNumber()), err
 }
 
+func (f *Forge) ClosePR(ctx context.Context, owner, repo string, number int, comment string) error {
+	_, err := call(ctx, f, "close pull request", func(c forgev1.ForgeServiceClient) (*forgev1.ClosePRResponse, error) {
+		return c.ClosePR(ctx, &forgev1.ClosePRRequest{Repo: ref(owner, repo), Number: int32(number), Comment: comment}) //nolint:gosec // PR numbers fit int32
+	})
+	return err
+}
+
 func (f *Forge) PRState(ctx context.Context, owner, repo string, number int) (string, error) {
 	resp, err := call(ctx, f, "pull request state", func(c forgev1.ForgeServiceClient) (*forgev1.PRStateResponse, error) {
 		return c.PRState(ctx, &forgev1.PRStateRequest{Repo: ref(owner, repo), Number: int32(number)}) //nolint:gosec // issue numbers fit int32

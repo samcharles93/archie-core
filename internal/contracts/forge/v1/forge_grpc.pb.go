@@ -28,6 +28,7 @@ const (
 	ForgeService_SetStateLabel_FullMethodName        = "/forge.v1.ForgeService/SetStateLabel"
 	ForgeService_CreatePR_FullMethodName             = "/forge.v1.ForgeService/CreatePR"
 	ForgeService_PRState_FullMethodName              = "/forge.v1.ForgeService/PRState"
+	ForgeService_ClosePR_FullMethodName              = "/forge.v1.ForgeService/ClosePR"
 	ForgeService_GetPullRequest_FullMethodName       = "/forge.v1.ForgeService/GetPullRequest"
 	ForgeService_GetPullRequestDiff_FullMethodName   = "/forge.v1.ForgeService/GetPullRequestDiff"
 	ForgeService_ListReviews_FullMethodName          = "/forge.v1.ForgeService/ListReviews"
@@ -63,6 +64,7 @@ type ForgeServiceClient interface {
 	SetStateLabel(ctx context.Context, in *SetStateLabelRequest, opts ...grpc.CallOption) (*SetStateLabelResponse, error)
 	CreatePR(ctx context.Context, in *CreatePRRequest, opts ...grpc.CallOption) (*CreatePRResponse, error)
 	PRState(ctx context.Context, in *PRStateRequest, opts ...grpc.CallOption) (*PRStateResponse, error)
+	ClosePR(ctx context.Context, in *ClosePRRequest, opts ...grpc.CallOption) (*ClosePRResponse, error)
 	GetPullRequest(ctx context.Context, in *GetPullRequestRequest, opts ...grpc.CallOption) (*GetPullRequestResponse, error)
 	GetPullRequestDiff(ctx context.Context, in *GetPullRequestDiffRequest, opts ...grpc.CallOption) (*GetPullRequestDiffResponse, error)
 	ListReviews(ctx context.Context, in *ListReviewsRequest, opts ...grpc.CallOption) (*ListReviewsResponse, error)
@@ -172,6 +174,16 @@ func (c *forgeServiceClient) PRState(ctx context.Context, in *PRStateRequest, op
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PRStateResponse)
 	err := c.cc.Invoke(ctx, ForgeService_PRState_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *forgeServiceClient) ClosePR(ctx context.Context, in *ClosePRRequest, opts ...grpc.CallOption) (*ClosePRResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ClosePRResponse)
+	err := c.cc.Invoke(ctx, ForgeService_ClosePR_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -319,6 +331,7 @@ type ForgeServiceServer interface {
 	SetStateLabel(context.Context, *SetStateLabelRequest) (*SetStateLabelResponse, error)
 	CreatePR(context.Context, *CreatePRRequest) (*CreatePRResponse, error)
 	PRState(context.Context, *PRStateRequest) (*PRStateResponse, error)
+	ClosePR(context.Context, *ClosePRRequest) (*ClosePRResponse, error)
 	GetPullRequest(context.Context, *GetPullRequestRequest) (*GetPullRequestResponse, error)
 	GetPullRequestDiff(context.Context, *GetPullRequestDiffRequest) (*GetPullRequestDiffResponse, error)
 	ListReviews(context.Context, *ListReviewsRequest) (*ListReviewsResponse, error)
@@ -370,6 +383,9 @@ func (UnimplementedForgeServiceServer) CreatePR(context.Context, *CreatePRReques
 }
 func (UnimplementedForgeServiceServer) PRState(context.Context, *PRStateRequest) (*PRStateResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PRState not implemented")
+}
+func (UnimplementedForgeServiceServer) ClosePR(context.Context, *ClosePRRequest) (*ClosePRResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ClosePR not implemented")
 }
 func (UnimplementedForgeServiceServer) GetPullRequest(context.Context, *GetPullRequestRequest) (*GetPullRequestResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetPullRequest not implemented")
@@ -583,6 +599,24 @@ func _ForgeService_PRState_Handler(srv interface{}, ctx context.Context, dec fun
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ForgeServiceServer).PRState(ctx, req.(*PRStateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ForgeService_ClosePR_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClosePRRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ForgeServiceServer).ClosePR(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ForgeService_ClosePR_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ForgeServiceServer).ClosePR(ctx, req.(*ClosePRRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -820,6 +854,10 @@ var ForgeService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PRState",
 			Handler:    _ForgeService_PRState_Handler,
+		},
+		{
+			MethodName: "ClosePR",
+			Handler:    _ForgeService_ClosePR_Handler,
 		},
 		{
 			MethodName: "GetPullRequest",

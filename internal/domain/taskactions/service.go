@@ -26,7 +26,10 @@ type Task struct {
 	ID                                        int64
 	Owner, Repo, Identity, Status, ParkReason string
 	IssueNumber, RetryCount                   int
-	ForgeBacked                               bool
+	// PRNumber is the open pull request a pr_open task carries; rejecting the
+	// task closes it.
+	PRNumber    int
+	ForgeBacked bool
 	// Branch is the branch this task already pushed, if any. A retry that
 	// continues pushed work resumes it, so the service refuses that mode for a
 	// task with no branch rather than queueing a resume that cannot land.
@@ -196,6 +199,7 @@ type Service struct {
 	MaxRetries func(*Task) int
 	CancelTask func(int64) bool
 	CloseIssue func(context.Context, string, string, int, string) error
+	ClosePR    func(context.Context, string, string, int, string) error
 	RemoveLogs func(int64) error
 	// RemoveWorktree discards the task's clone on archive, the reap path for a
 	// worktree terminal cleanup kept because it may hold uncaptured work.
@@ -224,6 +228,9 @@ func (s Service) Apply(ctx context.Context, scope *string, actor Actor, id int64
 	mutation, err := s.apply(ctx, task, actor, action, res)
 	if err != nil {
 		return err
+	}
+	if mutation.verb != "" && task.Status == taskstate.PROpen && task.PRNumber > 0 {
+		s.closeRejectedPR(ctx, task, actor, mutation.verb)
 	}
 	if mutation.verb != "" && task.ForgeBacked {
 		s.closeRejectedIssue(ctx, task, actor, mutation.verb)
@@ -511,6 +518,25 @@ func (s Service) applyArchive(ctx context.Context, task *Task, actor Actor, o ou
 		}
 	}
 	return o, nil
+}
+
+// closeRejectedPR closes a rejected task's pull request and records it on the
+// task's timeline. A failure is logged and leaves the PR open.
+func (s Service) closeRejectedPR(ctx context.Context, task *Task, actor Actor, verb string) {
+	if s.ClosePR == nil {
+		s.warn("task rejected but no forge is wired; its pull request stays open", "task", task.ID)
+		return
+	}
+	comment := fmt.Sprintf("Closing: this task was %s in archie (%s).", verb, actor.describe("actioned"))
+	if err := s.ClosePR(ctx, task.Owner, task.Repo, task.PRNumber, comment); err != nil {
+		s.warn("closing rejected task's pull request failed; it stays open", "task", task.ID, "pr", task.PRNumber, "err", err)
+		return
+	}
+	s.emit(ctx, events.Event{
+		TaskID: task.ID, Kind: events.KindPRClosed,
+		Detail: fmt.Sprintf("closed pull request #%d", task.PRNumber),
+		Data:   map[string]any{"pr_number": task.PRNumber},
+	})
 }
 
 func (s Service) closeRejectedIssue(ctx context.Context, task *Task, actor Actor, verb string) {

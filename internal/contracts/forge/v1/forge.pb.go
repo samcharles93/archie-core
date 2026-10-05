@@ -682,6 +682,104 @@ func (*CloseIssueResponse) Descriptor() ([]byte, []int) {
 	return file_forge_v1_forge_proto_rawDescGZIP(), []int{12}
 }
 
+// ClosePRRequest closes a pull request without merging, after posting
+// comment when it is not empty.
+type ClosePRRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Repo          *RepoRef               `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
+	Number        int32                  `protobuf:"varint,2,opt,name=number,proto3" json:"number,omitempty"`
+	Comment       string                 `protobuf:"bytes,3,opt,name=comment,proto3" json:"comment,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClosePRRequest) Reset() {
+	*x = ClosePRRequest{}
+	mi := &file_forge_v1_forge_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClosePRRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClosePRRequest) ProtoMessage() {}
+
+func (x *ClosePRRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_forge_v1_forge_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClosePRRequest.ProtoReflect.Descriptor instead.
+func (*ClosePRRequest) Descriptor() ([]byte, []int) {
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ClosePRRequest) GetRepo() *RepoRef {
+	if x != nil {
+		return x.Repo
+	}
+	return nil
+}
+
+func (x *ClosePRRequest) GetNumber() int32 {
+	if x != nil {
+		return x.Number
+	}
+	return 0
+}
+
+func (x *ClosePRRequest) GetComment() string {
+	if x != nil {
+		return x.Comment
+	}
+	return ""
+}
+
+type ClosePRResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClosePRResponse) Reset() {
+	*x = ClosePRResponse{}
+	mi := &file_forge_v1_forge_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClosePRResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClosePRResponse) ProtoMessage() {}
+
+func (x *ClosePRResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_forge_v1_forge_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClosePRResponse.ProtoReflect.Descriptor instead.
+func (*ClosePRResponse) Descriptor() ([]byte, []int) {
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{14}
+}
+
 type ReactRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Repo          *RepoRef               `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
@@ -693,7 +791,7 @@ type ReactRequest struct {
 
 func (x *ReactRequest) Reset() {
 	*x = ReactRequest{}
-	mi := &file_forge_v1_forge_proto_msgTypes[13]
+	mi := &file_forge_v1_forge_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -705,7 +803,7 @@ func (x *ReactRequest) String() string {
 func (*ReactRequest) ProtoMessage() {}
 
 func (x *ReactRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[13]
+	mi := &file_forge_v1_forge_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -718,7 +816,7 @@ func (x *ReactRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReactRequest.ProtoReflect.Descriptor instead.
 func (*ReactRequest) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{13}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ReactRequest) GetRepo() *RepoRef {
@@ -750,7 +848,7 @@ type ReactResponse struct {
 
 func (x *ReactResponse) Reset() {
 	*x = ReactResponse{}
-	mi := &file_forge_v1_forge_proto_msgTypes[14]
+	mi := &file_forge_v1_forge_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -762,7 +860,7 @@ func (x *ReactResponse) String() string {
 func (*ReactResponse) ProtoMessage() {}
 
 func (x *ReactResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[14]
+	mi := &file_forge_v1_forge_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -775,7 +873,7 @@ func (x *ReactResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReactResponse.ProtoReflect.Descriptor instead.
 func (*ReactResponse) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{14}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{16}
 }
 
 type SetStateLabelRequest struct {
@@ -790,7 +888,7 @@ type SetStateLabelRequest struct {
 
 func (x *SetStateLabelRequest) Reset() {
 	*x = SetStateLabelRequest{}
-	mi := &file_forge_v1_forge_proto_msgTypes[15]
+	mi := &file_forge_v1_forge_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -802,7 +900,7 @@ func (x *SetStateLabelRequest) String() string {
 func (*SetStateLabelRequest) ProtoMessage() {}
 
 func (x *SetStateLabelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[15]
+	mi := &file_forge_v1_forge_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -815,7 +913,7 @@ func (x *SetStateLabelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetStateLabelRequest.ProtoReflect.Descriptor instead.
 func (*SetStateLabelRequest) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{15}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *SetStateLabelRequest) GetRepo() *RepoRef {
@@ -854,7 +952,7 @@ type SetStateLabelResponse struct {
 
 func (x *SetStateLabelResponse) Reset() {
 	*x = SetStateLabelResponse{}
-	mi := &file_forge_v1_forge_proto_msgTypes[16]
+	mi := &file_forge_v1_forge_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -866,7 +964,7 @@ func (x *SetStateLabelResponse) String() string {
 func (*SetStateLabelResponse) ProtoMessage() {}
 
 func (x *SetStateLabelResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[16]
+	mi := &file_forge_v1_forge_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -879,7 +977,7 @@ func (x *SetStateLabelResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetStateLabelResponse.ProtoReflect.Descriptor instead.
 func (*SetStateLabelResponse) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{16}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{18}
 }
 
 type CreatePRRequest struct {
@@ -895,7 +993,7 @@ type CreatePRRequest struct {
 
 func (x *CreatePRRequest) Reset() {
 	*x = CreatePRRequest{}
-	mi := &file_forge_v1_forge_proto_msgTypes[17]
+	mi := &file_forge_v1_forge_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -907,7 +1005,7 @@ func (x *CreatePRRequest) String() string {
 func (*CreatePRRequest) ProtoMessage() {}
 
 func (x *CreatePRRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[17]
+	mi := &file_forge_v1_forge_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -920,7 +1018,7 @@ func (x *CreatePRRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePRRequest.ProtoReflect.Descriptor instead.
 func (*CreatePRRequest) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{17}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *CreatePRRequest) GetRepo() *RepoRef {
@@ -967,7 +1065,7 @@ type CreatePRResponse struct {
 
 func (x *CreatePRResponse) Reset() {
 	*x = CreatePRResponse{}
-	mi := &file_forge_v1_forge_proto_msgTypes[18]
+	mi := &file_forge_v1_forge_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -979,7 +1077,7 @@ func (x *CreatePRResponse) String() string {
 func (*CreatePRResponse) ProtoMessage() {}
 
 func (x *CreatePRResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[18]
+	mi := &file_forge_v1_forge_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -992,7 +1090,7 @@ func (x *CreatePRResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePRResponse.ProtoReflect.Descriptor instead.
 func (*CreatePRResponse) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{18}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *CreatePRResponse) GetNumber() int32 {
@@ -1012,7 +1110,7 @@ type PRStateRequest struct {
 
 func (x *PRStateRequest) Reset() {
 	*x = PRStateRequest{}
-	mi := &file_forge_v1_forge_proto_msgTypes[19]
+	mi := &file_forge_v1_forge_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1024,7 +1122,7 @@ func (x *PRStateRequest) String() string {
 func (*PRStateRequest) ProtoMessage() {}
 
 func (x *PRStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[19]
+	mi := &file_forge_v1_forge_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1037,7 +1135,7 @@ func (x *PRStateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PRStateRequest.ProtoReflect.Descriptor instead.
 func (*PRStateRequest) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{19}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *PRStateRequest) GetRepo() *RepoRef {
@@ -1063,7 +1161,7 @@ type PRStateResponse struct {
 
 func (x *PRStateResponse) Reset() {
 	*x = PRStateResponse{}
-	mi := &file_forge_v1_forge_proto_msgTypes[20]
+	mi := &file_forge_v1_forge_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1075,7 +1173,7 @@ func (x *PRStateResponse) String() string {
 func (*PRStateResponse) ProtoMessage() {}
 
 func (x *PRStateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[20]
+	mi := &file_forge_v1_forge_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1088,7 +1186,7 @@ func (x *PRStateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PRStateResponse.ProtoReflect.Descriptor instead.
 func (*PRStateResponse) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{20}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *PRStateResponse) GetState() string {
@@ -1114,7 +1212,7 @@ type PullRequest struct {
 
 func (x *PullRequest) Reset() {
 	*x = PullRequest{}
-	mi := &file_forge_v1_forge_proto_msgTypes[21]
+	mi := &file_forge_v1_forge_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1126,7 +1224,7 @@ func (x *PullRequest) String() string {
 func (*PullRequest) ProtoMessage() {}
 
 func (x *PullRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[21]
+	mi := &file_forge_v1_forge_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1139,7 +1237,7 @@ func (x *PullRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PullRequest.ProtoReflect.Descriptor instead.
 func (*PullRequest) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{21}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *PullRequest) GetNumber() int32 {
@@ -1208,7 +1306,7 @@ type GetPullRequestRequest struct {
 
 func (x *GetPullRequestRequest) Reset() {
 	*x = GetPullRequestRequest{}
-	mi := &file_forge_v1_forge_proto_msgTypes[22]
+	mi := &file_forge_v1_forge_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1220,7 +1318,7 @@ func (x *GetPullRequestRequest) String() string {
 func (*GetPullRequestRequest) ProtoMessage() {}
 
 func (x *GetPullRequestRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[22]
+	mi := &file_forge_v1_forge_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1233,7 +1331,7 @@ func (x *GetPullRequestRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPullRequestRequest.ProtoReflect.Descriptor instead.
 func (*GetPullRequestRequest) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{22}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *GetPullRequestRequest) GetRepo() *RepoRef {
@@ -1259,7 +1357,7 @@ type GetPullRequestResponse struct {
 
 func (x *GetPullRequestResponse) Reset() {
 	*x = GetPullRequestResponse{}
-	mi := &file_forge_v1_forge_proto_msgTypes[23]
+	mi := &file_forge_v1_forge_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1271,7 +1369,7 @@ func (x *GetPullRequestResponse) String() string {
 func (*GetPullRequestResponse) ProtoMessage() {}
 
 func (x *GetPullRequestResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[23]
+	mi := &file_forge_v1_forge_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1284,7 +1382,7 @@ func (x *GetPullRequestResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPullRequestResponse.ProtoReflect.Descriptor instead.
 func (*GetPullRequestResponse) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{23}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *GetPullRequestResponse) GetPullRequest() *PullRequest {
@@ -1304,7 +1402,7 @@ type GetPullRequestDiffRequest struct {
 
 func (x *GetPullRequestDiffRequest) Reset() {
 	*x = GetPullRequestDiffRequest{}
-	mi := &file_forge_v1_forge_proto_msgTypes[24]
+	mi := &file_forge_v1_forge_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1316,7 +1414,7 @@ func (x *GetPullRequestDiffRequest) String() string {
 func (*GetPullRequestDiffRequest) ProtoMessage() {}
 
 func (x *GetPullRequestDiffRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[24]
+	mi := &file_forge_v1_forge_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1329,7 +1427,7 @@ func (x *GetPullRequestDiffRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPullRequestDiffRequest.ProtoReflect.Descriptor instead.
 func (*GetPullRequestDiffRequest) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{24}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *GetPullRequestDiffRequest) GetRepo() *RepoRef {
@@ -1355,7 +1453,7 @@ type GetPullRequestDiffResponse struct {
 
 func (x *GetPullRequestDiffResponse) Reset() {
 	*x = GetPullRequestDiffResponse{}
-	mi := &file_forge_v1_forge_proto_msgTypes[25]
+	mi := &file_forge_v1_forge_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1367,7 +1465,7 @@ func (x *GetPullRequestDiffResponse) String() string {
 func (*GetPullRequestDiffResponse) ProtoMessage() {}
 
 func (x *GetPullRequestDiffResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[25]
+	mi := &file_forge_v1_forge_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1380,7 +1478,7 @@ func (x *GetPullRequestDiffResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPullRequestDiffResponse.ProtoReflect.Descriptor instead.
 func (*GetPullRequestDiffResponse) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{25}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *GetPullRequestDiffResponse) GetDiff() string {
@@ -1400,7 +1498,7 @@ type ListReviewsRequest struct {
 
 func (x *ListReviewsRequest) Reset() {
 	*x = ListReviewsRequest{}
-	mi := &file_forge_v1_forge_proto_msgTypes[26]
+	mi := &file_forge_v1_forge_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1412,7 +1510,7 @@ func (x *ListReviewsRequest) String() string {
 func (*ListReviewsRequest) ProtoMessage() {}
 
 func (x *ListReviewsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[26]
+	mi := &file_forge_v1_forge_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1425,7 +1523,7 @@ func (x *ListReviewsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListReviewsRequest.ProtoReflect.Descriptor instead.
 func (*ListReviewsRequest) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{26}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ListReviewsRequest) GetPullRequest() *PullRequestRef {
@@ -1455,7 +1553,7 @@ type Review struct {
 
 func (x *Review) Reset() {
 	*x = Review{}
-	mi := &file_forge_v1_forge_proto_msgTypes[27]
+	mi := &file_forge_v1_forge_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1467,7 +1565,7 @@ func (x *Review) String() string {
 func (*Review) ProtoMessage() {}
 
 func (x *Review) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[27]
+	mi := &file_forge_v1_forge_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1480,7 +1578,7 @@ func (x *Review) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Review.ProtoReflect.Descriptor instead.
 func (*Review) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{27}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *Review) GetId() int64 {
@@ -1527,7 +1625,7 @@ type ListReviewsResponse struct {
 
 func (x *ListReviewsResponse) Reset() {
 	*x = ListReviewsResponse{}
-	mi := &file_forge_v1_forge_proto_msgTypes[28]
+	mi := &file_forge_v1_forge_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1539,7 +1637,7 @@ func (x *ListReviewsResponse) String() string {
 func (*ListReviewsResponse) ProtoMessage() {}
 
 func (x *ListReviewsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[28]
+	mi := &file_forge_v1_forge_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1552,7 +1650,7 @@ func (x *ListReviewsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListReviewsResponse.ProtoReflect.Descriptor instead.
 func (*ListReviewsResponse) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{28}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *ListReviewsResponse) GetReviews() []*Review {
@@ -1578,7 +1676,7 @@ type ReviewComment struct {
 
 func (x *ReviewComment) Reset() {
 	*x = ReviewComment{}
-	mi := &file_forge_v1_forge_proto_msgTypes[29]
+	mi := &file_forge_v1_forge_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1590,7 +1688,7 @@ func (x *ReviewComment) String() string {
 func (*ReviewComment) ProtoMessage() {}
 
 func (x *ReviewComment) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[29]
+	mi := &file_forge_v1_forge_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1603,7 +1701,7 @@ func (x *ReviewComment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReviewComment.ProtoReflect.Descriptor instead.
 func (*ReviewComment) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{29}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ReviewComment) GetId() int64 {
@@ -1672,7 +1770,7 @@ type ListReviewCommentsRequest struct {
 
 func (x *ListReviewCommentsRequest) Reset() {
 	*x = ListReviewCommentsRequest{}
-	mi := &file_forge_v1_forge_proto_msgTypes[30]
+	mi := &file_forge_v1_forge_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1684,7 +1782,7 @@ func (x *ListReviewCommentsRequest) String() string {
 func (*ListReviewCommentsRequest) ProtoMessage() {}
 
 func (x *ListReviewCommentsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[30]
+	mi := &file_forge_v1_forge_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1697,7 +1795,7 @@ func (x *ListReviewCommentsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListReviewCommentsRequest.ProtoReflect.Descriptor instead.
 func (*ListReviewCommentsRequest) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{30}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *ListReviewCommentsRequest) GetPullRequest() *PullRequestRef {
@@ -1723,7 +1821,7 @@ type ListReviewCommentsResponse struct {
 
 func (x *ListReviewCommentsResponse) Reset() {
 	*x = ListReviewCommentsResponse{}
-	mi := &file_forge_v1_forge_proto_msgTypes[31]
+	mi := &file_forge_v1_forge_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1735,7 +1833,7 @@ func (x *ListReviewCommentsResponse) String() string {
 func (*ListReviewCommentsResponse) ProtoMessage() {}
 
 func (x *ListReviewCommentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[31]
+	mi := &file_forge_v1_forge_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1748,7 +1846,7 @@ func (x *ListReviewCommentsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListReviewCommentsResponse.ProtoReflect.Descriptor instead.
 func (*ListReviewCommentsResponse) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{31}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *ListReviewCommentsResponse) GetComments() []*ReviewComment {
@@ -1769,7 +1867,7 @@ type ReplyToReviewRequest struct {
 
 func (x *ReplyToReviewRequest) Reset() {
 	*x = ReplyToReviewRequest{}
-	mi := &file_forge_v1_forge_proto_msgTypes[32]
+	mi := &file_forge_v1_forge_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1781,7 +1879,7 @@ func (x *ReplyToReviewRequest) String() string {
 func (*ReplyToReviewRequest) ProtoMessage() {}
 
 func (x *ReplyToReviewRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[32]
+	mi := &file_forge_v1_forge_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1794,7 +1892,7 @@ func (x *ReplyToReviewRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReplyToReviewRequest.ProtoReflect.Descriptor instead.
 func (*ReplyToReviewRequest) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{32}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ReplyToReviewRequest) GetPullRequest() *PullRequestRef {
@@ -1826,7 +1924,7 @@ type ReplyToReviewResponse struct {
 
 func (x *ReplyToReviewResponse) Reset() {
 	*x = ReplyToReviewResponse{}
-	mi := &file_forge_v1_forge_proto_msgTypes[33]
+	mi := &file_forge_v1_forge_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1838,7 +1936,7 @@ func (x *ReplyToReviewResponse) String() string {
 func (*ReplyToReviewResponse) ProtoMessage() {}
 
 func (x *ReplyToReviewResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[33]
+	mi := &file_forge_v1_forge_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1851,7 +1949,7 @@ func (x *ReplyToReviewResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReplyToReviewResponse.ProtoReflect.Descriptor instead.
 func (*ReplyToReviewResponse) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{33}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{35}
 }
 
 type InlineReviewComment struct {
@@ -1865,7 +1963,7 @@ type InlineReviewComment struct {
 
 func (x *InlineReviewComment) Reset() {
 	*x = InlineReviewComment{}
-	mi := &file_forge_v1_forge_proto_msgTypes[34]
+	mi := &file_forge_v1_forge_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1877,7 +1975,7 @@ func (x *InlineReviewComment) String() string {
 func (*InlineReviewComment) ProtoMessage() {}
 
 func (x *InlineReviewComment) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[34]
+	mi := &file_forge_v1_forge_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1890,7 +1988,7 @@ func (x *InlineReviewComment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InlineReviewComment.ProtoReflect.Descriptor instead.
 func (*InlineReviewComment) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{34}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *InlineReviewComment) GetPath() string {
@@ -1925,7 +2023,7 @@ type CreateReviewCommentsRequest struct {
 
 func (x *CreateReviewCommentsRequest) Reset() {
 	*x = CreateReviewCommentsRequest{}
-	mi := &file_forge_v1_forge_proto_msgTypes[35]
+	mi := &file_forge_v1_forge_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1937,7 +2035,7 @@ func (x *CreateReviewCommentsRequest) String() string {
 func (*CreateReviewCommentsRequest) ProtoMessage() {}
 
 func (x *CreateReviewCommentsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[35]
+	mi := &file_forge_v1_forge_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1950,7 +2048,7 @@ func (x *CreateReviewCommentsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateReviewCommentsRequest.ProtoReflect.Descriptor instead.
 func (*CreateReviewCommentsRequest) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{35}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *CreateReviewCommentsRequest) GetPullRequest() *PullRequestRef {
@@ -1982,7 +2080,7 @@ type CreateReviewCommentsResponse struct {
 
 func (x *CreateReviewCommentsResponse) Reset() {
 	*x = CreateReviewCommentsResponse{}
-	mi := &file_forge_v1_forge_proto_msgTypes[36]
+	mi := &file_forge_v1_forge_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1994,7 +2092,7 @@ func (x *CreateReviewCommentsResponse) String() string {
 func (*CreateReviewCommentsResponse) ProtoMessage() {}
 
 func (x *CreateReviewCommentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[36]
+	mi := &file_forge_v1_forge_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2007,7 +2105,7 @@ func (x *CreateReviewCommentsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateReviewCommentsResponse.ProtoReflect.Descriptor instead.
 func (*CreateReviewCommentsResponse) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{36}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{38}
 }
 
 type LinkBranchRequest struct {
@@ -2021,7 +2119,7 @@ type LinkBranchRequest struct {
 
 func (x *LinkBranchRequest) Reset() {
 	*x = LinkBranchRequest{}
-	mi := &file_forge_v1_forge_proto_msgTypes[37]
+	mi := &file_forge_v1_forge_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2033,7 +2131,7 @@ func (x *LinkBranchRequest) String() string {
 func (*LinkBranchRequest) ProtoMessage() {}
 
 func (x *LinkBranchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[37]
+	mi := &file_forge_v1_forge_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2046,7 +2144,7 @@ func (x *LinkBranchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LinkBranchRequest.ProtoReflect.Descriptor instead.
 func (*LinkBranchRequest) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{37}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *LinkBranchRequest) GetRepo() *RepoRef {
@@ -2078,7 +2176,7 @@ type LinkBranchResponse struct {
 
 func (x *LinkBranchResponse) Reset() {
 	*x = LinkBranchResponse{}
-	mi := &file_forge_v1_forge_proto_msgTypes[38]
+	mi := &file_forge_v1_forge_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2090,7 +2188,7 @@ func (x *LinkBranchResponse) String() string {
 func (*LinkBranchResponse) ProtoMessage() {}
 
 func (x *LinkBranchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[38]
+	mi := &file_forge_v1_forge_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2103,7 +2201,7 @@ func (x *LinkBranchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LinkBranchResponse.ProtoReflect.Descriptor instead.
 func (*LinkBranchResponse) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{38}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{40}
 }
 
 type AcceptInvitationsRequest struct {
@@ -2114,7 +2212,7 @@ type AcceptInvitationsRequest struct {
 
 func (x *AcceptInvitationsRequest) Reset() {
 	*x = AcceptInvitationsRequest{}
-	mi := &file_forge_v1_forge_proto_msgTypes[39]
+	mi := &file_forge_v1_forge_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2126,7 +2224,7 @@ func (x *AcceptInvitationsRequest) String() string {
 func (*AcceptInvitationsRequest) ProtoMessage() {}
 
 func (x *AcceptInvitationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[39]
+	mi := &file_forge_v1_forge_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2139,7 +2237,7 @@ func (x *AcceptInvitationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcceptInvitationsRequest.ProtoReflect.Descriptor instead.
 func (*AcceptInvitationsRequest) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{39}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{41}
 }
 
 type AcceptInvitationsResponse struct {
@@ -2150,7 +2248,7 @@ type AcceptInvitationsResponse struct {
 
 func (x *AcceptInvitationsResponse) Reset() {
 	*x = AcceptInvitationsResponse{}
-	mi := &file_forge_v1_forge_proto_msgTypes[40]
+	mi := &file_forge_v1_forge_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2162,7 +2260,7 @@ func (x *AcceptInvitationsResponse) String() string {
 func (*AcceptInvitationsResponse) ProtoMessage() {}
 
 func (x *AcceptInvitationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[40]
+	mi := &file_forge_v1_forge_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2175,7 +2273,7 @@ func (x *AcceptInvitationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcceptInvitationsResponse.ProtoReflect.Descriptor instead.
 func (*AcceptInvitationsResponse) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{40}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{42}
 }
 
 type VerifyPushRequest struct {
@@ -2187,7 +2285,7 @@ type VerifyPushRequest struct {
 
 func (x *VerifyPushRequest) Reset() {
 	*x = VerifyPushRequest{}
-	mi := &file_forge_v1_forge_proto_msgTypes[41]
+	mi := &file_forge_v1_forge_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2199,7 +2297,7 @@ func (x *VerifyPushRequest) String() string {
 func (*VerifyPushRequest) ProtoMessage() {}
 
 func (x *VerifyPushRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[41]
+	mi := &file_forge_v1_forge_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2212,7 +2310,7 @@ func (x *VerifyPushRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifyPushRequest.ProtoReflect.Descriptor instead.
 func (*VerifyPushRequest) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{41}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *VerifyPushRequest) GetRepo() *RepoRef {
@@ -2230,7 +2328,7 @@ type VerifyPushResponse struct {
 
 func (x *VerifyPushResponse) Reset() {
 	*x = VerifyPushResponse{}
-	mi := &file_forge_v1_forge_proto_msgTypes[42]
+	mi := &file_forge_v1_forge_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2242,7 +2340,7 @@ func (x *VerifyPushResponse) String() string {
 func (*VerifyPushResponse) ProtoMessage() {}
 
 func (x *VerifyPushResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[42]
+	mi := &file_forge_v1_forge_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2255,7 +2353,7 @@ func (x *VerifyPushResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifyPushResponse.ProtoReflect.Descriptor instead.
 func (*VerifyPushResponse) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{42}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{44}
 }
 
 type GetRepoArchiveRequest struct {
@@ -2268,7 +2366,7 @@ type GetRepoArchiveRequest struct {
 
 func (x *GetRepoArchiveRequest) Reset() {
 	*x = GetRepoArchiveRequest{}
-	mi := &file_forge_v1_forge_proto_msgTypes[43]
+	mi := &file_forge_v1_forge_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2280,7 +2378,7 @@ func (x *GetRepoArchiveRequest) String() string {
 func (*GetRepoArchiveRequest) ProtoMessage() {}
 
 func (x *GetRepoArchiveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[43]
+	mi := &file_forge_v1_forge_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2293,7 +2391,7 @@ func (x *GetRepoArchiveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRepoArchiveRequest.ProtoReflect.Descriptor instead.
 func (*GetRepoArchiveRequest) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{43}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *GetRepoArchiveRequest) GetRepo() *RepoRef {
@@ -2319,7 +2417,7 @@ type GetRepoArchiveResponse struct {
 
 func (x *GetRepoArchiveResponse) Reset() {
 	*x = GetRepoArchiveResponse{}
-	mi := &file_forge_v1_forge_proto_msgTypes[44]
+	mi := &file_forge_v1_forge_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2331,7 +2429,7 @@ func (x *GetRepoArchiveResponse) String() string {
 func (*GetRepoArchiveResponse) ProtoMessage() {}
 
 func (x *GetRepoArchiveResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[44]
+	mi := &file_forge_v1_forge_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2344,7 +2442,7 @@ func (x *GetRepoArchiveResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRepoArchiveResponse.ProtoReflect.Descriptor instead.
 func (*GetRepoArchiveResponse) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{44}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *GetRepoArchiveResponse) GetData() []byte {
@@ -2364,7 +2462,7 @@ type ParseWebhookRequest struct {
 
 func (x *ParseWebhookRequest) Reset() {
 	*x = ParseWebhookRequest{}
-	mi := &file_forge_v1_forge_proto_msgTypes[45]
+	mi := &file_forge_v1_forge_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2376,7 +2474,7 @@ func (x *ParseWebhookRequest) String() string {
 func (*ParseWebhookRequest) ProtoMessage() {}
 
 func (x *ParseWebhookRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[45]
+	mi := &file_forge_v1_forge_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2389,7 +2487,7 @@ func (x *ParseWebhookRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ParseWebhookRequest.ProtoReflect.Descriptor instead.
 func (*ParseWebhookRequest) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{45}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *ParseWebhookRequest) GetHeaders() map[string]string {
@@ -2420,7 +2518,7 @@ type ParseWebhookResponse struct {
 
 func (x *ParseWebhookResponse) Reset() {
 	*x = ParseWebhookResponse{}
-	mi := &file_forge_v1_forge_proto_msgTypes[46]
+	mi := &file_forge_v1_forge_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2432,7 +2530,7 @@ func (x *ParseWebhookResponse) String() string {
 func (*ParseWebhookResponse) ProtoMessage() {}
 
 func (x *ParseWebhookResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[46]
+	mi := &file_forge_v1_forge_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2445,7 +2543,7 @@ func (x *ParseWebhookResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ParseWebhookResponse.ProtoReflect.Descriptor instead.
 func (*ParseWebhookResponse) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{46}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *ParseWebhookResponse) GetEvent() isParseWebhookResponse_Event {
@@ -2521,7 +2619,7 @@ type IssueEvent struct {
 
 func (x *IssueEvent) Reset() {
 	*x = IssueEvent{}
-	mi := &file_forge_v1_forge_proto_msgTypes[47]
+	mi := &file_forge_v1_forge_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2533,7 +2631,7 @@ func (x *IssueEvent) String() string {
 func (*IssueEvent) ProtoMessage() {}
 
 func (x *IssueEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[47]
+	mi := &file_forge_v1_forge_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2546,7 +2644,7 @@ func (x *IssueEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IssueEvent.ProtoReflect.Descriptor instead.
 func (*IssueEvent) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{47}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *IssueEvent) GetAction() string {
@@ -2627,7 +2725,7 @@ type ReviewEvent struct {
 
 func (x *ReviewEvent) Reset() {
 	*x = ReviewEvent{}
-	mi := &file_forge_v1_forge_proto_msgTypes[48]
+	mi := &file_forge_v1_forge_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2639,7 +2737,7 @@ func (x *ReviewEvent) String() string {
 func (*ReviewEvent) ProtoMessage() {}
 
 func (x *ReviewEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[48]
+	mi := &file_forge_v1_forge_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2652,7 +2750,7 @@ func (x *ReviewEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReviewEvent.ProtoReflect.Descriptor instead.
 func (*ReviewEvent) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{48}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *ReviewEvent) GetAction() string {
@@ -2721,7 +2819,7 @@ type ReviewCommentEvent struct {
 
 func (x *ReviewCommentEvent) Reset() {
 	*x = ReviewCommentEvent{}
-	mi := &file_forge_v1_forge_proto_msgTypes[49]
+	mi := &file_forge_v1_forge_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2733,7 +2831,7 @@ func (x *ReviewCommentEvent) String() string {
 func (*ReviewCommentEvent) ProtoMessage() {}
 
 func (x *ReviewCommentEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_forge_v1_forge_proto_msgTypes[49]
+	mi := &file_forge_v1_forge_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2746,7 +2844,7 @@ func (x *ReviewCommentEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReviewCommentEvent.ProtoReflect.Descriptor instead.
 func (*ReviewCommentEvent) Descriptor() ([]byte, []int) {
-	return file_forge_v1_forge_proto_rawDescGZIP(), []int{49}
+	return file_forge_v1_forge_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *ReviewCommentEvent) GetAction() string {
@@ -2857,6 +2955,11 @@ const file_forge_v1_forge_proto_rawDesc = "" +
 	"\x06number\x18\x02 \x01(\x05R\x06number\x12\x18\n" +
 	"\acomment\x18\x03 \x01(\tR\acomment\"\x14\n" +
 	"\x12CloseIssueResponse\"i\n" +
+	"\x0eClosePRRequest\x12%\n" +
+	"\x04repo\x18\x01 \x01(\v2\x11.forge.v1.RepoRefR\x04repo\x12\x16\n" +
+	"\x06number\x18\x02 \x01(\x05R\x06number\x12\x18\n" +
+	"\acomment\x18\x03 \x01(\tR\acomment\"\x11\n" +
+	"\x0fClosePRResponse\"i\n" +
 	"\fReactRequest\x12%\n" +
 	"\x04repo\x18\x01 \x01(\v2\x11.forge.v1.RepoRefR\x04repo\x12\x16\n" +
 	"\x06number\x18\x02 \x01(\x05R\x06number\x12\x1a\n" +
@@ -2996,7 +3099,7 @@ const file_forge_v1_forge_proto_rawDesc = "" +
 	"\x06author\x18\x06 \x01(\tR\x06author\x12\x12\n" +
 	"\x04body\x18\a \x01(\tR\x04body\x12\x12\n" +
 	"\x04path\x18\b \x01(\tR\x04path\x12\x12\n" +
-	"\x04line\x18\t \x01(\x05R\x04line2\xcb\f\n" +
+	"\x04line\x18\t \x01(\x05R\x04line2\x8b\r\n" +
 	"\fForgeService\x12D\n" +
 	"\tConfigure\x12\x1a.forge.v1.ConfigureRequest\x1a\x1b.forge.v1.ConfigureResponse\x12S\n" +
 	"\x0eAssignedIssues\x12\x1f.forge.v1.AssignedIssuesRequest\x1a .forge.v1.AssignedIssuesResponse\x12V\n" +
@@ -3007,7 +3110,8 @@ const file_forge_v1_forge_proto_rawDesc = "" +
 	"\x05React\x12\x16.forge.v1.ReactRequest\x1a\x17.forge.v1.ReactResponse\x12P\n" +
 	"\rSetStateLabel\x12\x1e.forge.v1.SetStateLabelRequest\x1a\x1f.forge.v1.SetStateLabelResponse\x12A\n" +
 	"\bCreatePR\x12\x19.forge.v1.CreatePRRequest\x1a\x1a.forge.v1.CreatePRResponse\x12>\n" +
-	"\aPRState\x12\x18.forge.v1.PRStateRequest\x1a\x19.forge.v1.PRStateResponse\x12S\n" +
+	"\aPRState\x12\x18.forge.v1.PRStateRequest\x1a\x19.forge.v1.PRStateResponse\x12>\n" +
+	"\aClosePR\x12\x18.forge.v1.ClosePRRequest\x1a\x19.forge.v1.ClosePRResponse\x12S\n" +
 	"\x0eGetPullRequest\x12\x1f.forge.v1.GetPullRequestRequest\x1a .forge.v1.GetPullRequestResponse\x12_\n" +
 	"\x12GetPullRequestDiff\x12#.forge.v1.GetPullRequestDiffRequest\x1a$.forge.v1.GetPullRequestDiffResponse\x12J\n" +
 	"\vListReviews\x12\x1c.forge.v1.ListReviewsRequest\x1a\x1d.forge.v1.ListReviewsResponse\x12_\n" +
@@ -3036,7 +3140,7 @@ func file_forge_v1_forge_proto_rawDescGZIP() []byte {
 	return file_forge_v1_forge_proto_rawDescData
 }
 
-var file_forge_v1_forge_proto_msgTypes = make([]protoimpl.MessageInfo, 52)
+var file_forge_v1_forge_proto_msgTypes = make([]protoimpl.MessageInfo, 54)
 var file_forge_v1_forge_proto_goTypes = []any{
 	(*ConfigureRequest)(nil),             // 0: forge.v1.ConfigureRequest
 	(*ConfigureResponse)(nil),            // 1: forge.v1.ConfigureResponse
@@ -3051,49 +3155,51 @@ var file_forge_v1_forge_proto_goTypes = []any{
 	(*CommentResponse)(nil),              // 10: forge.v1.CommentResponse
 	(*CloseIssueRequest)(nil),            // 11: forge.v1.CloseIssueRequest
 	(*CloseIssueResponse)(nil),           // 12: forge.v1.CloseIssueResponse
-	(*ReactRequest)(nil),                 // 13: forge.v1.ReactRequest
-	(*ReactResponse)(nil),                // 14: forge.v1.ReactResponse
-	(*SetStateLabelRequest)(nil),         // 15: forge.v1.SetStateLabelRequest
-	(*SetStateLabelResponse)(nil),        // 16: forge.v1.SetStateLabelResponse
-	(*CreatePRRequest)(nil),              // 17: forge.v1.CreatePRRequest
-	(*CreatePRResponse)(nil),             // 18: forge.v1.CreatePRResponse
-	(*PRStateRequest)(nil),               // 19: forge.v1.PRStateRequest
-	(*PRStateResponse)(nil),              // 20: forge.v1.PRStateResponse
-	(*PullRequest)(nil),                  // 21: forge.v1.PullRequest
-	(*GetPullRequestRequest)(nil),        // 22: forge.v1.GetPullRequestRequest
-	(*GetPullRequestResponse)(nil),       // 23: forge.v1.GetPullRequestResponse
-	(*GetPullRequestDiffRequest)(nil),    // 24: forge.v1.GetPullRequestDiffRequest
-	(*GetPullRequestDiffResponse)(nil),   // 25: forge.v1.GetPullRequestDiffResponse
-	(*ListReviewsRequest)(nil),           // 26: forge.v1.ListReviewsRequest
-	(*Review)(nil),                       // 27: forge.v1.Review
-	(*ListReviewsResponse)(nil),          // 28: forge.v1.ListReviewsResponse
-	(*ReviewComment)(nil),                // 29: forge.v1.ReviewComment
-	(*ListReviewCommentsRequest)(nil),    // 30: forge.v1.ListReviewCommentsRequest
-	(*ListReviewCommentsResponse)(nil),   // 31: forge.v1.ListReviewCommentsResponse
-	(*ReplyToReviewRequest)(nil),         // 32: forge.v1.ReplyToReviewRequest
-	(*ReplyToReviewResponse)(nil),        // 33: forge.v1.ReplyToReviewResponse
-	(*InlineReviewComment)(nil),          // 34: forge.v1.InlineReviewComment
-	(*CreateReviewCommentsRequest)(nil),  // 35: forge.v1.CreateReviewCommentsRequest
-	(*CreateReviewCommentsResponse)(nil), // 36: forge.v1.CreateReviewCommentsResponse
-	(*LinkBranchRequest)(nil),            // 37: forge.v1.LinkBranchRequest
-	(*LinkBranchResponse)(nil),           // 38: forge.v1.LinkBranchResponse
-	(*AcceptInvitationsRequest)(nil),     // 39: forge.v1.AcceptInvitationsRequest
-	(*AcceptInvitationsResponse)(nil),    // 40: forge.v1.AcceptInvitationsResponse
-	(*VerifyPushRequest)(nil),            // 41: forge.v1.VerifyPushRequest
-	(*VerifyPushResponse)(nil),           // 42: forge.v1.VerifyPushResponse
-	(*GetRepoArchiveRequest)(nil),        // 43: forge.v1.GetRepoArchiveRequest
-	(*GetRepoArchiveResponse)(nil),       // 44: forge.v1.GetRepoArchiveResponse
-	(*ParseWebhookRequest)(nil),          // 45: forge.v1.ParseWebhookRequest
-	(*ParseWebhookResponse)(nil),         // 46: forge.v1.ParseWebhookResponse
-	(*IssueEvent)(nil),                   // 47: forge.v1.IssueEvent
-	(*ReviewEvent)(nil),                  // 48: forge.v1.ReviewEvent
-	(*ReviewCommentEvent)(nil),           // 49: forge.v1.ReviewCommentEvent
-	nil,                                  // 50: forge.v1.ConfigureRequest.SettingsEntry
-	nil,                                  // 51: forge.v1.ParseWebhookRequest.HeadersEntry
-	(*timestamppb.Timestamp)(nil),        // 52: google.protobuf.Timestamp
+	(*ClosePRRequest)(nil),               // 13: forge.v1.ClosePRRequest
+	(*ClosePRResponse)(nil),              // 14: forge.v1.ClosePRResponse
+	(*ReactRequest)(nil),                 // 15: forge.v1.ReactRequest
+	(*ReactResponse)(nil),                // 16: forge.v1.ReactResponse
+	(*SetStateLabelRequest)(nil),         // 17: forge.v1.SetStateLabelRequest
+	(*SetStateLabelResponse)(nil),        // 18: forge.v1.SetStateLabelResponse
+	(*CreatePRRequest)(nil),              // 19: forge.v1.CreatePRRequest
+	(*CreatePRResponse)(nil),             // 20: forge.v1.CreatePRResponse
+	(*PRStateRequest)(nil),               // 21: forge.v1.PRStateRequest
+	(*PRStateResponse)(nil),              // 22: forge.v1.PRStateResponse
+	(*PullRequest)(nil),                  // 23: forge.v1.PullRequest
+	(*GetPullRequestRequest)(nil),        // 24: forge.v1.GetPullRequestRequest
+	(*GetPullRequestResponse)(nil),       // 25: forge.v1.GetPullRequestResponse
+	(*GetPullRequestDiffRequest)(nil),    // 26: forge.v1.GetPullRequestDiffRequest
+	(*GetPullRequestDiffResponse)(nil),   // 27: forge.v1.GetPullRequestDiffResponse
+	(*ListReviewsRequest)(nil),           // 28: forge.v1.ListReviewsRequest
+	(*Review)(nil),                       // 29: forge.v1.Review
+	(*ListReviewsResponse)(nil),          // 30: forge.v1.ListReviewsResponse
+	(*ReviewComment)(nil),                // 31: forge.v1.ReviewComment
+	(*ListReviewCommentsRequest)(nil),    // 32: forge.v1.ListReviewCommentsRequest
+	(*ListReviewCommentsResponse)(nil),   // 33: forge.v1.ListReviewCommentsResponse
+	(*ReplyToReviewRequest)(nil),         // 34: forge.v1.ReplyToReviewRequest
+	(*ReplyToReviewResponse)(nil),        // 35: forge.v1.ReplyToReviewResponse
+	(*InlineReviewComment)(nil),          // 36: forge.v1.InlineReviewComment
+	(*CreateReviewCommentsRequest)(nil),  // 37: forge.v1.CreateReviewCommentsRequest
+	(*CreateReviewCommentsResponse)(nil), // 38: forge.v1.CreateReviewCommentsResponse
+	(*LinkBranchRequest)(nil),            // 39: forge.v1.LinkBranchRequest
+	(*LinkBranchResponse)(nil),           // 40: forge.v1.LinkBranchResponse
+	(*AcceptInvitationsRequest)(nil),     // 41: forge.v1.AcceptInvitationsRequest
+	(*AcceptInvitationsResponse)(nil),    // 42: forge.v1.AcceptInvitationsResponse
+	(*VerifyPushRequest)(nil),            // 43: forge.v1.VerifyPushRequest
+	(*VerifyPushResponse)(nil),           // 44: forge.v1.VerifyPushResponse
+	(*GetRepoArchiveRequest)(nil),        // 45: forge.v1.GetRepoArchiveRequest
+	(*GetRepoArchiveResponse)(nil),       // 46: forge.v1.GetRepoArchiveResponse
+	(*ParseWebhookRequest)(nil),          // 47: forge.v1.ParseWebhookRequest
+	(*ParseWebhookResponse)(nil),         // 48: forge.v1.ParseWebhookResponse
+	(*IssueEvent)(nil),                   // 49: forge.v1.IssueEvent
+	(*ReviewEvent)(nil),                  // 50: forge.v1.ReviewEvent
+	(*ReviewCommentEvent)(nil),           // 51: forge.v1.ReviewCommentEvent
+	nil,                                  // 52: forge.v1.ConfigureRequest.SettingsEntry
+	nil,                                  // 53: forge.v1.ParseWebhookRequest.HeadersEntry
+	(*timestamppb.Timestamp)(nil),        // 54: google.protobuf.Timestamp
 }
 var file_forge_v1_forge_proto_depIdxs = []int32{
-	50, // 0: forge.v1.ConfigureRequest.settings:type_name -> forge.v1.ConfigureRequest.SettingsEntry
+	52, // 0: forge.v1.ConfigureRequest.settings:type_name -> forge.v1.ConfigureRequest.SettingsEntry
 	2,  // 1: forge.v1.PullRequestRef.repo:type_name -> forge.v1.RepoRef
 	4,  // 2: forge.v1.AssignedIssuesResponse.issues:type_name -> forge.v1.Issue
 	4,  // 3: forge.v1.IssuesWithLabelResponse.issues:type_name -> forge.v1.Issue
@@ -3101,77 +3207,80 @@ var file_forge_v1_forge_proto_depIdxs = []int32{
 	2,  // 5: forge.v1.IssuesWithLabelRequest.repo:type_name -> forge.v1.RepoRef
 	2,  // 6: forge.v1.CommentRequest.repo:type_name -> forge.v1.RepoRef
 	2,  // 7: forge.v1.CloseIssueRequest.repo:type_name -> forge.v1.RepoRef
-	2,  // 8: forge.v1.ReactRequest.repo:type_name -> forge.v1.RepoRef
-	2,  // 9: forge.v1.SetStateLabelRequest.repo:type_name -> forge.v1.RepoRef
-	2,  // 10: forge.v1.CreatePRRequest.repo:type_name -> forge.v1.RepoRef
-	2,  // 11: forge.v1.PRStateRequest.repo:type_name -> forge.v1.RepoRef
-	2,  // 12: forge.v1.GetPullRequestRequest.repo:type_name -> forge.v1.RepoRef
-	21, // 13: forge.v1.GetPullRequestResponse.pull_request:type_name -> forge.v1.PullRequest
-	2,  // 14: forge.v1.GetPullRequestDiffRequest.repo:type_name -> forge.v1.RepoRef
-	3,  // 15: forge.v1.ListReviewsRequest.pull_request:type_name -> forge.v1.PullRequestRef
-	52, // 16: forge.v1.Review.submitted_at:type_name -> google.protobuf.Timestamp
-	27, // 17: forge.v1.ListReviewsResponse.reviews:type_name -> forge.v1.Review
-	52, // 18: forge.v1.ReviewComment.created_at:type_name -> google.protobuf.Timestamp
-	3,  // 19: forge.v1.ListReviewCommentsRequest.pull_request:type_name -> forge.v1.PullRequestRef
-	29, // 20: forge.v1.ListReviewCommentsResponse.comments:type_name -> forge.v1.ReviewComment
-	3,  // 21: forge.v1.ReplyToReviewRequest.pull_request:type_name -> forge.v1.PullRequestRef
-	3,  // 22: forge.v1.CreateReviewCommentsRequest.pull_request:type_name -> forge.v1.PullRequestRef
-	34, // 23: forge.v1.CreateReviewCommentsRequest.comments:type_name -> forge.v1.InlineReviewComment
-	2,  // 24: forge.v1.LinkBranchRequest.repo:type_name -> forge.v1.RepoRef
-	2,  // 25: forge.v1.VerifyPushRequest.repo:type_name -> forge.v1.RepoRef
-	2,  // 26: forge.v1.GetRepoArchiveRequest.repo:type_name -> forge.v1.RepoRef
-	51, // 27: forge.v1.ParseWebhookRequest.headers:type_name -> forge.v1.ParseWebhookRequest.HeadersEntry
-	47, // 28: forge.v1.ParseWebhookResponse.issue:type_name -> forge.v1.IssueEvent
-	48, // 29: forge.v1.ParseWebhookResponse.review:type_name -> forge.v1.ReviewEvent
-	49, // 30: forge.v1.ParseWebhookResponse.review_comment:type_name -> forge.v1.ReviewCommentEvent
-	2,  // 31: forge.v1.IssueEvent.repo:type_name -> forge.v1.RepoRef
-	2,  // 32: forge.v1.ReviewEvent.repo:type_name -> forge.v1.RepoRef
-	2,  // 33: forge.v1.ReviewCommentEvent.repo:type_name -> forge.v1.RepoRef
-	0,  // 34: forge.v1.ForgeService.Configure:input_type -> forge.v1.ConfigureRequest
-	7,  // 35: forge.v1.ForgeService.AssignedIssues:input_type -> forge.v1.AssignedIssuesRequest
-	8,  // 36: forge.v1.ForgeService.IssuesWithLabel:input_type -> forge.v1.IssuesWithLabelRequest
-	9,  // 37: forge.v1.ForgeService.Comment:input_type -> forge.v1.CommentRequest
-	11, // 38: forge.v1.ForgeService.CloseIssue:input_type -> forge.v1.CloseIssueRequest
-	13, // 39: forge.v1.ForgeService.React:input_type -> forge.v1.ReactRequest
-	15, // 40: forge.v1.ForgeService.SetStateLabel:input_type -> forge.v1.SetStateLabelRequest
-	17, // 41: forge.v1.ForgeService.CreatePR:input_type -> forge.v1.CreatePRRequest
-	19, // 42: forge.v1.ForgeService.PRState:input_type -> forge.v1.PRStateRequest
-	22, // 43: forge.v1.ForgeService.GetPullRequest:input_type -> forge.v1.GetPullRequestRequest
-	24, // 44: forge.v1.ForgeService.GetPullRequestDiff:input_type -> forge.v1.GetPullRequestDiffRequest
-	26, // 45: forge.v1.ForgeService.ListReviews:input_type -> forge.v1.ListReviewsRequest
-	30, // 46: forge.v1.ForgeService.ListReviewComments:input_type -> forge.v1.ListReviewCommentsRequest
-	32, // 47: forge.v1.ForgeService.ReplyToReview:input_type -> forge.v1.ReplyToReviewRequest
-	35, // 48: forge.v1.ForgeService.CreateReviewComments:input_type -> forge.v1.CreateReviewCommentsRequest
-	39, // 49: forge.v1.ForgeService.AcceptInvitations:input_type -> forge.v1.AcceptInvitationsRequest
-	41, // 50: forge.v1.ForgeService.VerifyPush:input_type -> forge.v1.VerifyPushRequest
-	37, // 51: forge.v1.ForgeService.LinkBranch:input_type -> forge.v1.LinkBranchRequest
-	45, // 52: forge.v1.ForgeService.ParseWebhook:input_type -> forge.v1.ParseWebhookRequest
-	43, // 53: forge.v1.ForgeService.GetRepoArchive:input_type -> forge.v1.GetRepoArchiveRequest
-	1,  // 54: forge.v1.ForgeService.Configure:output_type -> forge.v1.ConfigureResponse
-	5,  // 55: forge.v1.ForgeService.AssignedIssues:output_type -> forge.v1.AssignedIssuesResponse
-	6,  // 56: forge.v1.ForgeService.IssuesWithLabel:output_type -> forge.v1.IssuesWithLabelResponse
-	10, // 57: forge.v1.ForgeService.Comment:output_type -> forge.v1.CommentResponse
-	12, // 58: forge.v1.ForgeService.CloseIssue:output_type -> forge.v1.CloseIssueResponse
-	14, // 59: forge.v1.ForgeService.React:output_type -> forge.v1.ReactResponse
-	16, // 60: forge.v1.ForgeService.SetStateLabel:output_type -> forge.v1.SetStateLabelResponse
-	18, // 61: forge.v1.ForgeService.CreatePR:output_type -> forge.v1.CreatePRResponse
-	20, // 62: forge.v1.ForgeService.PRState:output_type -> forge.v1.PRStateResponse
-	23, // 63: forge.v1.ForgeService.GetPullRequest:output_type -> forge.v1.GetPullRequestResponse
-	25, // 64: forge.v1.ForgeService.GetPullRequestDiff:output_type -> forge.v1.GetPullRequestDiffResponse
-	28, // 65: forge.v1.ForgeService.ListReviews:output_type -> forge.v1.ListReviewsResponse
-	31, // 66: forge.v1.ForgeService.ListReviewComments:output_type -> forge.v1.ListReviewCommentsResponse
-	33, // 67: forge.v1.ForgeService.ReplyToReview:output_type -> forge.v1.ReplyToReviewResponse
-	36, // 68: forge.v1.ForgeService.CreateReviewComments:output_type -> forge.v1.CreateReviewCommentsResponse
-	40, // 69: forge.v1.ForgeService.AcceptInvitations:output_type -> forge.v1.AcceptInvitationsResponse
-	42, // 70: forge.v1.ForgeService.VerifyPush:output_type -> forge.v1.VerifyPushResponse
-	38, // 71: forge.v1.ForgeService.LinkBranch:output_type -> forge.v1.LinkBranchResponse
-	46, // 72: forge.v1.ForgeService.ParseWebhook:output_type -> forge.v1.ParseWebhookResponse
-	44, // 73: forge.v1.ForgeService.GetRepoArchive:output_type -> forge.v1.GetRepoArchiveResponse
-	54, // [54:74] is the sub-list for method output_type
-	34, // [34:54] is the sub-list for method input_type
-	34, // [34:34] is the sub-list for extension type_name
-	34, // [34:34] is the sub-list for extension extendee
-	0,  // [0:34] is the sub-list for field type_name
+	2,  // 8: forge.v1.ClosePRRequest.repo:type_name -> forge.v1.RepoRef
+	2,  // 9: forge.v1.ReactRequest.repo:type_name -> forge.v1.RepoRef
+	2,  // 10: forge.v1.SetStateLabelRequest.repo:type_name -> forge.v1.RepoRef
+	2,  // 11: forge.v1.CreatePRRequest.repo:type_name -> forge.v1.RepoRef
+	2,  // 12: forge.v1.PRStateRequest.repo:type_name -> forge.v1.RepoRef
+	2,  // 13: forge.v1.GetPullRequestRequest.repo:type_name -> forge.v1.RepoRef
+	23, // 14: forge.v1.GetPullRequestResponse.pull_request:type_name -> forge.v1.PullRequest
+	2,  // 15: forge.v1.GetPullRequestDiffRequest.repo:type_name -> forge.v1.RepoRef
+	3,  // 16: forge.v1.ListReviewsRequest.pull_request:type_name -> forge.v1.PullRequestRef
+	54, // 17: forge.v1.Review.submitted_at:type_name -> google.protobuf.Timestamp
+	29, // 18: forge.v1.ListReviewsResponse.reviews:type_name -> forge.v1.Review
+	54, // 19: forge.v1.ReviewComment.created_at:type_name -> google.protobuf.Timestamp
+	3,  // 20: forge.v1.ListReviewCommentsRequest.pull_request:type_name -> forge.v1.PullRequestRef
+	31, // 21: forge.v1.ListReviewCommentsResponse.comments:type_name -> forge.v1.ReviewComment
+	3,  // 22: forge.v1.ReplyToReviewRequest.pull_request:type_name -> forge.v1.PullRequestRef
+	3,  // 23: forge.v1.CreateReviewCommentsRequest.pull_request:type_name -> forge.v1.PullRequestRef
+	36, // 24: forge.v1.CreateReviewCommentsRequest.comments:type_name -> forge.v1.InlineReviewComment
+	2,  // 25: forge.v1.LinkBranchRequest.repo:type_name -> forge.v1.RepoRef
+	2,  // 26: forge.v1.VerifyPushRequest.repo:type_name -> forge.v1.RepoRef
+	2,  // 27: forge.v1.GetRepoArchiveRequest.repo:type_name -> forge.v1.RepoRef
+	53, // 28: forge.v1.ParseWebhookRequest.headers:type_name -> forge.v1.ParseWebhookRequest.HeadersEntry
+	49, // 29: forge.v1.ParseWebhookResponse.issue:type_name -> forge.v1.IssueEvent
+	50, // 30: forge.v1.ParseWebhookResponse.review:type_name -> forge.v1.ReviewEvent
+	51, // 31: forge.v1.ParseWebhookResponse.review_comment:type_name -> forge.v1.ReviewCommentEvent
+	2,  // 32: forge.v1.IssueEvent.repo:type_name -> forge.v1.RepoRef
+	2,  // 33: forge.v1.ReviewEvent.repo:type_name -> forge.v1.RepoRef
+	2,  // 34: forge.v1.ReviewCommentEvent.repo:type_name -> forge.v1.RepoRef
+	0,  // 35: forge.v1.ForgeService.Configure:input_type -> forge.v1.ConfigureRequest
+	7,  // 36: forge.v1.ForgeService.AssignedIssues:input_type -> forge.v1.AssignedIssuesRequest
+	8,  // 37: forge.v1.ForgeService.IssuesWithLabel:input_type -> forge.v1.IssuesWithLabelRequest
+	9,  // 38: forge.v1.ForgeService.Comment:input_type -> forge.v1.CommentRequest
+	11, // 39: forge.v1.ForgeService.CloseIssue:input_type -> forge.v1.CloseIssueRequest
+	15, // 40: forge.v1.ForgeService.React:input_type -> forge.v1.ReactRequest
+	17, // 41: forge.v1.ForgeService.SetStateLabel:input_type -> forge.v1.SetStateLabelRequest
+	19, // 42: forge.v1.ForgeService.CreatePR:input_type -> forge.v1.CreatePRRequest
+	21, // 43: forge.v1.ForgeService.PRState:input_type -> forge.v1.PRStateRequest
+	13, // 44: forge.v1.ForgeService.ClosePR:input_type -> forge.v1.ClosePRRequest
+	24, // 45: forge.v1.ForgeService.GetPullRequest:input_type -> forge.v1.GetPullRequestRequest
+	26, // 46: forge.v1.ForgeService.GetPullRequestDiff:input_type -> forge.v1.GetPullRequestDiffRequest
+	28, // 47: forge.v1.ForgeService.ListReviews:input_type -> forge.v1.ListReviewsRequest
+	32, // 48: forge.v1.ForgeService.ListReviewComments:input_type -> forge.v1.ListReviewCommentsRequest
+	34, // 49: forge.v1.ForgeService.ReplyToReview:input_type -> forge.v1.ReplyToReviewRequest
+	37, // 50: forge.v1.ForgeService.CreateReviewComments:input_type -> forge.v1.CreateReviewCommentsRequest
+	41, // 51: forge.v1.ForgeService.AcceptInvitations:input_type -> forge.v1.AcceptInvitationsRequest
+	43, // 52: forge.v1.ForgeService.VerifyPush:input_type -> forge.v1.VerifyPushRequest
+	39, // 53: forge.v1.ForgeService.LinkBranch:input_type -> forge.v1.LinkBranchRequest
+	47, // 54: forge.v1.ForgeService.ParseWebhook:input_type -> forge.v1.ParseWebhookRequest
+	45, // 55: forge.v1.ForgeService.GetRepoArchive:input_type -> forge.v1.GetRepoArchiveRequest
+	1,  // 56: forge.v1.ForgeService.Configure:output_type -> forge.v1.ConfigureResponse
+	5,  // 57: forge.v1.ForgeService.AssignedIssues:output_type -> forge.v1.AssignedIssuesResponse
+	6,  // 58: forge.v1.ForgeService.IssuesWithLabel:output_type -> forge.v1.IssuesWithLabelResponse
+	10, // 59: forge.v1.ForgeService.Comment:output_type -> forge.v1.CommentResponse
+	12, // 60: forge.v1.ForgeService.CloseIssue:output_type -> forge.v1.CloseIssueResponse
+	16, // 61: forge.v1.ForgeService.React:output_type -> forge.v1.ReactResponse
+	18, // 62: forge.v1.ForgeService.SetStateLabel:output_type -> forge.v1.SetStateLabelResponse
+	20, // 63: forge.v1.ForgeService.CreatePR:output_type -> forge.v1.CreatePRResponse
+	22, // 64: forge.v1.ForgeService.PRState:output_type -> forge.v1.PRStateResponse
+	14, // 65: forge.v1.ForgeService.ClosePR:output_type -> forge.v1.ClosePRResponse
+	25, // 66: forge.v1.ForgeService.GetPullRequest:output_type -> forge.v1.GetPullRequestResponse
+	27, // 67: forge.v1.ForgeService.GetPullRequestDiff:output_type -> forge.v1.GetPullRequestDiffResponse
+	30, // 68: forge.v1.ForgeService.ListReviews:output_type -> forge.v1.ListReviewsResponse
+	33, // 69: forge.v1.ForgeService.ListReviewComments:output_type -> forge.v1.ListReviewCommentsResponse
+	35, // 70: forge.v1.ForgeService.ReplyToReview:output_type -> forge.v1.ReplyToReviewResponse
+	38, // 71: forge.v1.ForgeService.CreateReviewComments:output_type -> forge.v1.CreateReviewCommentsResponse
+	42, // 72: forge.v1.ForgeService.AcceptInvitations:output_type -> forge.v1.AcceptInvitationsResponse
+	44, // 73: forge.v1.ForgeService.VerifyPush:output_type -> forge.v1.VerifyPushResponse
+	40, // 74: forge.v1.ForgeService.LinkBranch:output_type -> forge.v1.LinkBranchResponse
+	48, // 75: forge.v1.ForgeService.ParseWebhook:output_type -> forge.v1.ParseWebhookResponse
+	46, // 76: forge.v1.ForgeService.GetRepoArchive:output_type -> forge.v1.GetRepoArchiveResponse
+	56, // [56:77] is the sub-list for method output_type
+	35, // [35:56] is the sub-list for method input_type
+	35, // [35:35] is the sub-list for extension type_name
+	35, // [35:35] is the sub-list for extension extendee
+	0,  // [0:35] is the sub-list for field type_name
 }
 
 func init() { file_forge_v1_forge_proto_init() }
@@ -3179,7 +3288,7 @@ func file_forge_v1_forge_proto_init() {
 	if File_forge_v1_forge_proto != nil {
 		return
 	}
-	file_forge_v1_forge_proto_msgTypes[46].OneofWrappers = []any{
+	file_forge_v1_forge_proto_msgTypes[48].OneofWrappers = []any{
 		(*ParseWebhookResponse_Issue)(nil),
 		(*ParseWebhookResponse_Review)(nil),
 		(*ParseWebhookResponse_ReviewComment)(nil),
@@ -3190,7 +3299,7 @@ func file_forge_v1_forge_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_forge_v1_forge_proto_rawDesc), len(file_forge_v1_forge_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   52,
+			NumMessages:   54,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

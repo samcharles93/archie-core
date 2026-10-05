@@ -19,6 +19,7 @@ func (b *boot) taskActions() taskactions.Service {
 		taskactionstore.MaxRetries(b.cfgHolder),
 		b.cancelTask,
 		b.closeIssue,
+		b.closePR,
 		b.removeTaskLogs,
 		b.removeTaskWorktree,
 		b.publishEvent,
@@ -38,6 +39,13 @@ func (b *boot) closeIssue(ctx context.Context, owner, repo string, number int, c
 		return fmt.Errorf("forge is not configured")
 	}
 	return b.forgeClient.CloseIssue(ctx, owner, repo, number, comment)
+}
+
+func (b *boot) closePR(ctx context.Context, owner, repo string, number int, comment string) error {
+	if b.forgeClient == nil {
+		return fmt.Errorf("forge is not configured")
+	}
+	return b.forgeClient.ClosePR(ctx, owner, repo, number, comment)
 }
 
 func (b *boot) removeTaskLogs(id int64) error {

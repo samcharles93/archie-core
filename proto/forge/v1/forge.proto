@@ -24,6 +24,7 @@ service ForgeService {
 
   rpc CreatePR(CreatePRRequest) returns (CreatePRResponse);
   rpc PRState(PRStateRequest) returns (PRStateResponse);
+  rpc ClosePR(ClosePRRequest) returns (ClosePRResponse);
   rpc GetPullRequest(GetPullRequestRequest) returns (GetPullRequestResponse);
   rpc GetPullRequestDiff(GetPullRequestDiffRequest) returns (GetPullRequestDiffResponse);
   rpc ListReviews(ListReviewsRequest) returns (ListReviewsResponse);
@@ -90,6 +91,15 @@ message CloseIssueRequest {
   string comment = 3;
 }
 message CloseIssueResponse {}
+
+// ClosePRRequest closes a pull request without merging, after posting
+// comment when it is not empty.
+message ClosePRRequest {
+  RepoRef repo = 1;
+  int32 number = 2;
+  string comment = 3;
+}
+message ClosePRResponse {}
 
 message ReactRequest {
   RepoRef repo = 1;

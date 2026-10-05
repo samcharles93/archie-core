@@ -57,6 +57,10 @@ type PullRequestForge interface {
 
 	// PRState returns "open", "merged", or "closed" for a PR.
 	PRState(ctx context.Context, owner, repo string, number int) (string, error)
+
+	// ClosePR closes a pull request without merging, with an optional final
+	// comment.
+	ClosePR(ctx context.Context, owner, repo string, number int, comment string) error
 }
 
 // PullRequest is a forge-neutral summary of an existing pull request,

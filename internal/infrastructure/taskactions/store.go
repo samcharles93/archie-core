@@ -20,7 +20,7 @@ func (s Store) TaskByID(ctx context.Context, id int64) (*taskactions.Task, error
 	}
 	// A pinned definition that no longer parses offers no resume points.
 	stages, _ := workflow.StageNames(t.WorkflowDefinitionYAML)
-	return &taskactions.Task{ID: t.ID, Owner: t.Owner, Repo: t.Repo, Identity: t.Identity, Status: t.Status, ParkReason: t.ParkReason, IssueNumber: t.IssueNumber, RetryCount: t.RetryCount, Attempt: t.Attempt, Branch: t.Branch, RetryMode: t.RetryMode, ForgeBacked: t.IsForgeBacked(), ReviewGate: t.ReviewGate, RereviewRounds: t.RereviewRounds, Stages: stages}, nil
+	return &taskactions.Task{ID: t.ID, Owner: t.Owner, Repo: t.Repo, Identity: t.Identity, Status: t.Status, ParkReason: t.ParkReason, IssueNumber: t.IssueNumber, PRNumber: t.PRNumber, RetryCount: t.RetryCount, Attempt: t.Attempt, Branch: t.Branch, RetryMode: t.RetryMode, ForgeBacked: t.IsForgeBacked(), ReviewGate: t.ReviewGate, RereviewRounds: t.RereviewRounds, Stages: stages}, nil
 }
 
 // CancelExecution delegates to the store.

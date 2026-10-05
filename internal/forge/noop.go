@@ -45,6 +45,10 @@ func (n *NoopForge) CreatePR(ctx context.Context, owner, repo, title, head, base
 	return 0, nil
 }
 
+func (n *NoopForge) ClosePR(ctx context.Context, owner, repo string, number int, comment string) error {
+	return nil
+}
+
 func (n *NoopForge) PRState(ctx context.Context, owner, repo string, number int) (string, error) {
 	return "closed", nil
 }
