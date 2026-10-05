@@ -32,7 +32,7 @@ func (m *memPolicies) DeletePolicy(_ context.Context, p access.Policy) error {
 
 type oneOwnerOrg struct{}
 
-const testOrg org.OrgID = "default"
+const testOrg org.OrgID = "org-sys"
 
 func (oneOwnerOrg) ListOrgs(context.Context) ([]org.Org, error) { return []org.Org{{ID: testOrg}}, nil }
 

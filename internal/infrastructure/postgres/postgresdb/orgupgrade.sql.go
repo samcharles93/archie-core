@@ -12,7 +12,7 @@ import (
 
 const assignDefaultOrgIdentities = `-- name: AssignDefaultOrgIdentities :exec
 INSERT INTO org_agents (identity_id, org_id)
-SELECT id, 'default' FROM identities WHERE kind IN ('bot', 'service_account')
+SELECT id, 'org-sys' FROM identities WHERE kind IN ('bot', 'service_account')
 ON CONFLICT (identity_id) DO NOTHING
 `
 
@@ -23,7 +23,7 @@ func (q *Queries) AssignDefaultOrgIdentities(ctx context.Context) error {
 }
 
 const ensureDefaultOrg = `-- name: EnsureDefaultOrg :exec
-INSERT INTO orgs (id, name) VALUES ('default', 'Default')
+INSERT INTO orgs (id, name) VALUES ('org-sys', 'System')
 ON CONFLICT (id) DO NOTHING
 `
 
@@ -33,7 +33,7 @@ func (q *Queries) EnsureDefaultOrg(ctx context.Context) error {
 }
 
 const ensureDefaultWorkspace = `-- name: EnsureDefaultWorkspace :exec
-INSERT INTO workspaces (id, org_id, name) VALUES ('default', 'default', 'Default')
+INSERT INTO workspaces (id, org_id, name) VALUES ('default', 'org-sys', 'Default')
 ON CONFLICT (org_id, id) DO NOTHING
 `
 
@@ -68,7 +68,7 @@ func (q *Queries) InsertOrgUpgradePhase(ctx context.Context, phase string) error
 }
 
 const stampEdastoreBindings = `-- name: StampEdastoreBindings :execrows
-UPDATE bindings SET org_id = 'default', workspace_id = 'default' WHERE org_id = ''
+UPDATE bindings SET org_id = 'org-sys', workspace_id = 'default' WHERE org_id = ''
 `
 
 func (q *Queries) StampEdastoreBindings(ctx context.Context) (int64, error) {
@@ -80,7 +80,7 @@ func (q *Queries) StampEdastoreBindings(ctx context.Context) (int64, error) {
 }
 
 const stampEdastoreCaptures = `-- name: StampEdastoreCaptures :execrows
-UPDATE captures SET org_id = 'default', workspace_id = 'default' WHERE org_id = ''
+UPDATE captures SET org_id = 'org-sys', workspace_id = 'default' WHERE org_id = ''
 `
 
 func (q *Queries) StampEdastoreCaptures(ctx context.Context) (int64, error) {
@@ -92,7 +92,7 @@ func (q *Queries) StampEdastoreCaptures(ctx context.Context) (int64, error) {
 }
 
 const stampEdastoreEventTypes = `-- name: StampEdastoreEventTypes :execrows
-UPDATE event_types SET org_id = 'default', workspace_id = 'default' WHERE org_id = ''
+UPDATE event_types SET org_id = 'org-sys', workspace_id = 'default' WHERE org_id = ''
 `
 
 func (q *Queries) StampEdastoreEventTypes(ctx context.Context) (int64, error) {
@@ -104,7 +104,7 @@ func (q *Queries) StampEdastoreEventTypes(ctx context.Context) (int64, error) {
 }
 
 const stampEdastoreMappings = `-- name: StampEdastoreMappings :execrows
-UPDATE mappings SET org_id = 'default', workspace_id = 'default' WHERE org_id = ''
+UPDATE mappings SET org_id = 'org-sys', workspace_id = 'default' WHERE org_id = ''
 `
 
 func (q *Queries) StampEdastoreMappings(ctx context.Context) (int64, error) {
@@ -116,7 +116,7 @@ func (q *Queries) StampEdastoreMappings(ctx context.Context) (int64, error) {
 }
 
 const stampEdastoreSources = `-- name: StampEdastoreSources :execrows
-UPDATE sources SET org_id = 'default', workspace_id = 'default' WHERE org_id = ''
+UPDATE sources SET org_id = 'org-sys', workspace_id = 'default' WHERE org_id = ''
 `
 
 func (q *Queries) StampEdastoreSources(ctx context.Context) (int64, error) {
@@ -128,7 +128,7 @@ func (q *Queries) StampEdastoreSources(ctx context.Context) (int64, error) {
 }
 
 const stampEdastoreToolCalls = `-- name: StampEdastoreToolCalls :execrows
-UPDATE tool_calls SET org_id = 'default', workspace_id = 'default' WHERE org_id = ''
+UPDATE tool_calls SET org_id = 'org-sys', workspace_id = 'default' WHERE org_id = ''
 `
 
 func (q *Queries) StampEdastoreToolCalls(ctx context.Context) (int64, error) {
@@ -140,7 +140,7 @@ func (q *Queries) StampEdastoreToolCalls(ctx context.Context) (int64, error) {
 }
 
 const stampStateStoreEvents = `-- name: StampStateStoreEvents :execrows
-UPDATE events SET org_id = 'default', workspace_id = 'default' WHERE org_id = ''
+UPDATE events SET org_id = 'org-sys', workspace_id = 'default' WHERE org_id = ''
 `
 
 func (q *Queries) StampStateStoreEvents(ctx context.Context) (int64, error) {
@@ -152,7 +152,7 @@ func (q *Queries) StampStateStoreEvents(ctx context.Context) (int64, error) {
 }
 
 const stampStateStoreResourceHistory = `-- name: StampStateStoreResourceHistory :execrows
-UPDATE resource_history SET org_id = 'default' WHERE org_id = ''
+UPDATE resource_history SET org_id = 'org-sys' WHERE org_id = ''
 `
 
 func (q *Queries) StampStateStoreResourceHistory(ctx context.Context) (int64, error) {
@@ -164,7 +164,7 @@ func (q *Queries) StampStateStoreResourceHistory(ctx context.Context) (int64, er
 }
 
 const stampStateStoreResources = `-- name: StampStateStoreResources :execrows
-UPDATE resources SET org_id = 'default' WHERE org_id = ''
+UPDATE resources SET org_id = 'org-sys' WHERE org_id = ''
 `
 
 func (q *Queries) StampStateStoreResources(ctx context.Context) (int64, error) {
@@ -177,7 +177,7 @@ func (q *Queries) StampStateStoreResources(ctx context.Context) (int64, error) {
 
 const stampStateStoreTasks = `-- name: StampStateStoreTasks :execrows
 
-UPDATE tasks SET org_id = 'default', workspace_id = 'default' WHERE org_id = ''
+UPDATE tasks SET org_id = 'org-sys', workspace_id = 'default' WHERE org_id = ''
 `
 
 // The phase stamps: empty values are rows written before the default
@@ -192,7 +192,7 @@ func (q *Queries) StampStateStoreTasks(ctx context.Context) (int64, error) {
 }
 
 const stampStateStoreTransitions = `-- name: StampStateStoreTransitions :execrows
-UPDATE transitions SET org_id = 'default', workspace_id = 'default' WHERE org_id = ''
+UPDATE transitions SET org_id = 'org-sys', workspace_id = 'default' WHERE org_id = ''
 `
 
 func (q *Queries) StampStateStoreTransitions(ctx context.Context) (int64, error) {

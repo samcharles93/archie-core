@@ -19,7 +19,7 @@ type (
 // The org and workspace every record of a single-operator install, and every
 // record written before orgs existed, belongs to.
 const (
-	DefaultOrgID       OrgID       = "default"
+	DefaultOrgID       OrgID       = "org-sys"
 	DefaultWorkspaceID WorkspaceID = "default"
 )
 

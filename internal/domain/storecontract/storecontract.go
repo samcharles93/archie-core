@@ -528,7 +528,7 @@ const AuditTableResources = "resources"
 
 // DefaultOrgID is the org every resource written before orgs existed belongs
 // to, and the org a request that names none acts in.
-const DefaultOrgID = "default"
+const DefaultOrgID = "org-sys"
 
 // ResourceAuditKey is the sys_audit record key of one org's resource kind. The
 // default org keeps the bare kind, so audit rows written before resources were

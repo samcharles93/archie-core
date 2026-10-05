@@ -229,7 +229,7 @@ SELECT COALESCE(
 	(SELECT a.org_id FROM org_agents a WHERE a.identity_id = $1),
 	(SELECT m.org_id FROM memberships m WHERE m.identity_id = $1
 	 ORDER BY m.created_at, m.org_id, m.workspace_id NULLS LAST LIMIT 1),
-	'default'
+	'org-sys'
 )::text AS org_id
 `
 
