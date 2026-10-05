@@ -54,6 +54,8 @@ export interface TaskRecord {
   park_reason?: string;
   tokens_used?: number;
   actions?: string[];
+  review_gate?: string;
+  rereview_rounds?: number;
 }
 
 /** One stage of one attempt, as `GET /api/tasks/{id}/attempts` returns it. */

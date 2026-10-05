@@ -196,7 +196,7 @@ export function provideTaskRun(id: ComputedRef<number | null>): TaskRun {
 
   function loadTaskList(): void {
     if (id.value == null) return;
-    taskList.value = undefined;
+    // Keep the current gate mounted so a refresh preserves its selection.
     api
       .tasks<TaskRecord[]>()
       .then((res) => {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Ellipsis } from "@lucide/vue";
 import { computed, ref } from "vue";
+import { useRouter } from "vue-router";
 import { RadioGroupItem, RadioGroupRoot } from "reka-ui";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -35,6 +36,7 @@ import { api, classifyActionError, type ActionErrorKind } from "@/lib/api";
 import { actionFor, retryModes, type ActionMeta } from "@/lib/task-meta";
 import type { Task } from "./TaskRow.vue";
 import { shownActionIds } from "./task-actions";
+import { reviewGateOffer } from "./review-gate";
 import {
   initialRetryChoice,
   retryChoices,
@@ -64,9 +66,14 @@ const props = defineProps<{
   task: Task;
   /** Render only these action ids, still only if the server offered them. */
   only?: string[];
+  findings?: string[];
 }>();
 const emit = defineEmits<{ done: [taskId: Task["id"]] }>();
 
+const router = useRouter();
+const gate = computed(() => props.task.status === "waiting_human" ? reviewGateOffer(props.task.review_gate) : null);
+// An empty selection means all findings to the server.
+const approveDisabled = computed(() => !!gate.value && props.findings?.length === 0);
 const inFlight = ref(false);
 const error = ref<{ kind: ActionErrorKind; message: string } | null>(null);
 
@@ -178,6 +185,10 @@ function variantFor(kind: string): ControlVariant {
 // which its own dialog collects.
 function request(id: string) {
   error.value = null;
+  if (id === "approve" && gate.value && props.findings === undefined) {
+    void router.push(`/tasks/${props.task.id}`);
+    return;
+  }
   if (id === "rereview") {
     rereviewId.value = id;
     rereviewOpen.value = true;
@@ -202,8 +213,12 @@ function request(id: string) {
 
 async function run(
   id: string,
-  payload?: { instructions?: string; retry_mode?: string },
+  payload?: { instructions?: string; retry_mode?: string; findings?: string[] },
 ) {
+  if (id === "approve" && gate.value) {
+    if (!props.findings?.length) return;
+    payload = { ...payload, findings: props.findings };
+  }
   confirming.value = null;
   inFlight.value = true;
   error.value = null;
@@ -281,7 +296,7 @@ function requestFromMenu(id: string) {
         v-if="primaryControl"
         :variant="variantFor(primaryControl.kind)"
         size="sm"
-        :disabled="inFlight"
+        :disabled="inFlight || (primaryControl.id === 'approve' && approveDisabled)"
         @click.stop="request(primaryControl.id)"
       >
         {{ primaryControl.label }}
@@ -325,7 +340,7 @@ function requestFromMenu(id: string) {
             v-for="control in overflowControls"
             :key="control.id"
             :variant="control.kind === 'danger' ? 'destructive' : 'default'"
-            :disabled="inFlight"
+            :disabled="inFlight || (control.id === 'approve' && approveDisabled)"
             @click.stop="requestFromMenu(control.id)"
           >
             {{ control.label }}

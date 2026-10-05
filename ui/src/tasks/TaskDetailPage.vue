@@ -8,6 +8,7 @@ import { Tabs } from "@/components/ui/tabs";
 import TabBar from "./TabBar.vue";
 import TaskDetailNotice from "./TaskDetailNotice.vue";
 import TaskHeader from "./TaskHeader.vue";
+import TaskReviewGate from "./TaskReviewGate.vue";
 import TaskNotes from "./TaskNotes.vue";
 import TaskRunPanels from "./TaskRunPanels.vue";
 import TaskRail from "./TaskRail.vue";
@@ -48,6 +49,7 @@ const run = provideTaskRun(taskId);
   <div v-else>
     <TaskHeader :id="rawId" />
     <TaskNotes :id="rawId" />
+    <TaskReviewGate v-if="run.task" :task="run.task" @done="run.refreshAll()" />
 
     <div class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <Card class="min-w-0">
