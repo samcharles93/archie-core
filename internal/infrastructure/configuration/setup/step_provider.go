@@ -28,10 +28,6 @@ var cloudProviders = []cloudProvider{
 	{name: "Mistral", class: "mistral", apiKeyEnv: "MISTRAL_API_KEY"},
 }
 
-// templateDefaultActiveProvider is the provider config.example.toml enables
-// by default. Setup replaces that table unless OpenAI is chosen with a key.
-const templateDefaultActiveProvider = "openai"
-
 func stepProvider(ctx context.Context, p Prompter, discovery ModelDiscovery, secrets SecretSink, params Params) (tableEdits, string, error) {
 	options := make([]string, 0, len(cloudProviders)+1)
 	for _, cp := range cloudProviders {
@@ -54,26 +50,13 @@ func stepProvider(ctx context.Context, p Prompter, discovery ModelDiscovery, sec
 		}
 	}
 
-	var edits tableEdits
-	var model string
-	var err error
 	if choice == len(cloudProviders) {
 		if params.ProviderAPIKeyRef != (config.SecretRef{}) {
 			return nil, "", fmt.Errorf("setup: a provider key reference was given, but the self-hosted provider is keyless, so nothing would use it")
 		}
-		edits, model, err = stepSelfHostedModel(ctx, p, discovery, params.Model)
-	} else {
-		edits, model, err = stepCloudProvider(ctx, p, secrets, cloudProviders[choice], params.Model, params.ProviderAPIKeyRef)
+		return stepSelfHostedModel(ctx, p, discovery, params.Model)
 	}
-	if err != nil {
-		return nil, "", err
-	}
-
-	openaiTable := "providers." + templateDefaultActiveProvider
-	if _, chosenOpenAI := edits[openaiTable]; !chosenOpenAI {
-		edits[openaiTable] = map[string]string{"api_key": tomlwrite.Ref("", "")}
-	}
-	return edits, model, nil
+	return stepCloudProvider(ctx, p, secrets, cloudProviders[choice], params.Model, params.ProviderAPIKeyRef)
 }
 
 // providerChoice maps a typed Params.Provider class to the same select index
@@ -150,13 +133,6 @@ func cloudKeyEdit(ctx context.Context, p Prompter, secrets SecretSink, cp cloudP
 		return "", fmt.Errorf("setup: %s api key: %w", cp.name, err)
 	}
 	if strings.TrimSpace(key) == "" {
-		if cp.class == templateDefaultActiveProvider {
-			// Skipping the key normally means "configure later" and leaves
-			// api_key untouched -- but for openai specifically that would leave
-			// the template's own unresolvable bws default active. See
-			// templateDefaultActiveProvider.
-			return tomlwrite.Ref("", ""), nil
-		}
 		return "", nil
 	}
 	if err := secrets.Put("env", cp.apiKeyEnv, key); err != nil {

@@ -4,6 +4,8 @@ package setup
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -32,9 +34,10 @@ type ModelDiscovery interface {
 // ExistingValues prefills prompts on a re-run. The zero value is correct
 // for a fresh install.
 type ExistingValues struct {
-	BotUser   string
-	Operator  string
-	ForgeHost string
+	BotUser     string
+	Operator    string
+	ForgeHost   string
+	DatabaseURL string
 }
 
 // tableEdits groups pending edits by table before Run flattens them into
@@ -45,12 +48,13 @@ type tableEdits = map[string]map[string]string
 // Params pre-answers setup questions; a step prompts only for unset fields.
 // Provider is a config class; Model is the bare model name.
 type Params struct {
-	BotUser   string
-	Operator  string
-	ForgeType string // github | gitea | none
-	ForgeHost string
-	Provider  string // openai | anthropic | openrouter | gemini | groq | deepseek | mistral | ollama
-	Model     string // bare model name; the step adds the "class/" prefix
+	DatabaseURL string
+	BotUser     string
+	Operator    string
+	ForgeType   string // github | gitea | none
+	ForgeHost   string
+	Provider    string // openai | anthropic | openrouter | gemini | groq | deepseek | mistral | ollama
+	Model       string // bare model name; the step adds the "class/" prefix
 
 	// TelegramUserIDs non-empty configures Telegram. The reference fields name
 	// already-stored secrets as engine:key; when set, the step writes the
@@ -83,6 +87,12 @@ func RunParams(ctx context.Context, p Prompter, discovery ModelDiscovery, secret
 			}
 		}
 	}
+
+	dbURL, err := stepDatabase(ctx, p, secrets, existing.DatabaseURL, params.DatabaseURL)
+	if err != nil {
+		return nil, err
+	}
+	add(tableEdits{"": {"database_url": tomlwrite.String(dbURL)}})
 
 	botUser := params.BotUser
 	if strings.TrimSpace(botUser) == "" {
@@ -131,4 +141,33 @@ func RunParams(ctx context.Context, p Prompter, discovery ModelDiscovery, secret
 	add(chatEdits)
 
 	return edits, nil
+}
+
+// stepDatabase returns the PostgreSQL URL. A blank answer on a fresh install
+// means the bundled Compose database with a generated password, which goes to
+// the env file as POSTGRES_PASSWORD for Compose to initialise it with.
+func stepDatabase(ctx context.Context, p Prompter, secrets SecretSink, existing, param string) (string, error) {
+	if strings.TrimSpace(param) != "" {
+		return param, nil
+	}
+	prompt := "PostgreSQL 18 URL (blank for the bundled database with a generated password): "
+	if existing != "" {
+		prompt = "PostgreSQL 18 URL: "
+	}
+	url, err := p.ReadLine(ctx, prompt, existing)
+	if err != nil {
+		return "", fmt.Errorf("setup: database url: %w", err)
+	}
+	if strings.TrimSpace(url) != "" {
+		return url, nil
+	}
+	pw := make([]byte, 24)
+	if _, err := rand.Read(pw); err != nil {
+		return "", fmt.Errorf("setup: generate database password: %w", err)
+	}
+	password := hex.EncodeToString(pw)
+	if err := secrets.Put("env", "POSTGRES_PASSWORD", password); err != nil {
+		return "", fmt.Errorf("setup: store database password: %w", err)
+	}
+	return "postgres://archie:" + password + "@127.0.0.1:5432/archie?sslmode=disable", nil
 }

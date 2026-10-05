@@ -52,6 +52,7 @@ func IsSetupArgs(args []string) bool {
 // environment variable is consulted.
 type setupFlags struct {
 	cfgPath           string
+	databaseURL       string
 	defaults          bool
 	botUser           string
 	operator          string
@@ -69,6 +70,7 @@ func bindSetupFlags(fs *flag.FlagSet) *setupFlags {
 	f := &setupFlags{}
 	fs.StringVar(&f.cfgPath, "config", configuration.DefaultConfigPath(), "path to write config.toml")
 	fs.BoolVar(&f.defaults, "defaults", false, "write a known-valid unattended baseline config without prompting")
+	fs.StringVar(&f.databaseURL, "database-url", "", "PostgreSQL 18 connection URL")
 	fs.StringVar(&f.botUser, "bot-user", "", "forge username for archied's commits and API calls")
 	fs.StringVar(&f.operator, "operator", "", "operator display name (optional)")
 	fs.StringVar(&f.forgeType, "forge-type", "", "forge type: github | gitea | none")
@@ -91,6 +93,9 @@ func (f *setupFlags) params() (setup.Params, error) {
 	var params setup.Params
 	if f.defaults {
 		params = defaultsParams()
+	}
+	if f.databaseURL != "" {
+		params.DatabaseURL = f.databaseURL
 	}
 	if f.botUser != "" {
 		params.BotUser = f.botUser
@@ -168,9 +173,10 @@ func existingConfig(loader *configuration.Loader, path string) ([]byte, setup.Ex
 	var existing setup.ExistingValues
 	if doc, err := loader.File(path); err == nil {
 		existing = setup.ExistingValues{
-			BotUser:   doc.Config.BotUser,
-			Operator:  doc.Config.Chat.Operator,
-			ForgeHost: doc.Config.Forge.Host,
+			BotUser:     doc.Config.BotUser,
+			Operator:    doc.Config.Chat.Operator,
+			ForgeHost:   doc.Config.Forge.Host,
+			DatabaseURL: doc.Config.DatabaseURL,
 		}
 	}
 	return base, existing, nil

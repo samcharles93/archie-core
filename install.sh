@@ -202,209 +202,31 @@ echo "==> Building native archie binaries..."
 )
 echo "  Installed archied, archie-gateway, archie-state-store, archie-ui, archie-messaging and updater to ${ARCHIE_BIN_DIR}/"
 
-# 5. Interactive Configuration: Forge & LLM Provider Setup
-if [ ! -f "${ENV_FILE}" ]; then
-  touch "${ENV_FILE}"
-  chmod 600 "${ENV_FILE}"
-fi
-
-# read_secret prompts without echoing. A token typed at a visible prompt stays
-# in terminal scrollback and in any screen recording, so it is never echoed
-# even though that costs the usual typo feedback.
-read_secret() {
-  local prompt="$1" varname="$2" value=""
-  read -rsp "${prompt}" value || value=""
-  echo >&2
-  printf -v "${varname}" '%s' "${value}"
-}
-
-# set_env_key writes KEY=value to the env file, replacing any existing entry.
-# Appending meant a second install run left the revoked token above the new one
-# and grew the file without bound.
-set_env_key() {
-  local key="$1" value="$2" tmp
-  tmp="$(mktemp "${ARCHIE_CONFIG_DIR}/.env.XXXXXX")"
-  chmod 600 "${tmp}"
-  if [ -f "${ENV_FILE}" ]; then
-    grep -v "^${key}=" "${ENV_FILE}" > "${tmp}" || true
-  fi
-  # Single quotes with embedded-quote escaping: systemd's EnvironmentFile takes
-  # the value literally, so a token containing " or \ must not be re-quoted.
-  printf "%s='%s'\n" "${key}" "${value//\'/\'\\\'\'}" >> "${tmp}"
-  mv "${tmp}" "${ENV_FILE}"
-  chmod 600 "${ENV_FILE}"
-}
-
-# Detect existing environment keys
-FOUND_ENV_KEYS=()
-[ -n "${OPENAI_API_KEY:-}" ] && FOUND_ENV_KEYS+=("OpenAI")
-[ -n "${ANTHROPIC_API_KEY:-}" ] && FOUND_ENV_KEYS+=("Anthropic")
-[ -n "${OPENROUTER_API_KEY:-}" ] && FOUND_ENV_KEYS+=("OpenRouter")
-[ -n "${GEMINI_API_KEY:-}" ] && FOUND_ENV_KEYS+=("Gemini")
-[ -n "${GROQ_API_KEY:-}" ] && FOUND_ENV_KEYS+=("Groq")
-[ -n "${DEEPSEEK_API_KEY:-}" ] && FOUND_ENV_KEYS+=("DeepSeek")
-[ -n "${MISTRAL_API_KEY:-}" ] && FOUND_ENV_KEYS+=("Mistral")
-
-# Detect local LLM binaries
-FOUND_OLLAMA=false
-FOUND_LLAMA_SERVER=false
-command -v ollama &>/dev/null && FOUND_OLLAMA=true
-command -v llama-server &>/dev/null && FOUND_LLAMA_SERVER=true
-
-FORGE_TYPE="github"
-GITEA_URL="https://gitea.example.com"
-SELF_HOST_LLM=false
-OLLAMA_MODEL=""
-CLOUD_MODEL=""
-
-if [ "${INTERACTIVE}" = true ]; then
-  echo ""
-  echo "------------------------------------------------------------"
-  echo "  Step 1: Code Forge Configuration (GitHub / Gitea / Standalone)"
-  echo "------------------------------------------------------------"
-  echo "Do you want to configure a code forge to watch for issues/PRs?"
-  echo "  1) GitHub (Default - recommended for GitHub repos)"
-  echo "  2) Gitea  (Self-hosted Gitea instance)"
-  echo "  3) None   (Run Archie in standalone mode without forge polling)"
-  read -rp "Select option [1-3, default=1]: " forge_option || forge_option="1"
-  forge_option="${forge_option:-1}"
-
-  case "${forge_option}" in
-    1)
-      FORGE_TYPE="github"
-      echo "  See docs/github-token.md for instructions (Note: Archie requires a Classic PAT, ghp_...)."
-      read_secret "Enter ARCHIE_GITHUB_TOKEN (leave blank to configure later): " gh_token_input
-      if [ -n "${gh_token_input}" ]; then
-        set_env_key ARCHIE_GITHUB_TOKEN "${gh_token_input}"
-      fi
-      ;;
-    2)
-      FORGE_TYPE="gitea"
-      read -rp "Enter Gitea Base URL [https://gitea.example.com]: " gitea_url_input || gitea_url_input=""
-      GITEA_URL="${gitea_url_input:-https://gitea.example.com}"
-      read_secret "Enter ARCHIE_GITEA_TOKEN (leave blank to configure later): " gitea_token_input
-      if [ -n "${gitea_token_input}" ]; then
-        set_env_key ARCHIE_GITEA_TOKEN "${gitea_token_input}"
-      fi
-      # Copy Gitea plugin scripts if available
-      if [ -d "${SRC_DIR}/extras/gitea" ]; then
-        cp -rn "${SRC_DIR}/extras/gitea/"* "${ARCHIE_DATA_DIR}/plugins/" 2>/dev/null || true
-      fi
-      ;;
-    3)
-      FORGE_TYPE="none"
-      echo "  Forge polling disabled. Archie will run in standalone mode."
-      ;;
-  esac
-
-  echo ""
-  echo "------------------------------------------------------------"
-  echo "  Step 2: LLM Provider Configuration"
-  echo "------------------------------------------------------------"
-
-  if [ "${FOUND_OLLAMA}" = true ] || [ "${FOUND_LLAMA_SERVER}" = true ]; then
-    echo "Detected local LLM engines on your system:"
-    [ "${FOUND_OLLAMA}" = true ] && echo "  - Ollama"
-    [ "${FOUND_LLAMA_SERVER}" = true ] && echo "  - llama-server"
-    echo ""
-    read -rp "Do you want Archie to use a self-hosted local LLM? [y/N]: " self_host_choice || self_host_choice="n"
-    if [[ "${self_host_choice}" =~ ^[Yy] ]]; then
-      SELF_HOST_LLM=true
-    fi
-  else
-    read -rp "Do you want to set up Archie with a self-hosted local LLM (Ollama / llama.cpp)? [y/N]: " self_host_choice || self_host_choice="n"
-    if [[ "${self_host_choice}" =~ ^[Yy] ]]; then
-      SELF_HOST_LLM=true
-    fi
-  fi
-
-  if [ "${SELF_HOST_LLM}" = true ]; then
-    if [ "${FOUND_OLLAMA}" = true ]; then
-      echo "Querying installed Ollama models ('ollama list')..."
-      OLLAMA_MODELS=($(ollama list 2>/dev/null | tail -n +2 | awk '{print $1}'))
-
-      if [ ${#OLLAMA_MODELS[@]} -gt 0 ]; then
-        echo "Installed Ollama models found:"
-        for idx in "${!OLLAMA_MODELS[@]}"; do
-          echo "  $((idx+1))) ${OLLAMA_MODELS[$idx]}"
-        done
-        read -rp "Select model number [1-${#OLLAMA_MODELS[@]}, default=1]: " model_idx || model_idx="1"
-        model_idx="${model_idx:-1}"
-        selected_i=$((model_idx - 1))
-        if [ ${selected_i} -ge 0 ] && [ ${selected_i} -lt ${#OLLAMA_MODELS[@]} ]; then
-          OLLAMA_MODEL="${OLLAMA_MODELS[$selected_i]}"
-          echo "Selected model: ${OLLAMA_MODEL}"
-        fi
-      else
-        echo "No models found in Ollama yet."
-        read -rp "Enter model name to pull or use (e.g. llama3 or qwen2.5:7b): " OLLAMA_MODEL || OLLAMA_MODEL="llama3"
-      fi
-    else
-      echo "Ollama is not currently found on \$PATH."
-      echo "Install Ollama from https://ollama.com and pull a model (e.g. 'ollama pull llama3')."
-      read -rp "Enter model name to configure (default: llama3): " OLLAMA_MODEL || OLLAMA_MODEL="llama3"
-    fi
-  fi
-
-  # A cloud provider needs a model name. archied setup requires one, and the
-  # installer previously emitted no [models] at all on this path.
-  if [ "${SELF_HOST_LLM}" = false ]; then
-    read -rp "Model name for OpenAI (e.g. gpt-5.4): " CLOUD_MODEL || CLOUD_MODEL=""
-    CLOUD_MODEL="${CLOUD_MODEL:-gpt-5.4}"
-  fi
-
-  # Prompt for cloud provider key if not self-hosting and no keys detected
-  if [ "${SELF_HOST_LLM}" = false ] && [ ${#FOUND_ENV_KEYS[@]} -eq 0 ]; then
-    echo "No existing cloud provider API keys were detected."
-    read_secret "Enter OPENAI_API_KEY (leave blank to configure later): " openai_key_input
-    if [ -n "${openai_key_input}" ]; then
-      set_env_key OPENAI_API_KEY "${openai_key_input}"
-      FOUND_ENV_KEYS+=("OpenAI")
-    fi
-  fi
-fi
-
-# Generate config.toml through archied setup rather than here.
-#
-# archied setup renders the config, so the code writing it is the code that
-# reads it.
-#
-# The answers collected above are passed as parameters. Secrets are passed as
-# REFERENCES to the env keys set_env_key just wrote, never as values: a value on a
-# command line lands in shell history and every process listing, and would be a
-# second way to set a secret that no secret engine knows about.
+# 5. Configuration. archied setup asks every question and writes config.toml
+# plus any secrets to the env file beside it; this script asks nothing itself.
 if [ ! -f "${ARCHIE_CONFIG_DIR}/config.toml" ]; then
-  echo "==> Generating initial config.toml..."
-  setup_args=(--defaults -config "${ARCHIE_CONFIG_DIR}/config.toml" -forge-type "${FORGE_TYPE}")
-  case "${FORGE_TYPE}" in
-    github)
-      setup_args+=(-forge-secret-ref env:ARCHIE_GITHUB_TOKEN)
-      ;;
-    gitea)
-      setup_args+=(-forge-host "${GITEA_URL}" -forge-secret-ref env:ARCHIE_GITEA_TOKEN)
-      ;;
-  esac
-  if [ "${SELF_HOST_LLM}" = true ]; then
-    setup_args+=(-provider ollama -model "${OLLAMA_MODEL}")
+  echo "==> Generating config.toml (archied setup)..."
+  if [ "${INTERACTIVE}" = true ]; then
+    setup_args=(-config "${ARCHIE_CONFIG_DIR}/config.toml")
   else
-    # Reference the key in the env file, so the config keeps working if the
-    # operator adds it later. With no key present archied disables that provider
-    # and says so, rather than leaving the daemon unable to start.
-    setup_args+=(-provider openai -model "${CLOUD_MODEL}" -provider-secret-ref env:OPENAI_API_KEY)
+    # Unattended: no forge and keyless Ollama, so the services boot without a secret.
+    setup_args=(--defaults -config "${ARCHIE_CONFIG_DIR}/config.toml" -forge-type none)
   fi
   if ! "${ARCHIE_BIN_DIR}/archied" setup "${setup_args[@]}"; then
     echo "ERROR: archied setup could not generate ${ARCHIE_CONFIG_DIR}/config.toml" >&2
     exit 1
   fi
 else
-  echo "  [SKIP] ${ARCHIE_CONFIG_DIR}/config.toml already exists (preserving user config)."
+  echo "  [SKIP] ${ARCHIE_CONFIG_DIR}/config.toml already exists. Re-run 'archied setup' to change it."
 fi
 
-# Every service fails closed without PostgreSQL. The generated database_url
-# matches the Compose postgres service, so start it when Docker can.
-if command -v docker &>/dev/null && [ -f "${SRC_DIR}/docker-compose.yml" ]; then
+# Every service fails closed without PostgreSQL. The default database_url is
+# the Compose postgres service, so start it when the config still uses it.
+if ! grep -qF '@127.0.0.1:5432/archie' "${ARCHIE_CONFIG_DIR}/config.toml"; then
+  echo "  [OK] Using the PostgreSQL server named by database_url."
+elif command -v docker &>/dev/null && [ -f "${SRC_DIR}/docker-compose.yml" ]; then
   echo "==> Starting PostgreSQL 18 (docker compose up -d postgres)..."
-  docker compose -f "${SRC_DIR}/docker-compose.yml" up -d postgres ||
+  docker compose --env-file "${ENV_FILE}" -f "${SRC_DIR}/docker-compose.yml" up -d postgres ||
     echo "  [WARN] Could not start PostgreSQL. Start it before the services, or point database_url at your own PostgreSQL 18."
 else
   echo "  [WARN] Docker not found: point database_url in ${ARCHIE_CONFIG_DIR}/config.toml at a PostgreSQL 18 server before starting the services."
@@ -576,13 +398,6 @@ echo "  - Agent image: ghcr.io/samcharles93/archie-agent:latest"
 echo "  - Config     : ${ARCHIE_CONFIG_DIR}/config.toml"
 echo "  - Secrets    : ${ENV_FILE}"
 echo "  - Data       : ${ARCHIE_DATA_DIR}/"
-echo "  - Forge Mode : ${FORGE_TYPE}"
-
-if [ "${SELF_HOST_LLM}" = true ] && [ -n "${OLLAMA_MODEL}" ]; then
-  echo "  - LLM Model  : ollama/${OLLAMA_MODEL}"
-elif [ ${#FOUND_ENV_KEYS[@]} -gt 0 ]; then
-  echo "  - LLM Keys   : Found (${FOUND_ENV_KEYS[*]})"
-fi
 echo ""
 
 # Check PATH
@@ -593,26 +408,6 @@ if [[ ":$PATH:" != *":${ARCHIE_BIN_DIR}:"* ]]; then
   echo ""
 fi
 
-if [ "${SELF_HOST_LLM}" = false ] && [ ${#FOUND_ENV_KEYS[@]} -eq 0 ] && ! grep -q "=" "${ENV_FILE}" 2>/dev/null; then
-  echo "============================================================"
-  echo "  Notice: LLM Provider Configuration Needed"
-  echo "============================================================"
-  echo "No LLM provider keys or local models were configured yet."
-  echo "Archie requires an LLM provider to run workflows."
-  echo ""
-  echo "To finish configuration:"
-  echo "  1. For Cloud Providers (OpenAI, Anthropic, OpenRouter, etc.):"
-  echo "     Add your API key to ${ENV_FILE}:"
-  echo "       OPENAI_API_KEY=\"sk-...\""
-  echo "  2. For Local LLMs (Ollama):"
-  echo "     Install Ollama (https://ollama.com), run 'ollama pull llama3',"
-  echo "     and set [models] in ${ARCHIE_CONFIG_DIR}/config.toml to 'ollama/llama3'."
-  echo ""
-  echo "See documentation: ${SRC_DIR}/docs/github-token.md"
-  echo "============================================================"
-  echo ""
-fi
-
 if [ "${SERVICE_INSTALLED}" = true ] && [ "${AUTO_START}" = true ]; then
   echo "Service Management:"
   echo "  - Units installed   : archied archie-state-store archie-gateway archie-ui archie-messaging"
@@ -620,8 +415,8 @@ if [ "${SERVICE_INSTALLED}" = true ] && [ "${AUTO_START}" = true ]; then
   echo "  - Service status    : systemctl --user status archied archie-state-store archie-gateway archie-ui archie-messaging"
   echo "  - Restart daemon    : systemctl --user restart archied"
 else
-  echo "Manual Startup:"
-  echo "  1. Add tokens to ${ENV_FILE} or ${ARCHIE_CONFIG_DIR}/config.toml"
-  echo "  2. Run daemon       : archied"
+  echo "Manual Startup: start the five services as in ${SRC_DIR}/deployments/README.md"
 fi
+echo ""
+echo "Dashboard: http://127.0.0.1:8484   Change the config: archied setup"
 echo ""

@@ -106,10 +106,13 @@ local [Ollama](https://ollama.com) or a hosted provider API key.
    ./install.sh
    ```
 
-   It builds the five services into `~/.local/bin`, asks for a forge (choose
-   **None** if you only want event-driven automation) and a model, writes
-   `~/.config/archie/config.toml`, starts PostgreSQL with Docker Compose, and
-   installs and starts systemd user units. Use `--no-systemd` to run the
+   It builds the five services into `~/.local/bin`, then runs `archied setup`,
+   which asks for the PostgreSQL URL (the default is the bundled Compose
+   database), a model provider and key, and a forge (choose **none** for
+   event-driven automation only). Answers go to `~/.config/archie/config.toml`
+   and keys to `~/.config/archie/env`. It then starts PostgreSQL with Docker
+   Compose when you kept the default, and installs and starts systemd user
+   units. Re-run `archied setup` at any time to change the answers. Use `--no-systemd` to run the
    processes yourself. A prebuilt release archive works too; its
    `INSTRUCTIONS.md` covers that path.
 
