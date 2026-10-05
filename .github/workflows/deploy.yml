@@ -98,6 +98,11 @@ jobs:
       - name: Install ripgrep
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep
 
+      # Extensions run in an unprivileged user and network namespace, which
+      # Ubuntu 24.04 runners forbid through AppArmor by default.
+      - name: Allow unprivileged user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       - name: Quality gate
         run: |
           # The formatter sequence has one owner: task fmt, which drives go fix
@@ -345,7 +350,7 @@ jobs:
           for cmd in $(jq -r '.required_topology.units[]' release.json); do
             cp "dist/$cmd" "$name/"
           done
-          cp deployments/INSTRUCTIONS.md CHANGELOG.md "$name/"
+          cp deployments/INSTRUCTIONS.md CHANGELOG.md docker-compose.yml "$name/"
           cp scripts/archie-update-* "$name/"
           digest='${{ needs.build-and-push.outputs.agent_digest }}'
           test -n "$digest"
