@@ -8,15 +8,36 @@ import {
 
 export type { NavEntry, NavGroup, NavLink, NavNode } from "./nav-tree";
 
-const table = routes as Array<NavRoute & { meta?: { navPath?: string } }>;
+interface NavRouteNode extends NavRoute {
+  meta?: {
+    label?: string;
+    description?: string;
+    section?: string;
+    soon?: boolean;
+    navPath?: string;
+  };
+  children?: NavRouteNode[];
+}
 
-// Five places. Configuration lives under Settings, grouped the way the
+// A nested route is still a destination: an Org tab has to resolve the nav
+// entry that keeps Org current.
+function flattenRoutes(list: NavRouteNode[]): NavRouteNode[] {
+  return list.flatMap((route) => [
+    route,
+    ...flattenRoutes(route.children ?? []),
+  ]);
+}
+
+const table = flattenRoutes(routes as NavRouteNode[]);
+
+// Six places. Configuration lives under Settings, grouped the way the
 // settings sidebar groups it (docs/design/ui-redesign/README.md, section 2).
 const specs: NavSpec[] = [
   { kind: "link", path: "/" },
   { kind: "link", path: "/tasks" },
   { kind: "link", path: "/workflows" },
   { kind: "link", path: "/events" },
+  { kind: "link", path: "/org" },
   { kind: "link", path: "/settings" },
 ];
 
@@ -43,8 +64,6 @@ const settings: NavSpec = {
       paths: [
         "/settings/channels",
         "/settings/repositories",
-        "/settings/identities",
-        "/settings/access-policies",
         "/settings/tools",
         "/settings/extensions",
         "/settings/plugins",

@@ -52,10 +52,7 @@ function addIdentity() {
 
 <template>
   <section class="mb-8" aria-labelledby="identity-grants">
-    <h2 id="identity-grants" class="mb-1 text-sm font-medium">Credential grants</h2>
-    <p class="mb-3 text-xs text-fg-subtle">
-      The credential services each identity may use, comma separated. A named identity's list replaces the root's.
-    </p>
+    <h2 id="identity-grants" class="mb-3 text-sm font-medium">Credential grants</h2>
     <p v-if="error" role="alert" class="mb-3 text-sm text-danger">{{ error }}</p>
     <div v-if="grants" class="divide-y divide-border rounded-lg border border-border bg-card">
       <label class="flex items-center gap-3 px-4 py-2.5">

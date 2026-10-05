@@ -5,6 +5,12 @@ import CuratorsPage from "@/curators/CuratorsPage.vue";
 import DashboardPage from "@/dashboard/DashboardPage.vue";
 import EventsPage from "@/events/EventsPage.vue";
 import LogsPage from "@/logs/LogsPage.vue";
+import OrgShell from "@/org/OrgShell.vue";
+import OrgMembersPage from "@/org/OrgMembersPage.vue";
+import OrgAgentsPage from "@/org/OrgAgentsPage.vue";
+import OrgWorkspacesPage from "@/org/OrgWorkspacesPage.vue";
+import OrgAccessPage from "@/org/OrgAccessPage.vue";
+import OrgTokensPage from "@/org/OrgTokensPage.vue";
 import SchedulingPolicyPage from "@/settings/SchedulingPolicyPage.vue";
 import ReviewSettingsPage from "@/settings/ReviewSettingsPage.vue";
 import ToolsPage from "@/settings/ToolsPage.vue";
@@ -15,8 +21,6 @@ import SchedulesPage from "@/settings/SchedulesPage.vue";
 import ExtensionsPage from "@/settings/ExtensionsPage.vue";
 import PluginsPage from "@/settings/PluginsPage.vue";
 import ContainerRuntimePage from "@/settings/ContainerRuntimePage.vue";
-import SystemIdentitiesPage from "@/settings/SystemIdentitiesPage.vue";
-import AccessPoliciesPage from "@/settings/AccessPoliciesPage.vue";
 import SystemAppearancePage from "@/settings/SystemAppearancePage.vue";
 import SystemModelsPage from "@/settings/SystemModelsPage.vue";
 import SystemReposPage from "@/settings/SystemReposPage.vue";
@@ -178,29 +182,49 @@ const routes = [
     },
   },
   {
-    path: "/settings/identities",
-    name: "system-identities",
-    component: SystemIdentitiesPage,
+    path: "/org",
+    component: OrgShell,
     meta: {
-      navPath: "/settings",
-      settings: true,
-      label: "Identities",
-      description: "Persistent actors and lifecycle.",
-      section: "settings",
+      label: "Org",
+      description: "Your org: members, agents, workspaces, access and tokens.",
+      navPath: "/org",
     },
+    children: [
+      {
+        path: "",
+        name: "org-members",
+        component: OrgMembersPage,
+        meta: { label: "Members", navPath: "/org" },
+      },
+      {
+        path: "agents",
+        name: "org-agents",
+        component: OrgAgentsPage,
+        meta: { label: "Agents", navPath: "/org" },
+      },
+      {
+        path: "workspaces",
+        name: "org-workspaces",
+        component: OrgWorkspacesPage,
+        meta: { label: "Workspaces", navPath: "/org" },
+      },
+      {
+        path: "access",
+        name: "org-access",
+        component: OrgAccessPage,
+        meta: { label: "Access", navPath: "/org" },
+      },
+      {
+        path: "tokens",
+        name: "org-tokens",
+        component: OrgTokensPage,
+        meta: { label: "Tokens", navPath: "/org" },
+      },
+    ],
   },
-  {
-    path: "/settings/access-policies",
-    name: "access-policies",
-    component: AccessPoliciesPage,
-    meta: {
-      navPath: "/settings",
-      settings: true,
-      label: "Access policies",
-      description: "Who may do what, written as Cedar policies.",
-      section: "settings",
-    },
-  },
+  // Identities and access policies moved into Org; old bookmarks still resolve.
+  { path: "/settings/identities", redirect: "/org/agents", meta: { nav: false } },
+  { path: "/settings/access-policies", redirect: "/org/access", meta: { nav: false } },
   {
     path: "/settings/channels",
     name: "channels",
@@ -362,7 +386,7 @@ const routes = [
     "/system/tasks": "/settings/task-execution",
     "/system/models": "/settings/models",
     "/system/repos": "/settings/repositories",
-    "/system/identities": "/settings/identities",
+    "/system/identities": "/org/agents",
     "/channels": "/settings/channels",
     "/skills": "/settings/skills",
     "/curators": "/settings/curators",

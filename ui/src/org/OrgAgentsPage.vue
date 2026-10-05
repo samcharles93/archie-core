@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref } from "vue";
 import { Bot, KeyRound, Plus, ShieldCheck, User } from "@lucide/vue";
 
 import PageHeader from "@/base/PageHeader.vue";
 import IdentityGrantsCard from "@/settings/IdentityGrantsCard.vue";
-import PersonalTokensCard from "@/settings/PersonalTokensCard.vue";
+import SettingsSaveBar from "@/settings/SettingsSaveBar.vue";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,10 +26,49 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { StatusPill } from "@/components/ui/status-pill";
+import { api } from "@/lib/api";
 import { useIdentitiesStore, type Identity } from "@/stores/identities";
+import { loadOrg, org, type Member } from "./org";
 
+/**
+ * The org's agents and service accounts: their lifecycle, and the org each
+ * serves. Credential grants are the control-plane draft below, so the settings
+ * save bar rides along with it.
+ *
+ * An agent's assignment is not readable over the API; the org's member list is,
+ * and a bot or service account is a member of the org it serves. The badge
+ * reads that, and Assign writes the assignment directly.
+ */
 const store = useIdentitiesStore();
 store.watch();
+
+const serves = ref(new Set<string>());
+const error = ref("");
+const busy = ref("");
+
+async function load(): Promise<void> {
+  if (!org.value) return;
+  try {
+    const response = await api.orgMembers<{ members: Member[] }>(org.value.id);
+    serves.value = new Set(
+      response.members
+        .filter((m) => !m.workspace_id)
+        .map((m) => m.identity_id),
+    );
+  } catch (cause) {
+    error.value = String((cause as Error).message || cause);
+  }
+}
+
+onMounted(async () => {
+  try {
+    await loadOrg();
+  } catch (cause) {
+    error.value = String((cause as Error).message || cause);
+    return;
+  }
+  await load();
+});
 
 const name = ref("");
 const kind = ref<Identity["kind"]>("bot");
@@ -51,6 +90,20 @@ async function finishRename(value: Identity) {
   if (next && next !== value.display_name) await store.command(value, "rename", next);
 }
 
+async function assign(value: Identity): Promise<void> {
+  if (!org.value) return;
+  busy.value = value.id;
+  try {
+    await api.assignOrgAgent(org.value.id, value.id);
+    serves.value = new Set([...serves.value, value.id]);
+    error.value = "";
+  } catch (cause) {
+    error.value = String((cause as Error).message || cause);
+  } finally {
+    busy.value = "";
+  }
+}
+
 const retiring = ref<Identity | null>(null);
 async function retire() {
   if (retiring.value) await store.command(retiring.value, "retire");
@@ -63,16 +116,21 @@ const lifecycle = {
   suspended: { tone: "warn", dot: "warn" },
   retired: { tone: "neutral", dot: "idle" },
 } as const;
+
+/** A bot or service account serves an org; people join one as members. */
+const isAgent = (value: Identity) =>
+  value.kind === "bot" || value.kind === "service_account";
 </script>
 
 <template>
   <div>
-    <PageHeader title="Identities" />
+    <PageHeader title="Agents" />
 
-    <PersonalTokensCard />
     <IdentityGrantsCard />
 
-    <p v-if="store.error" role="alert" class="mb-4 text-sm text-danger">{{ store.error }}</p>
+    <p v-if="store.error || error" role="alert" class="mb-4 text-sm text-danger">
+      {{ store.error || error }}
+    </p>
 
     <form class="mb-6 flex flex-wrap gap-2" @submit.prevent="create">
       <Input v-model="name" class="max-w-64" placeholder="Display name" aria-label="Display name" required />
@@ -87,7 +145,7 @@ const lifecycle = {
       <Button type="submit" size="sm" :disabled="!name.trim() || !!store.busy"><Plus data-icon="inline-start" /> Create</Button>
     </form>
 
-    <ul class="divide-y divide-border rounded-lg border border-border bg-card" aria-label="Identities">
+    <ul class="divide-y divide-border rounded-lg border border-border bg-card" aria-label="Agents">
       <li v-for="value in store.identities" :key="value.id" class="flex flex-wrap items-center gap-3 px-4 py-3">
         <span class="grid size-8 shrink-0 place-items-center rounded-md bg-secondary text-muted-foreground">
           <component :is="icons[value.kind]" class="size-4" aria-hidden="true" />
@@ -108,10 +166,22 @@ const lifecycle = {
           </p>
           <p class="text-xs text-fg-subtle">{{ value.kind.replace("_", " ") }}</p>
         </div>
+        <StatusPill v-if="isAgent(value) && serves.has(value.id)" tone="accent" class="font-mono">
+          {{ org?.id }}
+        </StatusPill>
         <StatusPill :tone="lifecycle[value.lifecycle].tone" :dot="lifecycle[value.lifecycle].dot" class="capitalize">
           {{ value.lifecycle }}
         </StatusPill>
         <div v-if="value.kind !== 'system' && value.lifecycle !== 'retired'" class="flex gap-1">
+          <Button
+            v-if="isAgent(value) && !serves.has(value.id)"
+            variant="ghost"
+            size="sm"
+            :title="`Assign to ${org?.name}`"
+            :disabled="busy === value.id"
+            @click="assign(value)"
+            >Assign</Button
+          >
           <Button variant="ghost" size="sm" :disabled="!!store.busy" @click="startRename(value)">Rename</Button>
           <Button
             v-if="value.lifecycle === 'active'"
@@ -148,5 +218,7 @@ const lifecycle = {
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+
+    <SettingsSaveBar />
   </div>
 </template>
