@@ -679,10 +679,6 @@ func (b *boot) setupForgeWebhook() {
 	if cfg.Forge.Intake != config.ForgeIntakeWebhook && cfg.Forge.Intake != config.ForgeIntakeBoth {
 		return
 	}
-	if len(cfg.Identities) > 0 {
-		log.Error("forge webhook disabled: multi-identity deployments are not supported yet (each identity's own poll loop is unaffected)")
-		return
-	}
 	parser, ok := b.forgeClient.(forge.WebhookParser)
 	if !ok {
 		log.Error("forge webhook disabled: the forge cannot parse webhooks", "forge_type", cfg.Forge.Type)
