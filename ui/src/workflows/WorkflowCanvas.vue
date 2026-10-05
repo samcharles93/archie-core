@@ -167,7 +167,7 @@ const topIndex = computed(() => (menuPath.value?.length === 2 ? Number(menuPath.
         <template v-if="menu.step?.kind === 'step' && menuPath">
           <DropdownMenuLabel class="truncate">{{ menu.step.title || stepTitle(menu.step.type) }}</DropdownMenuLabel>
           <template v-if="restart">
-            <DropdownMenuItem @select="emit('restart', restart.from)"><RotateCcw /> {{ restart.label }}</DropdownMenuItem>
+            <DropdownMenuItem :disabled="restart.blocked" @select="emit('restart', restart.from)"><RotateCcw /> {{ restart.label }}</DropdownMenuItem>
             <DropdownMenuSeparator />
           </template>
           <DropdownMenuItem @select="emit('edit', menuPath)"><Pencil /> Edit</DropdownMenuItem>

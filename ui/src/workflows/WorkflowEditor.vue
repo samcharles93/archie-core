@@ -286,7 +286,7 @@ function syncScroll(event: Event): void {
                 <div class="flex items-center gap-2 border-b border-border px-3 py-2">
                   <Tabs v-model="stepTab"><TabsList><TabsTrigger value="run">Run</TabsTrigger><TabsTrigger value="definition">Definition</TabsTrigger></TabsList></Tabs>
                   <span class="min-w-0 flex-1 truncate text-xs" :title="selectedNode.run.name">{{ selectedNode.run.name }}</span>
-                  <Button v-if="selectedRestart" type="button" size="sm" variant="outline" :disabled="restarting" @click="restartFrom(selectedRestart.from)"><RotateCcw /> {{ selectedRestart.label }}</Button>
+                  <Button v-if="selectedRestart" type="button" size="sm" variant="outline" :disabled="restarting || selectedRestart.blocked" @click="restartFrom(selectedRestart.from)"><RotateCcw /> {{ selectedRestart.label }}</Button>
                   <Button type="button" variant="ghost" size="icon-sm" aria-label="Close step details" @click="selectedStep = null"><X /></Button>
                 </div>
                 <div v-if="stepTab === 'run'" class="min-h-0 w-[32rem] max-w-[calc(100vw-3rem)] flex-1 overflow-y-auto">

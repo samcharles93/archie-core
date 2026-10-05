@@ -76,8 +76,10 @@ export function withRuns(graph: WorkflowGraph, stages: StageRun[]): WorkflowGrap
  * resumes, earlier ones re-run. Later steps, and runs that are not parked,
  * offer nothing. */
 export interface Restart {
-  label: "Resume from here" | "Re-run from here";
+  label: "Resume from here" | "Re-run from here" | "Add an id to resume here";
   from: string;
+  /** The server would refuse this resume point: the step needs an id. */
+  blocked?: boolean;
 }
 
 export function restartAt(graph: WorkflowGraph, path: (string | number)[]): Restart | null {
@@ -88,6 +90,15 @@ export function restartAt(graph: WorkflowGraph, path: (string | number)[]): Rest
   const stopped = Math.max(-1, ...graph.nodes.filter((candidate) => candidate.data.run).map((candidate) => top(candidate.data)));
   const at = top(node);
   if (at < 0 || at > stopped) return null;
+  // The server resumes by stage name, so it refuses a step whose name, or the
+  // name of the step before it, runs more than once.
+  const names = graph.nodes
+    .filter((candidate) => candidate.data.path?.length === 2)
+    .sort((a, b) => top(a.data) - top(b.data))
+    .map((candidate) => candidate.data.resume ?? candidate.data.stage ?? "");
+  const repeated = (name: string | undefined) => !!name && names.filter((n) => n === name).length > 1;
+  if (repeated(from) || (at > 0 && repeated(names[at - 1])))
+    return { label: "Add an id to resume here", from, blocked: true };
   return { label: at === stopped ? "Resume from here" : "Re-run from here", from };
 }
 

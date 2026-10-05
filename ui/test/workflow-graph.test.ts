@@ -54,3 +54,27 @@ test("a branch node still resumes the run at its parallel step", () => {
     from: "parallel",
   });
 });
+
+test("a step the server cannot resume by name asks for an id", () => {
+  const graph = withRuns(
+    workflowGraph(`id: w
+repository: none
+steps:
+  - {id: plan, type: agent.run, settings: {mission: p}}
+  - {type: agent.run, settings: {mission: a}}
+  - {type: agent.run, settings: {mission: b}}
+  - {id: last, type: agent.run, settings: {mission: c}}
+`),
+    [
+      { name: "plan", status: "succeeded" },
+      { name: "agent.run", status: "succeeded" },
+      { name: "agent.run", status: "succeeded" },
+      { name: "last", status: "failed" },
+    ],
+  );
+  assert.deepEqual(restartAt(graph, ["steps", 0]), { label: "Re-run from here", from: "plan" });
+  // A repeated name, and a step whose predecessor's name repeats, are refused.
+  for (const at of [1, 3]) {
+    assert.equal(restartAt(graph, ["steps", at])?.blocked, true, `step ${at}`);
+  }
+});
