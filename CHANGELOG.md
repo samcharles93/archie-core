@@ -13,7 +13,7 @@ release's per-component sections are labelled beneath its heading.
 - `archied setup` asks for the PostgreSQL URL. Left blank, it uses the bundled Compose database with a generated password stored in `~/.config/archie/env` as `PGPASSWORD`, not in `config.toml`.
 - The bundled PostgreSQL listens on 127.0.0.1 only. A database created before this release keeps its old `archie` password; enter its URL at setup or recreate the volume.
 - The release zip carries `docker-compose.yml`.
-- Extensions need unprivileged user namespaces. On Ubuntu 23.10 and later run `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` or extensions fail to start.
+- Extensions need unprivileged user namespaces, which Ubuntu 23.10 and later restrict. Allow them for the Archie binaries with an AppArmor profile; from the next release the installer prints it. Do not disable the restriction system-wide.
 - fix(app): assign the temp-file close result on the error path
 - fix(webhook): set a ReadHeaderTimeout on the forge webhook receivers
 - fix(forge): refuse a review line number that does not fit an int

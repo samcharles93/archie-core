@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/tomlwrite"
 )
 
@@ -144,9 +145,9 @@ func RunParams(ctx context.Context, p Prompter, discovery ModelDiscovery, secret
 }
 
 // stepDatabase returns the PostgreSQL URL. A blank answer on a fresh install
-// means the bundled Compose database with a generated password. The password
-// goes only to the env file as PGPASSWORD, which pgx and Compose both read, so
-// config.toml holds no secret.
+// means the bundled database: no network, reached through its Unix socket, with
+// a generated password that goes only to the env file as PGPASSWORD, which pgx
+// and Compose both read, so config.toml holds no secret.
 func stepDatabase(ctx context.Context, p Prompter, secrets SecretSink, existing, param string) (string, error) {
 	if strings.TrimSpace(param) != "" {
 		return param, nil
@@ -170,5 +171,5 @@ func stepDatabase(ctx context.Context, p Prompter, secrets SecretSink, existing,
 	if err := secrets.Put("env", "PGPASSWORD", password); err != nil {
 		return "", fmt.Errorf("setup: store database password: %w", err)
 	}
-	return "postgres://archie@127.0.0.1:5432/archie?sslmode=disable", nil
+	return "postgres://archie@/archie?host=" + configuration.DefaultPostgresSocketDir(), nil
 }

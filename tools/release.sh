@@ -93,7 +93,7 @@ archied_dirs() {
 	printf '%s\n' "cmd/archied" "Dockerfile.archied" "cmd/archie-ui" "internal/app/archieui" \
 		"Taskfile.yml" ".github/workflows/deploy.yml" "install.sh" \
 		"scripts/archie-update-install" "scripts/archie-update-check" \
-		"scripts/archie-update-watchdog" "deployments/INSTRUCTIONS.md" "docker-compose.yml"
+		"scripts/archie-update-watchdog" "deployments/INSTRUCTIONS.md"
 }
 
 # The UI Service ships with the archied release on purpose (archie-ui shares

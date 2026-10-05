@@ -161,6 +161,12 @@ func DefaultWorkDir() string {
 	return filepath.Join(xdgDataHome(), "archie", "work")
 }
 
+// DefaultPostgresSocketDir is where the bundled PostgreSQL's Unix socket is
+// mounted on the host.
+func DefaultPostgresSocketDir() string {
+	return filepath.Join(xdgDataHome(), "archie", "postgres")
+}
+
 // DefaultConfigDir returns the directory archie's configuration lives in:
 // $XDG_CONFIG_HOME/archie, or ~/.config/archie. It is the base every
 // config-home-derived path is built on. It is not the -config source

@@ -89,8 +89,8 @@ fi
 
 mkdir -p "${ARCHIE_CONFIG_DIR}" "${ARCHIE_DATA_DIR}" "${ARCHIE_BIN_DIR}"
 
-# 2. Binaries. STAGE ends up holding the binaries, release.json, the updater
-# scripts and docker-compose.yml, whichever way they were obtained.
+# 2. Binaries. STAGE ends up holding the binaries, release.json and the
+# updater scripts, whichever way they were obtained.
 TMP="$(mktemp -d)"
 trap 'rm -rf "${TMP}"' EXIT
 
@@ -111,7 +111,7 @@ if [ "${FROM_SOURCE}" = true ]; then
   for cmd in $(jq -er '.required_topology.units | join(" ")' "${SRC_DIR}/release.json"); do
     (cd "${SRC_DIR}" && go build -ldflags "${LDFLAGS}" -o "${STAGE}/${cmd}" "./cmd/${cmd}")
   done
-  cp "${SRC_DIR}/release.json" "${SRC_DIR}/docker-compose.yml" "${SRC_DIR}"/scripts/archie-update-* "${STAGE}/"
+  cp "${SRC_DIR}/release.json" "${SRC_DIR}"/scripts/archie-update-* "${STAGE}/"
 else
   if [ -z "${VERSION}" ]; then
     tag="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')"
@@ -138,7 +138,6 @@ for cmd in ${TOPOLOGY_UNITS}; do
   install -m755 "${STAGE}/${cmd}" "${ARCHIE_BIN_DIR}/${cmd}"
 done
 install -m755 "${STAGE}"/archie-update-* "${ARCHIE_BIN_DIR}/"
-install -m644 "${STAGE}/docker-compose.yml" "${ARCHIE_DATA_DIR}/docker-compose.yml"
 echo "  Installed ${TOPOLOGY_UNITS} and the updater to ${ARCHIE_BIN_DIR}/"
 
 # 3. Configuration. archied setup asks every question and writes config.toml
@@ -161,24 +160,66 @@ else
   echo "  [SKIP] ${ARCHIE_CONFIG_DIR}/config.toml already exists. Re-run 'archied setup' to change it."
 fi
 
-# 4. PostgreSQL. Every service fails closed without it. The default database_url is
-# the Compose postgres service, so start it when the config still uses it.
-if ! grep -qE '@127\.0\.0\.1:5432/archie' "${ARCHIE_CONFIG_DIR}/config.toml"; then
+# 4. PostgreSQL. Every service fails closed without it. The bundled database
+# has no network at all: the services reach it through its Unix socket,
+# mounted at PG_SOCKET_DIR, so it publishes no port and cannot collide with
+# another PostgreSQL. Its password is the PGPASSWORD setup generated.
+PG_SOCKET_DIR="${ARCHIE_DATA_DIR}/postgres"
+PG_COMPOSE="${ARCHIE_DATA_DIR}/postgres.yml"
+if ! grep -qF "host=${PG_SOCKET_DIR}" "${ARCHIE_CONFIG_DIR}/config.toml"; then
   echo "  [OK] Using the PostgreSQL server named by database_url."
-elif command -v docker &>/dev/null && [ -f "${ARCHIE_DATA_DIR}/docker-compose.yml" ]; then
-  echo "==> Starting PostgreSQL 18 (docker compose up -d postgres)..."
-  touch "${ENV_FILE}" && chmod 600 "${ENV_FILE}"
-  if ! docker compose --env-file "${ENV_FILE}" -f "${ARCHIE_DATA_DIR}/docker-compose.yml" up -d postgres; then
-    # Started without their database the services only crash-loop, and if
-    # something else holds 5432 they hit the wrong server.
+elif ! command -v docker &>/dev/null; then
+  echo "  [WARN] Docker not found: the bundled PostgreSQL needs it. Install Docker, or run 'archied setup' with your own PostgreSQL 18 URL." >&2
+  AUTO_START=false
+else
+  echo "==> Starting the bundled PostgreSQL 18..."
+  mkdir -p "${PG_SOCKET_DIR}"
+  cat >"${PG_COMPOSE}" <<'EOF'
+services:
+  postgres:
+    image: postgres:18
+    network_mode: none
+    environment:
+      POSTGRES_USER: archie
+      POSTGRES_PASSWORD: ${PGPASSWORD:-}
+      POSTGRES_DB: archie
+      POSTGRES_INITDB_ARGS: --auth-local=scram-sha-256
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      # :z relabels the directory for SELinux hosts.
+      - ./postgres:/var/run/postgresql:z
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U archie -d archie"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+volumes:
+  pg_data:
+EOF
+  if ! docker compose -p archie --env-file "${ENV_FILE}" -f "${PG_COMPOSE}" up -d --wait; then
     echo "  [WARN] The bundled PostgreSQL did not start, so the services are installed but not started." >&2
-    echo "         If another PostgreSQL holds port 5432, run 'archied setup' and enter its URL, then:" >&2
-    echo "         systemctl --user enable --now ${TOPOLOGY_UNITS}" >&2
+    echo "         Check: docker compose -p archie -f ${PG_COMPOSE} logs" >&2
     AUTO_START=false
   fi
-else
-  echo "  [WARN] Docker not found: point database_url in ${ARCHIE_CONFIG_DIR}/config.toml at a PostgreSQL 18 server before starting the services."
-  AUTO_START=false
+fi
+
+# Extensions run in an unprivileged user namespace. Ubuntu 23.10+ forbids
+# those unless an AppArmor profile allows them, and only root can add one, so
+# print the profile that allows it for these binaries alone.
+if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = 1 ]; then
+  echo "  [WARN] This host restricts user namespaces, so extensions will not start until you run:" >&2
+  cat >&2 <<EOF
+    sudo tee /etc/apparmor.d/archie >/dev/null <<'PROFILE'
+    abi <abi/4.0>,
+    include <tunables/global>
+    profile archie ${ARCHIE_BIN_DIR}/archie{d,-*} flags=(unconfined) {
+      userns,
+    }
+    PROFILE
+    sudo apparmor_parser -r /etc/apparmor.d/archie
+EOF
 fi
 
 # 5. Systemd user service setup & linger configuration

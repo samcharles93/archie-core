@@ -117,8 +117,9 @@ or a hosted provider API key.
    checkout instead. Re-run `archied setup` at any time to change the answers.
 
    Extensions run in an unprivileged user namespace. Ubuntu 23.10 and later
-   block these by default; allow them with
-   `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`.
+   block these by default; on such a host the installer prints an AppArmor
+   profile that allows them for the Archie binaries only, to install with
+   `sudo`.
 
 2. **Check it is up.**
 

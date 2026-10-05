@@ -350,7 +350,7 @@ jobs:
           for cmd in $(jq -r '.required_topology.units[]' release.json); do
             cp "dist/$cmd" "$name/"
           done
-          cp deployments/INSTRUCTIONS.md CHANGELOG.md docker-compose.yml "$name/"
+          cp deployments/INSTRUCTIONS.md CHANGELOG.md "$name/"
           cp scripts/archie-update-* "$name/"
           digest='${{ needs.build-and-push.outputs.agent_digest }}'
           test -n "$digest"

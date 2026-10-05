@@ -25,9 +25,7 @@ services:
     image: postgres:18
     environment:
       POSTGRES_USER: archie
-      # archied setup generates PGPASSWORD into ~/.config/archie/env; the fallback is
-      # the dev password deployments/dev.toml uses.
-      POSTGRES_PASSWORD: ${PGPASSWORD:-archie}
+      POSTGRES_PASSWORD: archie
       POSTGRES_DB: archie
       # postgres:18 moved its default PGDATA under a versioned path; pin the
       # classic location so the named volume keeps working across image updates.
