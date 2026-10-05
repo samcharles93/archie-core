@@ -31,7 +31,7 @@ func (s *Server) orgInPath(w http.ResponseWriter, r *http.Request) (org.OrgID, b
 }
 
 // handleOrgsList lists every org to an instance admin and the caller's own
-// to anyone else.
+// to anyone else, naming the caller's org and whether it may switch.
 func (s *Server) handleOrgsList(w http.ResponseWriter, r *http.Request) {
 	if !s.orgReady(w) {
 		return
@@ -41,14 +41,14 @@ func (s *Server) handleOrgsList(w http.ResponseWriter, r *http.Request) {
 		writeOrgError(w, err)
 		return
 	}
-	caller := policyOrg(r)
+	caller, admin := policyOrg(r), instanceOwner(r)
 	out := []org.Org{}
 	for _, value := range values {
-		if value.ID == caller || instanceOwner(r) {
+		if value.ID == caller || admin {
 			out = append(out, value)
 		}
 	}
-	writeJSON(w, map[string]any{"orgs": out})
+	writeJSON(w, map[string]any{"orgs": out, "current": caller, "instance_admin": admin})
 }
 
 // handleOrgCreate creates an org with its default workspace and first owner.
