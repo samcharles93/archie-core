@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/samcharles93/archie-core/internal/domain/stableid"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 )
 
 // StepResult is what a finished step leaves for later steps to reference as
@@ -22,9 +23,57 @@ type StepResult struct {
 // referencePattern matches {{ path }} in a step's string settings.
 var referencePattern = regexp.MustCompile(`\{\{\s*([^{}\s]+)\s*\}\}`)
 
+// refScope is what a step's references may read: the workflow's declared
+// inputs and the steps declared before it, each with the result fields its
+// schema declares. A step with no result schema has nil fields, and any field
+// of its result is accepted.
+type refScope struct {
+	inputs map[string]bool
+	steps  map[string]map[string]bool
+}
+
+func newRefScope(inputs map[string]task.InputSpec) *refScope {
+	scope := &refScope{inputs: map[string]bool{}, steps: map[string]map[string]bool{}}
+	for name := range inputs {
+		scope.inputs[name] = true
+	}
+	return scope
+}
+
+func (s *refScope) has(id string) bool {
+	_, ok := s.steps[id]
+	return ok
+}
+
+func (s *refScope) clone() *refScope {
+	return &refScope{inputs: s.inputs, steps: maps.Clone(s.steps)}
+}
+
+// resultFields returns the fields step's result schema declares, or nil when
+// it declares none.
+func resultFields(step StepRecord) map[string]bool {
+	if step.Type != AgentRunStepName {
+		return nil
+	}
+	var s agentRunSettings
+	if err := step.Settings.Decode(&s); err != nil {
+		return nil
+	}
+	properties, ok := s.Result["properties"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	fields := make(map[string]bool, len(properties))
+	for name := range properties {
+		fields[name] = true
+	}
+	return fields
+}
+
 // checkReferences rejects a reference a run could not resolve: an unknown
-// root, or a step id that is not declared by an earlier step.
-func checkReferences(settings yaml.Node, earlier map[string]bool) error {
+// root, an undeclared input, a step id that is not declared by an earlier
+// step, or a result field that step's schema does not declare.
+func checkReferences(settings yaml.Node, earlier *refScope) error {
 	var problem error
 	walkStrings(&settings, func(value string) string {
 		for _, match := range referencePattern.FindAllStringSubmatch(value, -1) {
@@ -37,7 +86,7 @@ func checkReferences(settings yaml.Node, earlier map[string]bool) error {
 	return problem
 }
 
-func checkReference(path string, earlier map[string]bool) error {
+func checkReference(path string, earlier *refScope) error {
 	parts := strings.Split(path, ".")
 	switch parts[0] {
 	case "task", "inputs":
@@ -47,20 +96,32 @@ func checkReference(path string, earlier map[string]bool) error {
 		if parts[0] == "task" && !taskFields[parts[1]] {
 			return fmt.Errorf("reference {{ %s }}: task has no field %q", path, parts[1])
 		}
+		if parts[0] == "inputs" && !earlier.inputs[parts[1]] {
+			return fmt.Errorf("reference {{ %s }}: the workflow declares no input %q", path, parts[1])
+		}
 		return nil
 	case "steps":
-		if len(parts) < 3 {
-			return fmt.Errorf("reference {{ %s }} must name a step and a field, e.g. steps.plan.summary", path)
-		}
-		if !earlier[parts[1]] {
-			return fmt.Errorf("reference {{ %s }}: no earlier step has id %q", path, parts[1])
-		}
-		if parts[2] != "summary" && parts[2] != "result" {
-			return fmt.Errorf("reference {{ %s }}: a step exposes summary and result", path)
-		}
-		return nil
+		return checkStepReference(path, parts, earlier)
 	}
 	return fmt.Errorf("reference {{ %s }} must start with task, inputs or steps", path)
+}
+
+// checkStepReference checks steps.<id>.summary and steps.<id>.result.<field>
+// against the steps declared before the referencing one.
+func checkStepReference(path string, parts []string, earlier *refScope) error {
+	if len(parts) < 3 {
+		return fmt.Errorf("reference {{ %s }} must name a step and a field, e.g. steps.plan.summary", path)
+	}
+	if !earlier.has(parts[1]) {
+		return fmt.Errorf("reference {{ %s }}: no earlier step has id %q", path, parts[1])
+	}
+	if parts[2] != "summary" && parts[2] != "result" {
+		return fmt.Errorf("reference {{ %s }}: a step exposes summary and result", path)
+	}
+	if fields := earlier.steps[parts[1]]; parts[2] == "result" && len(parts) > 3 && fields != nil && !fields[parts[3]] {
+		return fmt.Errorf("reference {{ %s }}: step %q's result schema has no field %q", path, parts[1], parts[3])
+	}
+	return nil
 }
 
 var taskFields = map[string]bool{"review": true, "plan": true, "title": true, "body": true, "prompt": true, "repository": true, "kind": true, "issue": true, "pr": true}
@@ -146,14 +207,14 @@ func deepCopyNode(node *yaml.Node) *yaml.Node {
 
 // checkStepID requires each declared step id to be a stable identifier and
 // unique within the workflow.
-func checkStepID(id string, seen map[string]bool) error {
+func checkStepID(id string, seen *refScope) error {
 	if id == "" {
 		return nil
 	}
 	if !stableid.Valid(id) {
 		return fmt.Errorf("step id %q is not a stable identifier", id)
 	}
-	if seen[id] {
+	if seen.has(id) {
 		return fmt.Errorf("step id %q is declared twice", id)
 	}
 	return nil

@@ -87,7 +87,7 @@ func ParseDefinition(src string, registry StepRegistry) (YAMLDefinition, error) 
 		return YAMLDefinition{}, fmt.Errorf("workflow %q: %w", definition.ID, err)
 	}
 	mode := definition.RepositoryMode()
-	earlier := map[string]bool{}
+	earlier := newRefScope(definition.Inputs)
 	for i, step := range definition.Steps {
 		if err := checkStep(step, mode, earlier, registry, false); err != nil {
 			return YAMLDefinition{}, fmt.Errorf("workflow %q step %d: %w", definition.ID, i+1, err)

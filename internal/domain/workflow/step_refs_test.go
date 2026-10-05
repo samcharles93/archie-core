@@ -109,6 +109,51 @@ steps:
 			rendered: "build the plan / go / ",
 		},
 		{
+			name: "an undeclared input is refused",
+			yaml: `id: w
+repository: none
+steps:
+  - type: agent.run
+    settings: {mission: "{{ inputs.ticket }}"}
+`,
+			wantErr: `reference {{ inputs.ticket }}: the workflow declares no input "ticket"`,
+		},
+		{
+			name: "when may only read a declared input",
+			yaml: `id: w
+repository: none
+inputs: {ticket: {type: string}}
+steps:
+  - {type: workflow.finish, when: "inputs.other"}
+`,
+			wantErr: `when: reference {{ inputs.other }}: the workflow declares no input "other"`,
+		},
+		{
+			name: "a result field outside the step's schema is refused",
+			yaml: `id: w
+repository: none
+steps:
+  - id: plan
+    type: agent.run
+    settings: {mission: m, result: {type: object, properties: {verdict: {type: string}}}}
+  - type: agent.run
+    settings: {mission: "{{ steps.plan.result.verdit }}"}
+`,
+			wantErr: `step "plan"'s result schema has no field "verdit"`,
+		},
+		{
+			name: "when may only read a declared result field",
+			yaml: `id: w
+repository: none
+steps:
+  - id: plan
+    type: agent.run
+    settings: {mission: m, result: {type: object, properties: {verdict: {type: string}}}}
+  - {type: workflow.finish, when: "steps.plan.result.fit"}
+`,
+			wantErr: `when: reference {{ steps.plan.result.fit }}: step "plan"'s result schema has no field "fit"`,
+		},
+		{
 			name: "retry attempts are bounded",
 			yaml: `id: w
 repository: none

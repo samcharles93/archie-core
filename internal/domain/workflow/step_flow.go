@@ -19,7 +19,7 @@ const maxRetryAttempts = 10
 
 // checkStep validates one step against the vocabulary and the steps before
 // it, and adds the ids it declares to earlier.
-func checkStep(step StepRecord, mode task.RepositoryMode, earlier map[string]bool, registry StepRegistry, inBranch bool) error {
+func checkStep(step StepRecord, mode task.RepositoryMode, earlier *refScope, registry StepRegistry, inBranch bool) error {
 	if err := checkStepID(step.ID, earlier); err != nil {
 		return err
 	}
@@ -34,14 +34,14 @@ func checkStep(step StepRecord, mode task.RepositoryMode, earlier map[string]boo
 		return err
 	}
 	if step.ID != "" {
-		earlier[step.ID] = true
+		earlier.steps[step.ID] = resultFields(step)
 	}
 	return nil
 }
 
 // checkStepControls validates the settings every step carries: when,
 // on_failure and retry.
-func checkStepControls(step StepRecord, earlier map[string]bool) error {
+func checkStepControls(step StepRecord, earlier *refScope) error {
 	if step.OnFailure != "" && step.OnFailure != "park" && step.OnFailure != onFailureContinue {
 		return fmt.Errorf("on_failure is park or continue, not %q", step.OnFailure)
 	}
@@ -66,7 +66,7 @@ func checkStepControls(step StepRecord, earlier map[string]bool) error {
 	return nil
 }
 
-func checkTypedStep(step StepRecord, mode task.RepositoryMode, earlier map[string]bool, registry StepRegistry, inBranch bool) error {
+func checkTypedStep(step StepRecord, mode task.RepositoryMode, earlier *refScope, registry StepRegistry, inBranch bool) error {
 	factory, ok := registry[step.Type]
 	if !ok {
 		return fmt.Errorf("unknown type %q", step.Type)
@@ -89,7 +89,7 @@ func checkTypedStep(step StepRecord, mode task.RepositoryMode, earlier map[strin
 // checkParallel validates each branch on its own: a branch sees the steps
 // before the parallel step and its own earlier steps, never a sibling's.
 // Every branch's ids are visible after the parallel step.
-func checkParallel(step StepRecord, mode task.RepositoryMode, earlier map[string]bool, registry StepRegistry, inBranch bool) error {
+func checkParallel(step StepRecord, mode task.RepositoryMode, earlier *refScope, registry StepRegistry, inBranch bool) error {
 	switch {
 	case step.Type != "" || step.Settings.Kind != 0:
 		return errors.New("a parallel step has branches, not a type or settings")
@@ -98,7 +98,7 @@ func checkParallel(step StepRecord, mode task.RepositoryMode, earlier map[string
 	case len(step.Parallel) < 2:
 		return errors.New("parallel needs at least two branches")
 	}
-	declared := map[string]bool{}
+	declared := map[string]map[string]bool{}
 	for _, name := range slices.Sorted(maps.Keys(step.Parallel)) {
 		if !stableid.Valid(name) {
 			return fmt.Errorf("branch name %q is not a stable identifier", name)
@@ -107,20 +107,20 @@ func checkParallel(step StepRecord, mode task.RepositoryMode, earlier map[string
 		if len(branch) == 0 {
 			return fmt.Errorf("branch %q has no steps", name)
 		}
-		seen := maps.Clone(earlier)
+		seen := earlier.clone()
 		for i, branchStep := range branch {
-			if declared[branchStep.ID] {
+			if _, twice := declared[branchStep.ID]; twice {
 				return fmt.Errorf("branch %q step %d: step id %q is declared twice", name, i+1, branchStep.ID)
 			}
 			if err := checkStep(branchStep, mode, seen, registry, true); err != nil {
 				return fmt.Errorf("branch %q step %d: %w", name, i+1, err)
 			}
 			if branchStep.ID != "" {
-				declared[branchStep.ID] = true
+				declared[branchStep.ID] = resultFields(branchStep)
 			}
 		}
 	}
-	maps.Copy(earlier, declared)
+	maps.Copy(earlier.steps, declared)
 	return nil
 }
 
