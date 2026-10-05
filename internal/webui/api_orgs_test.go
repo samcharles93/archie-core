@@ -8,8 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/org"
+	infraaccess "github.com/samcharles93/archie-core/internal/infrastructure/access"
 )
 
 // fakeOrgs is an in-memory org.API that validates memberships the way the
@@ -149,6 +151,69 @@ func TestOrgRoutes(t *testing.T) {
 			}
 			if tt.wantBody != "" && !strings.Contains(rec.Body.String(), tt.wantBody) {
 				t.Fatalf("body = %s, want it to contain %q", rec.Body.String(), tt.wantBody)
+			}
+		})
+	}
+}
+
+// rolePrincipals gives each identity id the org-sys role of the same name.
+type rolePrincipals struct{}
+
+func (rolePrincipals) PrincipalFor(_ context.Context, id identity.IdentityID) (access.Principal, error) {
+	return access.Principal{IdentityID: id, Org: org.DefaultOrgID, Memberships: []org.Membership{
+		{IdentityID: id, OrgID: org.DefaultOrgID, Role: org.Role(id)},
+	}}, nil
+}
+
+// TestOrgMembershipNeedsItsRole holds membership changes to the shipped role
+// policies: a developer manages no members, an admin manages members but can
+// neither grant the owner role nor change an owner's, and an owner can.
+func TestOrgMembershipNeedsItsRole(t *testing.T) {
+	engine, err := infraaccess.New(access.ShippedOrgPolicies(org.DefaultOrgID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	members := "/api/orgs/" + string(org.DefaultOrgID) + "/members/"
+	tests := []struct {
+		name       string
+		caller     string
+		method     string
+		path       string
+		body       string
+		wantStatus int
+	}{
+		{"a developer cannot add a member", "developer", http.MethodPut, members + "sam", `{"role":"viewer"}`, http.StatusForbidden},
+		{"a developer cannot make itself owner", "developer", http.MethodPut, members + "developer", `{"role":"owner"}`, http.StatusForbidden},
+		{"an admin adds a member", "admin", http.MethodPut, members + "sam", `{"role":"developer"}`, http.StatusOK},
+		{"an admin cannot make itself owner", "admin", http.MethodPut, members + "admin", `{"role":"owner"}`, http.StatusForbidden},
+		{"an admin cannot demote an owner", "admin", http.MethodPut, members + "boss", `{"role":"viewer"}`, http.StatusForbidden},
+		{"an admin cannot remove an owner", "admin", http.MethodDelete, members + "boss", "", http.StatusForbidden},
+		{"an owner grants owner", "owner", http.MethodPut, members + "sam", `{"role":"owner"}`, http.StatusOK},
+		{"a developer cannot assign an agent", "developer", http.MethodPut, "/api/orgs/" + string(org.DefaultOrgID) + "/agents/bot", "", http.StatusForbidden},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			orgs := newFakeOrgs()
+			orgs.members[org.DefaultOrgID] = append(orgs.members[org.DefaultOrgID], org.Member{IdentityID: "boss", Role: org.RoleOwner})
+			s := &Server{
+				Access: engine, Principals: rolePrincipals{}, Orgs: orgs,
+				Authenticate: func(_ context.Context, token string) (identity.Identity, error) {
+					return identity.Identity{ID: identity.IdentityID(token), Kind: identity.KindUser}, nil
+				},
+			}
+			var body io.Reader
+			if tt.body != "" {
+				body = strings.NewReader(tt.body)
+			}
+			req := httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, body)
+			req.Header.Set("Authorization", "Bearer "+tt.caller)
+			if tt.body != "" {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			rec := httptest.NewRecorder()
+			orgRoutes(s).ServeHTTP(rec, req)
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d, body %s", rec.Code, tt.wantStatus, rec.Body.String())
 			}
 		})
 	}

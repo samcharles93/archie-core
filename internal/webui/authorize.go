@@ -137,7 +137,7 @@ func routeOverride(action access.Action, path string) (access.Action, access.Res
 	case matchPrefix(path, "/api/identities"):
 		return actionManage(action), access.KindIdentity, segmentValue(path, 2), true
 	case matchPrefix(path, "/api/orgs"):
-		return orgRouteAction(action), access.KindOrg, segmentValue(path, 2), true
+		return orgRouteAction(action, path), access.KindOrg, segmentValue(path, 2), true
 	case matchPrefix(path, "/api/extensions"):
 		// Installing and enabling an extension runs a process on the host, so it
 		// is the same administration as editing a control-plane resource.
@@ -178,12 +178,15 @@ func bindingCommand(action access.Action, path string) (access.Action, bool) {
 	return action, false
 }
 
-// orgRouteAction maps an org request: reads are org reads, and every mutation
-// of the org's workspaces, members or agents is an update of the org itself,
-// so the read/edit role policies decide it.
-func orgRouteAction(action access.Action) access.Action {
-	if action == access.ActionRead {
+// orgRouteAction maps an org request: reads are org reads, changing who
+// belongs to the org or which agents serve it is member management (an
+// admin's grant), and any other mutation updates the org.
+func orgRouteAction(action access.Action, path string) access.Action {
+	switch {
+	case action == access.ActionRead:
 		return access.ActionRead
+	case segmentValue(path, 3) == "members", segmentValue(path, 3) == "agents":
+		return access.ActionManageMembers
 	}
 	return access.ActionUpdate
 }

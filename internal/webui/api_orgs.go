@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/org"
 )
@@ -157,6 +158,9 @@ func (s *Server) handleOrgMemberSet(w http.ResponseWriter, r *http.Request) {
 		WorkspaceID: org.WorkspaceID(request.Workspace),
 		Role:        org.Role(request.Role),
 	}
+	if !s.mayChangeMembership(w, r, membership, membership.Role) {
+		return
+	}
 	if err := s.Orgs.EnsureMembership(r.Context(), membership); err != nil {
 		writeOrgError(w, err)
 		return
@@ -176,6 +180,9 @@ func (s *Server) handleOrgMemberRemove(w http.ResponseWriter, r *http.Request) {
 		IdentityID:  identity.IdentityID(r.PathValue("identity")),
 		OrgID:       id,
 		WorkspaceID: org.WorkspaceID(r.URL.Query().Get("workspace")),
+	}
+	if !s.mayChangeMembership(w, r, membership, "") {
+		return
 	}
 	if err := s.Orgs.RemoveMembership(r.Context(), membership); err != nil {
 		writeOrgError(w, err)
@@ -205,6 +212,39 @@ func (s *Server) handleOrgAgentAssign(w http.ResponseWriter, r *http.Request) {
 // writeOrgError maps the org domain's errors, and their gRPC statuses, onto
 // HTTP. The remote-client path keeps the status code through unmapError's
 // wrapping, so writeControlPlaneError names the same code the store sent.
+// mayChangeMembership refuses, having written the error, a change that grants
+// the owner role or alters an owner's membership unless the caller is an owner
+// of the org: member management is an admin's grant, and without this an
+// admin could make themselves owner -- and an owner of org-sys owns the
+// instance.
+func (s *Server) mayChangeMembership(w http.ResponseWriter, r *http.Request, target org.Membership, grant org.Role) bool {
+	principal, ok := access.PrincipalFromContext(r.Context())
+	if !ok {
+		principal = access.SharedTokenOwner()
+	}
+	if principal.Role("") == org.RoleOwner {
+		return true
+	}
+	touchesOwner := grant == org.RoleOwner
+	if !touchesOwner {
+		members, err := s.Orgs.ListMembers(r.Context(), target.OrgID)
+		if err != nil {
+			writeOrgError(w, err)
+			return false
+		}
+		for _, m := range members {
+			if m.IdentityID == target.IdentityID && m.WorkspaceID == target.WorkspaceID && m.Role == org.RoleOwner {
+				touchesOwner = true
+			}
+		}
+	}
+	if touchesOwner {
+		http.Error(w, "only an owner may grant or change the owner role", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
 func writeOrgError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, org.ErrInvalidRole), errors.Is(err, org.ErrInvalidOrg),
