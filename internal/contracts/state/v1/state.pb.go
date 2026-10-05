@@ -8307,7 +8307,11 @@ type ReadTaskLogRequest struct {
 	// stage filters on an entry's own "stage" field. Only entries a stage
 	// tagged carry one -- agent and tool output is logged without a stage, so a
 	// stage filter narrows the file rather than covering it. Empty means any.
-	Stage         string `protobuf:"bytes,9,opt,name=stage,proto3" json:"stage,omitempty"`
+	Stage string `protobuf:"bytes,9,opt,name=stage,proto3" json:"stage,omitempty"`
+	// before_id is the byte-offset cursor a previous page returned as cursor: the
+	// read returns the most recent matching entries ending at or before it. Zero
+	// reads the tail, which is the page the dashboard opens on.
+	BeforeId      int64 `protobuf:"varint,10,opt,name=before_id,json=beforeId,proto3" json:"before_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -8405,6 +8409,13 @@ func (x *ReadTaskLogRequest) GetStage() string {
 	return ""
 }
 
+func (x *ReadTaskLogRequest) GetBeforeId() int64 {
+	if x != nil {
+		return x.BeforeId
+	}
+	return 0
+}
+
 // found=false is not an error: the task has no log file for that attempt.
 // That is a different condition from a process that cannot read logs at all
 // (codes.Unavailable), and the dashboard reports them differently.
@@ -8418,7 +8429,13 @@ type ReadTaskLogResponse struct {
 	// file is the path read, so the page can name where the log came from. It
 	// is the state directory's own layout, reported to an already-authenticated
 	// operator; no caller is expected to open it.
-	File          string `protobuf:"bytes,6,opt,name=file,proto3" json:"file,omitempty"`
+	File string `protobuf:"bytes,6,opt,name=file,proto3" json:"file,omitempty"`
+	// more_available reports matching entries did not fit in this page; cursor
+	// is the before_id for the next older one. truncated is separate: it means
+	// the log is larger than the readable scan window, so its oldest entries
+	// cannot be reached by paging at all.
+	MoreAvailable bool  `protobuf:"varint,7,opt,name=more_available,json=moreAvailable,proto3" json:"more_available,omitempty"`
+	Cursor        int64 `protobuf:"varint,8,opt,name=cursor,proto3" json:"cursor,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -8493,6 +8510,20 @@ func (x *ReadTaskLogResponse) GetFile() string {
 		return x.File
 	}
 	return ""
+}
+
+func (x *ReadTaskLogResponse) GetMoreAvailable() bool {
+	if x != nil {
+		return x.MoreAvailable
+	}
+	return false
+}
+
+func (x *ReadTaskLogResponse) GetCursor() int64 {
+	if x != nil {
+		return x.Cursor
+	}
+	return 0
 }
 
 // StreamTaskLogContent returns one attempt's log verbatim, for a download. The
@@ -15085,7 +15116,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x05level\x18\x03 \x01(\tR\x05level\x12\x10\n" +
 	"\x03msg\x18\x04 \x01(\tR\x03msg\x12\x1f\n" +
 	"\vfields_json\x18\x05 \x01(\tR\n" +
-	"fieldsJson\"\xa9\x02\n" +
+	"fieldsJson\"\xc6\x02\n" +
 	"\x12ReadTaskLogRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\x03R\x06taskId\x12\x18\n" +
 	"\aattempt\x18\x02 \x01(\x03R\aattempt\x12\x14\n" +
@@ -15095,7 +15126,9 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\bcontains\x18\x06 \x01(\tR\bcontains\x120\n" +
 	"\x05since\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x05since\x120\n" +
 	"\x05until\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\x05until\x12\x14\n" +
-	"\x05stage\x18\t \x01(\tR\x05stage\"\xc9\x01\n" +
+	"\x05stage\x18\t \x01(\tR\x05stage\x12\x1b\n" +
+	"\tbefore_id\x18\n" +
+	" \x01(\x03R\bbeforeId\"\x88\x02\n" +
 	"\x13ReadTaskLogResponse\x120\n" +
 	"\aentries\x18\x01 \x03(\v2\x16.state.v1.TaskLogEntryR\aentries\x12\x1c\n" +
 	"\ttruncated\x18\x02 \x01(\bR\ttruncated\x12\x18\n" +
@@ -15104,7 +15137,9 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\n" +
 	"components\x18\x05 \x03(\tR\n" +
 	"components\x12\x12\n" +
-	"\x04file\x18\x06 \x01(\tR\x04file\"P\n" +
+	"\x04file\x18\x06 \x01(\tR\x04file\x12%\n" +
+	"\x0emore_available\x18\a \x01(\bR\rmoreAvailable\x12\x16\n" +
+	"\x06cursor\x18\b \x01(\x03R\x06cursor\"P\n" +
 	"\x1bStreamTaskLogContentRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\x03R\x06taskId\x12\x18\n" +
 	"\aattempt\x18\x02 \x01(\x03R\aattempt\"d\n" +

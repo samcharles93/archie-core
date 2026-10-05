@@ -1128,12 +1128,14 @@ func (s *server) ReadTaskLog(ctx context.Context, r *pb.ReadTaskLogRequest) (*pb
 		return &pb.ReadTaskLogResponse{Attempt: r.Attempt}, nil
 	}
 	return &pb.ReadTaskLogResponse{
-		Entries:    mapValues(page.Entries, taskLogEntryProto),
-		Truncated:  page.Truncated,
-		Attempt:    r.Attempt,
-		Found:      true,
-		Components: page.Components,
-		File:       page.File,
+		Entries:       mapValues(page.Entries, taskLogEntryProto),
+		Truncated:     page.Truncated,
+		MoreAvailable: page.MoreAvailable,
+		Cursor:        page.Cursor,
+		Attempt:       r.Attempt,
+		Found:         true,
+		Components:    page.Components,
+		File:          page.File,
 	}, nil
 }
 

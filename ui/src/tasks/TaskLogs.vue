@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 
 import LogRow from "@/base/LogRow.vue";
 import { Button } from "@/components/ui/button";
@@ -58,10 +58,84 @@ const resolvedAttempt = computed(
   () => Number(props.attempt) || Number(props.state?.attempt) || 0,
 );
 
+/** One page fetched for the pager: the before cursor it was read from. */
+interface LogPage {
+  before: number;
+  state: LogState;
+}
+
+// The pager's own state: the older page the operator moved to, and the newer
+// pages to come back through. It is kept until the attempt or the filter
+// changes, so a live refresh of the tail cannot yank the operator out of a page
+// they deliberately moved to.
+const PAGE_LIMIT = 500;
+const page = ref<LogPage | null>(null);
+const newerPages = ref<LogPage[]>([]);
+const paging = ref(false);
+const pageError = ref(false);
+const pageKey = computed(
+  () =>
+    `${props.taskId}|${resolvedAttempt.value}|${props.filters.level}|${props.filters.stage}`,
+);
+watch(pageKey, () => {
+  page.value = null;
+  newerPages.value = [];
+  pageError.value = false;
+});
+
+/** The page on screen: the pager's, else the parent's tail page. */
+const current = computed<LogState | null | undefined>(
+  () => page.value?.state ?? props.state,
+);
+// Paging is a property of the full-log pane, not the step pane's scoped view.
+const canPage = computed(() => props.taskId != null && props.filterable);
+const canOlder = computed(
+  () => canPage.value && !!current.value?.more_available && (current.value?.cursor ?? 0) > 0,
+);
+const canNewer = computed(() => canPage.value && newerPages.value.length > 0);
+
+/** Read the page ending just before cursor; zero reads the tail. */
+async function fetchPage(before: number): Promise<LogState | null> {
+  if (props.taskId == null) return null;
+  paging.value = true;
+  pageError.value = false;
+  try {
+    return await api.taskLogs<LogState>(String(props.taskId), {
+      attempt: resolvedAttempt.value || undefined,
+      level: props.filters.level,
+      stage: props.filters.stage,
+      limit: PAGE_LIMIT,
+      before: before || undefined,
+    });
+  } catch {
+    pageError.value = true;
+    return null;
+  } finally {
+    paging.value = false;
+  }
+}
+
+async function loadOlder(): Promise<void> {
+  const shown = current.value;
+  const before = shown?.cursor ?? 0;
+  if (!shown?.more_available || before <= 0) return;
+  const older = await fetchPage(before);
+  if (!older) return;
+  newerPages.value.push({ before: page.value?.before ?? 0, state: shown });
+  page.value = { before, state: older };
+}
+
+function loadNewer(): void {
+  const newer = newerPages.value.pop();
+  if (!newer) return;
+  pageError.value = false;
+  page.value = newer;
+}
+
 /** The pane's state, decided once so the announcement and the body can never
  * disagree about which case is on screen. */
 const view = computed(() => {
-  const state = props.state;
+  const state = current.value;
   if (state === undefined)
     return { kind: "loading" as const, status: "Loading this attempt's log" };
   if (state === null)
@@ -179,6 +253,22 @@ const download = computed(() =>
            ended is the one line that must stay put while it does. -->
       <p class="px-1 pt-2 text-xs text-fg-subtle">
         {{ attemptFooter(resolvedAttempt, view.entries.length) }}
+      </p>
+      <div v-if="canPage" class="mt-2 flex flex-wrap items-center gap-2 px-1">
+        <Button variant="outline" size="sm" :disabled="!canOlder" @click="loadOlder">
+          Load older
+        </Button>
+        <Button variant="outline" size="sm" :disabled="!canNewer || paging" @click="loadNewer">
+          Load newer
+        </Button>
+        <span v-if="paging" class="text-xs text-fg-muted">Loading…</span>
+        <span v-else-if="pageError" class="text-xs text-danger">Could not load that page</span>
+        <span v-else-if="current?.more_available" class="text-xs text-fg-muted"
+          >More available</span
+        >
+      </div>
+      <p v-if="current?.truncated" class="px-1 pt-1 text-xs text-warn">
+        The log is larger than the readable window; its oldest entries cannot be paged.
       </p>
       <Button v-if="download" variant="outline" size="sm" class="mt-3" as-child>
         <a :href="download" download>Download log</a>

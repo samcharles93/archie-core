@@ -775,11 +775,13 @@ func (c *Client) TaskLog(ctx context.Context, taskID int64, attempt int, q loggi
 		components = []string{}
 	}
 	return logging.TaskLogPage{
-		Entries:    mapValues(r.Entries, taskLogEntryValue),
-		Truncated:  r.Truncated,
-		File:       r.File,
-		Found:      true,
-		Components: components,
+		Entries:       mapValues(r.Entries, taskLogEntryValue),
+		Truncated:     r.Truncated,
+		MoreAvailable: r.MoreAvailable,
+		Cursor:        r.Cursor,
+		File:          r.File,
+		Found:         true,
+		Components:    components,
 	}, nil
 }
 

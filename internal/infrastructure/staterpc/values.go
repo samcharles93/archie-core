@@ -661,7 +661,7 @@ func taskLogRequestProto(taskID int64, attempt int, q logging.Query) *pb.ReadTas
 	return &pb.ReadTaskLogRequest{
 		TaskId: taskID, Attempt: int64(attempt), Limit: int64(q.Limit),
 		Levels: q.Levels, Component: q.Component, Stage: q.Stage, Contains: q.Contains,
-		Since: timestamp(q.Since), Until: timestamp(q.Until),
+		Since: timestamp(q.Since), Until: timestamp(q.Until), BeforeId: q.BeforeID,
 	}
 }
 
@@ -674,5 +674,6 @@ func taskLogQueryValue(r *pb.ReadTaskLogRequest) logging.Query {
 		Limit:     int(r.Limit),
 		Since:     timeValue(r.Since),
 		Until:     timeValue(r.Until),
+		BeforeID:  r.BeforeId,
 	}
 }

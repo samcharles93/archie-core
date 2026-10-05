@@ -46,6 +46,10 @@ type Query struct {
 	// Both bounds are inclusive. The zero time disables its bound.
 	Since time.Time
 	Until time.Time
+	// BeforeID is the byte-offset cursor a previous page returned as Cursor: a
+	// read returns the most recent matching entries whose end offset is at or
+	// before it. Zero reads the tail of the scan window.
+	BeforeID int64
 }
 
 // Read bounds. A log file is unbounded input, so a request must not be able to
@@ -77,6 +81,10 @@ type Result struct {
 type TaskLogPage struct {
 	Result
 	Components []string `json:"components"`
+	// MoreAvailable reports matching entries did not fit in this page; Cursor
+	// is the byte offset to pass back as Query.BeforeID for the next older one.
+	MoreAvailable bool  `json:"more_available"`
+	Cursor        int64 `json:"cursor"`
 }
 
 // ErrTaskLogsUnavailable reports that this process cannot read task logs.
@@ -93,11 +101,16 @@ func (r *TaskRegistry) TaskLog(_ context.Context, taskID int64, attempt int, q Q
 	if r == nil {
 		return TaskLogPage{}, ErrTaskLogsUnavailable
 	}
-	res, err := Tail(TaskLogPath(r.baseDir, taskID, attempt), q)
+	res, err := PageBefore(TaskLogPath(r.baseDir, taskID, attempt), q, q.BeforeID)
 	if err != nil {
 		return TaskLogPage{}, err
 	}
-	page := TaskLogPage{Result: res, Components: []string{}}
+	page := TaskLogPage{
+		Entries: res.Entries, Truncated: res.Truncated, File: res.File, Found: res.Found,
+		Components:    []string{},
+		MoreAvailable: res.MoreAvailable,
+		Cursor:        res.Cursor,
+	}
 	// The filter list is a convenience: failing to build it must not cost the
 	// caller their entries. Components only reads the tail this page already
 	// read, so its error is the same "treat as empty" case the daemon-wide
@@ -138,6 +151,9 @@ type PageResult struct {
 	MoreAvailable bool    `json:"more_available"`
 	Cursor        int64   `json:"cursor"`
 	File          string  `json:"file"`
+	// Found reports whether the log file exists; false with no entries is an
+	// attempt with no log, not an error.
+	Found bool `json:"found"`
 }
 
 // logWindow is the region of a log file one read examines: the
@@ -196,7 +212,7 @@ func readWindow(path string) (w logWindow, found bool, err error) {
 // readLines calls step for each matching entry in the last maxScanBytes of
 // path, with the offset after its line. It returns whether the window
 // excluded older data and the next cursor. Older data is never read.
-func readLines(path string, q Query, cursor int64, step func(e Entry, endOff int64) bool) (truncated bool, cursorOut int64, ok bool, err error) {
+func readLines(path string, q Query, cursor int64, step func(e Entry, startOff, endOff int64) bool) (truncated bool, cursorOut int64, ok bool, err error) {
 	w, found, err := readWindow(path)
 	if err != nil || !found {
 		return false, 0, false, err
@@ -236,7 +252,7 @@ func readLines(path string, q Query, cursor int64, step func(e Entry, endOff int
 // walkWindow calls step for each matching entry from offset from, skipping
 // undecodable lines, and returns the file offset to resume at. step returns
 // false to stop.
-func walkWindow(data []byte, windowStart, from int64, q Query, step func(e Entry, endOff int64) bool) int64 {
+func walkWindow(data []byte, windowStart, from int64, q Query, step func(e Entry, startOff, endOff int64) bool) int64 {
 	pos := from
 	for pos < int64(len(data)) {
 		// lineEnd indexes the line's terminating '\n'; when the final
@@ -253,7 +269,7 @@ func walkWindow(data []byte, windowStart, from int64, q Query, step func(e Entry
 		if len(raw) > 0 && raw[len(raw)-1] == '\r' {
 			raw = raw[:len(raw)-1] // CRLF
 		}
-		if entry, decoded := decode(raw); decoded && q.matches(entry) && !step(entry, endOff) {
+		if entry, decoded := decode(raw); decoded && q.matches(entry) && !step(entry, windowStart+pos, endOff) {
 			return endOff
 		}
 		if nl < 0 {
@@ -287,7 +303,7 @@ func Tail(path string, q Query) (Result, error) {
 	}
 
 	matches := make([]Entry, 0, limit)
-	truncated, _, ok, err := readLines(path, q, 0, func(e Entry, _ int64) bool {
+	truncated, _, ok, err := readLines(path, q, 0, func(e Entry, _, _ int64) bool {
 		if len(matches) == limit {
 			matches = append(matches[:0], matches[1:]...)
 			res.Truncated = true
@@ -321,12 +337,22 @@ func Page(path string, q Query, cursor int64) (PageResult, error) {
 		limit = MaxTailLines
 	}
 
+	// Stat for Found without reading the window twice. readLines cannot report
+	// the difference between a missing file and a cursor at EOF.
+	if strings.TrimSpace(path) != "" {
+		if _, err := os.Stat(path); err == nil {
+			res.Found = true
+		} else if !os.IsNotExist(err) {
+			return PageResult{}, fmt.Errorf("logging: stat %s: %w", path, err)
+		}
+	}
+
 	type lineAt struct {
 		entry  Entry
 		endOff int64
 	}
 	matches := make([]lineAt, 0, limit)
-	truncated, endOff, ok, err := readLines(path, q, cursor, func(e Entry, end int64) bool {
+	truncated, endOff, ok, err := readLines(path, q, cursor, func(e Entry, _, end int64) bool {
 		if len(matches) < limit {
 			matches = append(matches, lineAt{entry: e, endOff: end})
 			return true
@@ -358,6 +384,70 @@ func Page(path string, q Query, cursor int64) (PageResult, error) {
 		res.Cursor = matches[len(matches)-1].endOff
 	} else {
 		res.Cursor = endOff
+	}
+	return res, nil
+}
+
+// PageBefore returns up to Limit matching entries whose end offset is at or
+// before before (the whole scan window when before is zero), oldest first. It
+// is the backward counterpart of Page: Cursor is the before value for the next
+// older page, and MoreAvailable reports older matches beyond this page.
+func PageBefore(path string, q Query, before int64) (PageResult, error) {
+	res := PageResult{Entries: []Entry{}, File: path}
+	limit := q.Limit
+	if limit <= 0 {
+		limit = DefaultTailLines
+	}
+	if limit > MaxTailLines {
+		limit = MaxTailLines
+	}
+
+	// Stat for Found without reading the window twice. readLines cannot report
+	// the difference between a missing file and a cursor at EOF.
+	if strings.TrimSpace(path) != "" {
+		if _, err := os.Stat(path); err == nil {
+			res.Found = true
+		} else if !os.IsNotExist(err) {
+			return PageResult{}, fmt.Errorf("logging: stat %s: %w", path, err)
+		}
+	}
+
+	type lineAt struct {
+		entry      Entry
+		start, end int64
+	}
+	matches := make([]lineAt, 0, limit)
+	truncated, _, ok, err := readLines(path, q, 0, func(e Entry, start, end int64) bool {
+		// File order is oldest to newest: once past the bound, nothing older
+		// follows.
+		if before > 0 && end > before {
+			return false
+		}
+		if len(matches) == limit {
+			// Drop the oldest so the page holds the limit entries closest to
+			// before, and remember older entries exist beyond it.
+			matches = append(matches[:0], matches[1:]...)
+			res.MoreAvailable = true
+		}
+		matches = append(matches, lineAt{entry: e, start: start, end: end})
+		return true
+	})
+	if err != nil {
+		return PageResult{}, err
+	}
+	if !ok {
+		res.Truncated = truncated
+		return res, nil
+	}
+	res.Truncated = truncated
+	res.Entries = make([]Entry, len(matches))
+	for i, m := range matches {
+		res.Entries[i] = m.entry
+	}
+	// The oldest returned entry's start is the before value that returns the
+	// entries strictly older than this page. No matches means no older page.
+	if len(matches) > 0 {
+		res.Cursor = matches[0].start
 	}
 	return res, nil
 }

@@ -1012,6 +1012,10 @@ message ReadTaskLogRequest {
   // tagged carry one -- agent and tool output is logged without a stage, so a
   // stage filter narrows the file rather than covering it. Empty means any.
   string stage = 9;
+  // before_id is the byte-offset cursor a previous page returned as cursor: the
+  // read returns the most recent matching entries ending at or before it. Zero
+  // reads the tail, which is the page the dashboard opens on.
+  int64 before_id = 10;
 }
 // found=false is not an error: the task has no log file for that attempt.
 // That is a different condition from a process that cannot read logs at all
@@ -1026,6 +1030,12 @@ message ReadTaskLogResponse {
   // is the state directory's own layout, reported to an already-authenticated
   // operator; no caller is expected to open it.
   string file = 6;
+  // more_available reports matching entries did not fit in this page; cursor
+  // is the before_id for the next older one. truncated is separate: it means
+  // the log is larger than the readable scan window, so its oldest entries
+  // cannot be reached by paging at all.
+  bool more_available = 7;
+  int64 cursor = 8;
 }
 
 // StreamTaskLogContent returns one attempt's log verbatim, for a download. The

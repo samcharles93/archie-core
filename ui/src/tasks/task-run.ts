@@ -115,6 +115,12 @@ export interface LogState {
   disabled?: boolean;
   attempt?: number;
   entries?: LogEntry[];
+  /** Older entries were not examined: the file is larger than the scan window. */
+  truncated?: boolean;
+  /** Matching entries did not fit in this page; cursor continues the read. */
+  more_available?: boolean;
+  /** The byte-offset cursor to pass back as after_id for the next page. */
+  cursor?: number;
 }
 
 export interface CaptureFile {

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/samcharles93/archie-core/internal/logging"
 )
@@ -29,6 +30,18 @@ func (s *Server) handleTaskLogs(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	beforeID, ok := taskLogBeforeID(w, q.Get("before"))
+	if !ok {
+		return
+	}
+	since, ok := taskLogTime(w, "since", q.Get("since"))
+	if !ok {
+		return
+	}
+	until, ok := taskLogTime(w, "until", q.Get("until"))
+	if !ok {
+		return
+	}
 	page, err := reader.TaskLog(r.Context(), id, attempt, logging.Query{
 		Levels:    splitCSV(q.Get("level")),
 		Component: strings.TrimSpace(q.Get("component")),
@@ -38,6 +51,9 @@ func (s *Server) handleTaskLogs(w http.ResponseWriter, r *http.Request) {
 		Stage:    strings.TrimSpace(q.Get("stage")),
 		Contains: strings.TrimSpace(q.Get("q")),
 		Limit:    limit,
+		BeforeID: beforeID,
+		Since:    since,
+		Until:    until,
 	})
 	if err != nil {
 		// A reader that exists but cannot read here is still a statement about
@@ -52,11 +68,13 @@ func (s *Server) handleTaskLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, map[string]any{
-		"entries":    page.Entries,
-		"truncated":  page.Truncated,
-		"file":       page.File,
-		"components": page.Components,
-		"attempt":    attempt,
+		"entries":        page.Entries,
+		"truncated":      page.Truncated,
+		"more_available": page.MoreAvailable,
+		"cursor":         page.Cursor,
+		"file":           page.File,
+		"components":     page.Components,
+		"attempt":        attempt,
 		// found is the distinction the page needs: a reader answering with no
 		// entries because the file is absent is not a reader that is absent.
 		"found": page.Found,
@@ -136,6 +154,35 @@ func taskLogLimit(w http.ResponseWriter, raw string) (int, bool) {
 	default:
 		return parsed, true
 	}
+}
+
+// taskLogBeforeID parses the byte-offset cursor a previous page returned: the
+// read returns the entries older than it.
+func taskLogBeforeID(w http.ResponseWriter, raw string) (int64, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, true
+	}
+	parsed, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || parsed < 0 {
+		http.Error(w, "bad before", http.StatusBadRequest)
+		return 0, false
+	}
+	return parsed, true
+}
+
+// taskLogTime parses an RFC 3339 time bound; empty disables it.
+func taskLogTime(w http.ResponseWriter, name, raw string) (time.Time, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, true
+	}
+	parsed, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		http.Error(w, "bad "+name, http.StatusBadRequest)
+		return time.Time{}, false
+	}
+	return parsed, true
 }
 
 // writeDisabledTaskLogs is the "this process cannot read task logs" answer,
