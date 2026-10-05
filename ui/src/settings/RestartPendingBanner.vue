@@ -7,9 +7,10 @@ import { restartPendingTitles } from "./apply-status";
 const store = useControlPlaneStore();
 
 // Read from what each process reports it is running, never from this page's
-// own saves: a restart that already happened clears it. Only a process-binding
-// change earns this banner; a live-apply kind reports its lag in its own
-// applied-version rows rather than here.
+// own saves: a restart that already happened clears it. A restart-required
+// kind earns this banner while some process still runs the version it had at
+// boot; a live-apply kind reports its lag in its own applied-version rows
+// rather than here.
 const pending = computed(() =>
   restartPendingTitles(store.genericResources, (kind) => store.applyStatusFor(kind)),
 );

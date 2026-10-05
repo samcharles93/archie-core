@@ -35,16 +35,23 @@ type pluginSettings struct {
 func operationalDefinitions() []Definition {
 	return []Definition{
 		{Kind: RepositoryPoliciesKind, Title: "Repository policies", ApplyMode: "live", Document: []config.Repo{}, Seed: func(cfg config.Config) any { return cfg.Repos }, Validate: validateRepositories},
-		{Kind: ChannelSettingsKind, Title: "Channel settings", ApplyMode: "live", Document: channelSettings{}, Seed: seedChannels, Validate: validateChannels, Normalize: normalizeChannels},
+		// Restart-required: the Messaging Service, which owns the channel
+		// transports, reconciles them live and archied re-layers each update, but
+		// the Gateway's chat surfaces (workspace tools, rate limit, model
+		// catalogs) are boot-built, so a change cannot promise live apply
+		// everywhere the record reports it.
+		{Kind: ChannelSettingsKind, Title: "Channel settings", ApplyMode: "restart-required", Document: channelSettings{}, Seed: seedChannels, Validate: validateChannels, Normalize: normalizeChannels},
 		{Kind: SchedulingPolicyKind, Title: "Scheduling policy", ApplyMode: "live", Document: schedulingPolicy{}, Seed: func(cfg config.Config) any {
 			return schedulingPolicy{PollInterval: cfg.PollInterval.Std().String(), MaxRetries: cfg.MaxRetries, Label: &cfg.Label, Dispatch: cfg.Dispatch}
 		}, Validate: validateScheduling},
 		// Live: changed MCP servers are reconnected, rolling back to the old engine
 		// if the new one fails to start.
 		{Kind: ToolSettingsKind, Title: "Tool and MCP settings", ApplyMode: "live", Document: toolSettings{}, Seed: seedTools, Validate: validateTools},
-		// The one field, skills_dir, is read at boot: a stored value that differs
-		// from the running one is refused until restart (refuseSkillsDirChange).
-		{Kind: PluginSettingsKind, Title: "Plugin settings", ApplyMode: "live", Document: pluginSettings{}, Seed: func(cfg config.Config) any {
+		// Restart-required: the one field, skills_dir, is read at boot, and the
+		// watch refuses a change rather than layering it into the running config
+		// while the boot-built consumers hold the old value
+		// (refuseSkillsDirChange).
+		{Kind: PluginSettingsKind, Title: "Plugin settings", ApplyMode: "restart-required", Document: pluginSettings{}, Seed: func(cfg config.Config) any {
 			return pluginSettings{cfg.SkillsDir}
 		}, Validate: validatePluginSettings},
 		// Live: each process that supervises extensions re-reads this on its sync

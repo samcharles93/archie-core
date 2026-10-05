@@ -2,6 +2,7 @@ package archiegateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -270,7 +271,9 @@ func (b *server) startModelCatalogRefresh(ctx context.Context) {
 		base := b.cfgHolder.Get().Clone()
 		models := modelcatalog.Apply(&base, snapshot)
 		b.catalog.Set(snapshot, models)
-		b.relayer(ctx, base, "")
+		if err := b.relayer(ctx, base, ""); err != nil {
+			b.log.Warn("model catalog refresh rejected with the settings; the running settings stay", "err", err)
+		}
 	})
 }
 
@@ -288,21 +291,53 @@ func (b *server) startRuntimeWatches(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("watch %s: %w", kind, err)
 		}
+		var lastApplyErr, streamErr error
+		open := func(ctx context.Context, afterVersion int64) (<-chan controlplane.AppliedResource, error) {
+			next, err := b.controlPlane.WatchResource(ctx, kind, afterVersion)
+			if err == nil {
+				// A live watch is re-established: the outage clears, and an
+				// outstanding refusal stays the record's error.
+				b.applyStatus.Report(ctx, kind, afterVersion, lastApplyErr)
+			}
+			return next, err
+		}
 		go servicekit.KeepWatch(ctx, b.log, kind, b.runtimeVersions[kind], updates,
-			func(ctx context.Context, afterVersion int64) (<-chan controlplane.AppliedResource, error) {
-				return b.controlPlane.WatchResource(ctx, kind, afterVersion)
-			},
+			open,
 			servicekit.WaitFor,
 			func(update controlplane.AppliedResource) int64 { return update.Version },
 			func(update controlplane.AppliedResource) {
 				if update.Err != nil {
+					// A stream failure carries no version: the outage is what the
+					// end callback records. A refused document carries its version
+					// and becomes the record's error.
+					if update.Version > 0 {
+						lastApplyErr = update.Err
+						b.applyStatus.Report(ctx, kind, update.Version, update.Err)
+					} else {
+						streamErr = update.Err
+					}
 					b.log.Error("runtime settings watch failed", "kind", kind, "err", update.Err)
 					return
 				}
 				base := b.cfgHolder.Get()
 				catalog, _ := b.catalogState()
 				modelcatalog.Apply(&base, catalog)
-				b.relayer(ctx, base, kind)
+				lastApplyErr = b.relayer(ctx, base, kind)
+			},
+			func() {
+				// A refusal already on the record outranks the outage; it is the
+				// state the running settings are actually in. Otherwise the gap is
+				// reported so the record stops reading the last-applied version as
+				// current while no live updates can arrive.
+				if lastApplyErr != nil {
+					return
+				}
+				if streamErr == nil {
+					streamErr = fmt.Errorf("control-plane watch stream ended")
+				}
+				b.applyStatus.Report(ctx, kind, 0,
+					fmt.Errorf("runtime settings watch unavailable: %w", streamErr))
+				streamErr = nil
 			})
 	}
 	return nil
@@ -310,19 +345,23 @@ func (b *server) startRuntimeWatches(ctx context.Context) error {
 
 // relayer re-runs the runtime layering over base and applies the result to the
 // chat runtime and, for tool settings, the tool providers. A refused document
-// leaves the running settings in place.
-func (b *server) relayer(ctx context.Context, base config.Config, kind string) {
+// leaves the running settings in place and its error returned, so the watch
+// keeps it as lastApplyErr rather than recording an outage over it.
+func (b *server) relayer(ctx context.Context, base config.Config, kind string) error {
 	cfg, versions, err := b.runtimeConfig(ctx, base)
 	if err != nil {
 		b.log.Error("runtime settings update rejected; the running settings stay", "kind", kind, "err", err)
-		return
+		return err
 	}
 	b.cfgHolder.Set(cfg)
 	b.rebuildChatModelRuntime(cfg)
+	var problems []error
 	if kind == controlplane.ToolSettingsKind {
 		if err := b.reconcileToolSettings(ctx, cfg); err != nil {
 			b.applyStatus.Report(ctx, kind, versions[kind], err)
 			b.log.Error("tool settings reconciled with errors; the running servers stay", "err", err)
+			problems = append(problems, err)
 		}
 	}
+	return errors.Join(problems...)
 }

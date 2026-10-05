@@ -252,8 +252,16 @@ func (b *boot) startLiveSettings(ctx context.Context) error {
 // requiring a restart. ChannelSettingsKind is on the list for this process's
 // own re-layer; the Messaging Service, which owns the channel transports,
 // reconciles them separately and restarts only the channel whose settings
-// changed. Each kind is watched in its own goroutine, exactly the shape the
-// workflow-execution-settings watch established.
+// changed, and the Gateway's chat surfaces stay boot-built, so the kind is
+// labelled restart-required. AgentProfilesKind is on it because a task's
+// profile is resolved per task from the published config (daemon.pinTaskProfile,
+// like the container pool's per-acquire read), so a stored change reaches the
+// next task without a restart. PluginSettingsKind stays on the list to keep
+// its one field, skills_dir, out of the republished config while the running
+// directory consumers hold the boot value: the watch refuses such a change
+// rather than layering it (refuseSkillsDirChange), so the kind is labelled
+// restart-required. Each kind is watched in its own goroutine, exactly the
+// shape the workflow-execution-settings watch established.
 var runtimeResourceKinds = []string{
 	controlplane.ProviderSettingsKind,
 	controlplane.ModelRoleAssignmentsKind,
@@ -266,6 +274,7 @@ var runtimeResourceKinds = []string{
 	controlplane.ContainerRuntimePoliciesKind,
 	controlplane.CredentialBindingsKind,
 	controlplane.IdentityGrantsKind,
+	controlplane.AgentProfileKind,
 }
 
 // startRuntimeResourceWatches keeps a watch per live kind established for the
@@ -280,13 +289,51 @@ func (b *boot) startRuntimeResourceWatches(ctx context.Context, versions map[str
 		if err != nil {
 			return fmt.Errorf("watch %s: %w", kind, err)
 		}
+		var lastApplyErr, streamErr error
+		open := func(ctx context.Context, afterVersion int64) (<-chan controlplane.AppliedResource, error) {
+			next, err := b.controlPlane.WatchResource(ctx, kind, afterVersion)
+			if err == nil {
+				// A live watch is re-established: the outage clears, and an
+				// outstanding refusal stays the record's error.
+				b.applyStatus.Report(ctx, kind, afterVersion, lastApplyErr)
+			}
+			return next, err
+		}
 		go servicekit.KeepWatch(ctx, b.log, kind, versions[kind], updates,
-			func(ctx context.Context, afterVersion int64) (<-chan controlplane.AppliedResource, error) {
-				return b.controlPlane.WatchResource(ctx, kind, afterVersion)
-			},
+			open,
 			servicekit.WaitFor,
 			func(update controlplane.AppliedResource) int64 { return update.Version },
-			func(update controlplane.AppliedResource) { b.applyRuntimeResourceUpdate(ctx, kind, update) })
+			func(update controlplane.AppliedResource) {
+				if update.Err != nil {
+					// A stream failure carries no version at all, and a process
+					// must never report an unreachable store as its own
+					// refusal: the outage is what the end callback records.
+					if update.Version > 0 {
+						lastApplyErr = update.Err
+						b.applyStatus.Report(ctx, kind, update.Version, update.Err)
+					} else {
+						streamErr = update.Err
+					}
+					b.log.Error("runtime settings watch failed", "kind", kind, "err", update.Err)
+					return
+				}
+				lastApplyErr = b.applyRuntimeResourceUpdate(ctx, kind, update)
+			},
+			func() {
+				// A refusal already on the record outranks the outage; it is the
+				// state the running settings are actually in. Otherwise the gap is
+				// reported so the record stops reading the last-applied version as
+				// current while no live updates can arrive.
+				if lastApplyErr != nil {
+					return
+				}
+				if streamErr == nil {
+					streamErr = fmt.Errorf("control-plane watch stream ended")
+				}
+				b.applyStatus.Report(ctx, kind, 0,
+					fmt.Errorf("runtime settings watch unavailable: %w", streamErr))
+				streamErr = nil
+			})
 	}
 	return nil
 }
@@ -305,23 +352,17 @@ func (b *boot) startRuntimeResourceWatches(ctx context.Context, versions map[str
 // the previous settings keep running (last-known-good), and the failure is
 // reported through apply status, which keeps the version still live on the
 // record. A refused update therefore reaches the settings page the way a
-// refused workflow-execution-settings update does
-func (b *boot) applyRuntimeResourceUpdate(ctx context.Context, kind string, update controlplane.AppliedResource) {
-	if update.Err != nil {
-		// A stream failure carries no version at all (versions start at 1,
-		// store.PutResource), and a process must never report an unreachable
-		// store as its own refusal; the reconnect is servicekit.KeepWatch's business.
-		if update.Version > 0 {
-			b.applyStatus.Report(ctx, kind, update.Version, update.Err)
-		}
-		b.log.Error("runtime settings watch failed", "kind", kind, "err", update.Err)
-		return
-	}
+// refused workflow-execution-settings update does.
+//
+// The returned error is the refusal or rejection, for the watch to keep as
+// lastApplyErr: it is what keeps the outage callback from overwriting a
+// refusal the record already shows with a transport gap.
+func (b *boot) applyRuntimeResourceUpdate(ctx context.Context, kind string, update controlplane.AppliedResource) error {
 	if kind == controlplane.PluginSettingsKind {
 		if err := b.refuseSkillsDirChange(ctx); err != nil {
 			b.applyStatus.Report(ctx, kind, update.Version, err)
 			b.log.Error("plugin settings refused; the running settings stay", "version", update.Version, "err", err)
-			return
+			return err
 		}
 	}
 	base := b.cfgHolder.Get()
@@ -336,7 +377,7 @@ func (b *boot) applyRuntimeResourceUpdate(ctx context.Context, kind string, upda
 		// runtimeConfig reported the refusal through apply status for every
 		// kind it layers, keeping the version each of them last applied.
 		b.log.Error("runtime settings update rejected; the running settings stay", "kind", kind, "version", update.Version, "err", err)
-		return
+		return err
 	}
 	b.publishConfig(ctx, cfg)
 	b.log.Info("runtime settings applied", "kind", kind, "version", update.Version)
@@ -346,6 +387,7 @@ func (b *boot) applyRuntimeResourceUpdate(ctx context.Context, kind string, upda
 		// lower must be honoured as running tasks finish.
 		b.resizeTaskDispatcher(cfg.Containers.MaxConcurrency)
 	}
+	return nil
 }
 
 // resizeTaskDispatcher applies a new containers.max_concurrency to the

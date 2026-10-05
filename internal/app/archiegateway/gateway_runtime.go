@@ -3,6 +3,7 @@ package archiegateway
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/samcharles93/archie-core/internal/agentexec/modelloop"
 	"github.com/samcharles93/archie-core/internal/app/chattask"
@@ -46,6 +47,7 @@ func (b *server) setupChatRuntime(ctx context.Context, cfg config.Config, actor 
 		}
 		b.personas = gateway.NewPersonaRegistry(nil)
 		b.applyPersonas(personas, version)
+		b.applyStatus.Report(ctx, controlplane.PersonasKind, version, nil)
 		if err := b.watchPersonas(ctx, version); err != nil {
 			return fmt.Errorf("watch personas: %w", err)
 		}
@@ -59,6 +61,7 @@ func (b *server) setupChatRuntime(ctx context.Context, cfg config.Config, actor 
 		}
 		b.soul = newSoulSource(b.cfgPath, b.log)
 		b.applySoul(soul, version)
+		b.applyStatus.Report(ctx, controlplane.SoulKind, version, nil)
 		if err := b.watchSoul(ctx, version); err != nil {
 			return fmt.Errorf("watch soul: %w", err)
 		}
@@ -87,11 +90,6 @@ func (b *server) setupChatRuntime(ctx context.Context, cfg config.Config, actor 
 	return nil
 }
 
-// watchPersonas keeps the persona stream established for the life of the
-// process. The first stream is opened synchronously, so a control plane that
-// cannot be watched at all fails the boot that asked for it rather than
-// leaving the process running personas it can no longer update; after that the
-// watch reconnects instead of ending (see servicekit.KeepWatch).
 // setupChatTasks wires the task creator chat commands and scheduled workflows
 // enqueue through.
 func (b *server) setupChatTasks(cfg config.Config) {
@@ -105,21 +103,77 @@ func (b *server) setupChatTasks(cfg config.Config) {
 	b.defaultChatIdentity = defaultChatIdentity
 }
 
+// watchStatus is KeepWatch carrying the outage bookkeeping: an applied
+// refusal becomes the record's error, a stream failure and a stream end
+// report the gap, and a re-established watch clears it, so a record never
+// reads the boot version as current while no live updates can arrive.
+func watchStatus[T any](
+	ctx context.Context,
+	report func(ctx context.Context, kind string, version int64, err error),
+	log *slog.Logger,
+	kind, label string, version int64, updates <-chan T,
+	open func(ctx context.Context, after int64) (<-chan T, error),
+	versionOf func(T) int64,
+	errOf func(T) error,
+	deliver func(T),
+) {
+	var lastApplyErr, streamErr error
+	watchOpen := func(ctx context.Context, after int64) (<-chan T, error) {
+		next, err := open(ctx, after)
+		if err == nil {
+			report(ctx, kind, after, lastApplyErr)
+		}
+		return next, err
+	}
+	go servicekit.KeepWatch(ctx, log, kind, version, updates,
+		watchOpen,
+		servicekit.WaitFor,
+		versionOf,
+		func(update T) {
+			if err := errOf(update); err != nil {
+				if v := versionOf(update); v > 0 {
+					lastApplyErr = err
+					report(ctx, kind, v, err)
+				} else {
+					streamErr = err
+				}
+				log.Error("control-plane watch failed", "kind", kind, "err", err)
+				return
+			}
+			deliver(update)
+		},
+		func() {
+			// A refusal already on the record outranks the outage; it is the
+			// state the settings are actually in.
+			if lastApplyErr != nil {
+				return
+			}
+			if streamErr == nil {
+				streamErr = fmt.Errorf("control-plane watch stream ended")
+			}
+			report(ctx, kind, 0, fmt.Errorf("%s watch unavailable: %w", label, streamErr))
+			streamErr = nil
+		})
+}
+
+// watchPersonas keeps the persona stream established for the life of the
+// process. The first stream is opened synchronously, so a control plane that
+// cannot be watched at all fails the boot that asked for it rather than
+// leaving the process running personas it can no longer update; after that the
+// watch reconnects instead of ending (see servicekit.KeepWatch).
 func (b *server) watchPersonas(ctx context.Context, version int64) error {
 	updates, err := b.controlPlane.WatchPersonas(ctx, version)
 	if err != nil {
 		return err
 	}
-	go servicekit.KeepWatch(ctx, b.log, controlplane.PersonasKind, version, updates,
+	watchStatus(ctx, b.applyStatus.Report, b.log,
+		controlplane.PersonasKind, "personas", version, updates,
 		b.controlPlane.WatchPersonas,
-		servicekit.WaitFor,
 		func(update controlplane.AppliedPersonas) int64 { return update.Version },
+		func(update controlplane.AppliedPersonas) error { return update.Err },
 		func(update controlplane.AppliedPersonas) {
-			if update.Err != nil {
-				b.log.Error("persona watch failed", "err", update.Err)
-				return
-			}
 			b.applyPersonas(update.Collection, update.Version)
+			b.applyStatus.Report(ctx, controlplane.PersonasKind, update.Version, nil)
 		})
 	return nil
 }
@@ -134,22 +188,21 @@ func (b *server) applyPersonas(collection agent.PersonaCollection, version int64
 }
 
 // watchSoul keeps the soul stream established for the life of the process, so
-// a dashboard edit reaches the next turn without a restart.
+// a dashboard edit reaches the next turn without a restart. The stream rides
+// the same outage bookkeeping as personas (watchStatus).
 func (b *server) watchSoul(ctx context.Context, version int64) error {
 	updates, err := b.controlPlane.WatchSoul(ctx, version)
 	if err != nil {
 		return err
 	}
-	go servicekit.KeepWatch(ctx, b.log, controlplane.SoulKind, version, updates,
+	watchStatus(ctx, b.applyStatus.Report, b.log,
+		controlplane.SoulKind, "soul", version, updates,
 		b.controlPlane.WatchSoul,
-		servicekit.WaitFor,
 		func(update controlplane.AppliedSoul) int64 { return update.Version },
+		func(update controlplane.AppliedSoul) error { return update.Err },
 		func(update controlplane.AppliedSoul) {
-			if update.Err != nil {
-				b.log.Error("soul watch failed", "err", update.Err)
-				return
-			}
 			b.applySoul(update.Soul, update.Version)
+			b.applyStatus.Report(ctx, controlplane.SoulKind, update.Version, nil)
 		})
 	return nil
 }
