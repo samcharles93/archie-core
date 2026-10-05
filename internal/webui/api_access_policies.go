@@ -112,12 +112,15 @@ func shippedPolicyIDs() []string {
 	return []string{access.PolicyOrgRead, access.PolicyOrgEdit, access.PolicyOrgAdmin, access.PolicyOrgOwner}
 }
 
-// instanceOwner reports whether the request acts as the instance owner: the
-// shared-token principal of a single-operator install.
+// instanceOwner reports whether the request acts as the instance owner: a
+// principal holding the owner role of the default org. The shared token acts
+// as the org-sys operator person, and the system fallback is an owner of
+// org-sys too, so both answer true; an owner of any other org, or a member of
+// org-sys with a lesser role, does not.
 func instanceOwner(r *http.Request) bool {
 	principal, ok := access.PrincipalFromContext(r.Context())
 	if !ok {
 		principal = access.SharedTokenOwner()
 	}
-	return principal.IdentityID == access.SharedTokenOwner().IdentityID
+	return principal.Org == org.DefaultOrgID && principal.Role("") == org.RoleOwner
 }
