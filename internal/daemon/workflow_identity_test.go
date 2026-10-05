@@ -9,6 +9,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	workflowtask "github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
@@ -42,9 +43,16 @@ func (r runAllowed) Authorize(p access.Principal, _ access.Action, _ access.Reso
 
 func (runAllowed) Reload(context.Context) error { return nil }
 
+type enablementOf workflowtask.WorkflowEnablement
+
+func (e enablementOf) WorkflowEnablement(context.Context) (workflowtask.WorkflowEnablement, error) {
+	return workflowtask.WorkflowEnablement(e), nil
+}
+
 // TestWorkflowIdentity pins that a workflow naming an identity runs as it
 // only when the dispatcher may run the workflow, and that a workflow naming
-// none runs as the dispatcher.
+// none runs as the dispatcher. A workflow its org disabled is parked whatever
+// started it.
 func TestWorkflowIdentity(t *testing.T) {
 	const named = "id: deploy\nidentity: deployer\n"
 	const plain = "id: deploy\n"
@@ -55,11 +63,13 @@ func TestWorkflowIdentity(t *testing.T) {
 		allowed      runAllowed
 		wantIdentity string
 		wantParked   bool
+		disabled     bool
 	}{
-		{"allowed dispatcher runs as the workflow's identity", named, "", runAllowed{"root": true}, "deployer", false},
-		{"refused dispatcher is parked", named, "", runAllowed{}, "", true},
-		{"unconfigured identity is parked", "id: deploy\nidentity: ghost\n", "", runAllowed{"root": true}, "", true},
-		{"no named identity runs as the dispatcher", plain, "bot", runAllowed{}, "bot", false},
+		{"allowed dispatcher runs as the workflow's identity", named, "", runAllowed{"root": true}, "deployer", false, false},
+		{"refused dispatcher is parked", named, "", runAllowed{}, "", true, false},
+		{"unconfigured identity is parked", "id: deploy\nidentity: ghost\n", "", runAllowed{"root": true}, "", true, false},
+		{"no named identity runs as the dispatcher", plain, "bot", runAllowed{}, "bot", false, false},
+		{"disabled workflow is parked", plain, "bot", runAllowed{}, "", true, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -68,6 +78,9 @@ func TestWorkflowIdentity(t *testing.T) {
 				Store: store, Log: slog.New(slog.DiscardHandler), RootIdentityID: "root",
 				Access: tt.allowed, Principals: principalOf{},
 				Identities: []*IdentityRunner{{ID: "id-deployer", Name: "deployer"}, {ID: "id-bot", Name: "bot"}},
+			}
+			if tt.disabled {
+				d.WorkflowEnablement = enablementOf(workflowtask.WorkflowEnablement{}.SetEnabled("", "deploy", false))
 			}
 			task := &workflow.Task{
 				ID: 1, Identity: tt.dispatcher, Workflow: "deploy",

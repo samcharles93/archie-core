@@ -1781,9 +1781,26 @@ func validateProfileMeetsNeeds(profile config.AgentProfile, needs workflowtask.W
 }
 
 // pinWorkflowDefinition ensures the task carries a valid definition pin for
-// the workflow it names. A valid pin is kept; a missing or mismatched one is
-// resolved again from the active definitions.
+// the workflow it names and that its org has the workflow enabled. Every run
+// passes through here, whatever started it, so this is the one enablement
+// check for issue labels, handoffs, approvals, calls and playbooks alike.
 func (d *Daemon) pinWorkflowDefinition(ctx context.Context, task *workflow.Task) error {
+	if err := d.pinDefinition(ctx, task); err != nil {
+		return err
+	}
+	enablement, err := d.workflowEnablement(ctx)
+	if err != nil {
+		return pinFailure{taskstate.ParkTransient, fmt.Errorf("workflow enablement: %w", err)}
+	}
+	if !enablement.Enabled(task.Org, task.Workflow) {
+		return pinFailure{taskstate.ParkNeedsHuman, fmt.Errorf("workflow %s is disabled", task.Workflow)}
+	}
+	return nil
+}
+
+// pinDefinition keeps a valid pin and resolves a missing or mismatched one
+// again from the active definitions.
+func (d *Daemon) pinDefinition(ctx context.Context, task *workflow.Task) error {
 	pinned, ok, err := pinnedDefinitionID(task)
 	if err != nil {
 		return pinFailure{taskstate.ParkNeedsHuman, err}
