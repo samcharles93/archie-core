@@ -158,6 +158,9 @@ type Server struct {
 	// Optional: nil makes every
 	// /api/bindings route answer 503 rather than the dashboard failing to start.
 	Bindings storecontract.BindingStore
+	// Dispatches reads the binding dispatch ledger. Nil answers the dispatch
+	// routes 503 and lists bindings without their last outcome.
+	Dispatches storecontract.DispatchLedger
 
 	// Sources persists capture sources and their signing setting.
 	// Optional: nil makes every
@@ -278,7 +281,9 @@ func (s *Server) registerMappingAndBindingRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/bindings/{id}", s.handleBindingGet)
 	mux.HandleFunc("PATCH /api/bindings/{id}", s.handleBindingUpdate)
 	mux.HandleFunc("DELETE /api/bindings/{id}", s.handleBindingDelete)
-	mux.HandleFunc("POST /api/bindings/{id}/approve", s.handleBindingApprove)
+	mux.HandleFunc("POST /api/bindings/{id}/approve", s.handleBindingTransition("approve", storecontract.BindingStore.ApproveBinding))
+	mux.HandleFunc("POST /api/bindings/{id}/pause", s.handleBindingTransition("pause", storecontract.BindingStore.PauseBinding))
+	mux.HandleFunc("POST /api/bindings/{id}/resume", s.handleBindingTransition("resume", storecontract.BindingStore.ResumeBinding))
 	mux.HandleFunc("GET /api/bindings/{id}/dispatches", s.handleDispatches(func(id string) (storecontract.DispatchFilter, bool) {
 		return storecontract.DispatchFilter{BindingID: id}, id != ""
 	}))

@@ -99,15 +99,18 @@ export function useBindings() {
     }
   }
 
-  async function approve(binding: Binding): Promise<void> {
+  async function transition(command: (id: string) => Promise<unknown>, binding: Binding): Promise<void> {
     actionFailure.value = null;
     try {
-      await api.bindingApprove(String(binding.id));
+      await command(String(binding.id));
       await load();
     } catch (err) {
       actionFailure.value = failureFor(err);
     }
   }
+  const approve = (binding: Binding) => transition(api.bindingApprove, binding);
+  const pause = (binding: Binding) => transition(api.bindingPause, binding);
+  const resume = (binding: Binding) => transition(api.bindingResume, binding);
 
   async function remove(binding: Binding): Promise<void> {
     actionFailure.value = null;
@@ -132,6 +135,8 @@ export function useBindings() {
     resetSaveFailure,
     save,
     approve,
+    pause,
+    resume,
     remove,
   };
 }

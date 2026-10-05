@@ -1048,6 +1048,25 @@ func (q *Queries) TaskToolCalls(ctx context.Context, taskID int64) ([]TaskToolCa
 	return items, nil
 }
 
+const transitionBindingStatus = `-- name: TransitionBindingStatus :execrows
+UPDATE bindings SET status = $1, updated_at = now()
+WHERE id = $2 AND status = $3
+`
+
+type TransitionBindingStatusParams struct {
+	ToStatus   string
+	ID         string
+	FromStatus string
+}
+
+func (q *Queries) TransitionBindingStatus(ctx context.Context, arg TransitionBindingStatusParams) (int64, error) {
+	result, err := q.db.Exec(ctx, transitionBindingStatus, arg.ToStatus, arg.ID, arg.FromStatus)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updateBinding = `-- name: UpdateBinding :execrows
 UPDATE bindings
 SET name = $2, source = $3, mapping = $4, filter = $5, workflow = $6, owner = $7, repo = $8,

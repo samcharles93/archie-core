@@ -128,11 +128,13 @@ export type StatusKind = "ok" | "warn" | "idle";
 const STATUS_LABELS: Record<string, string> = {
   pending_approval: "pending approval",
   armed: "armed",
+  paused: "paused",
 };
 
 const STATUS_KINDS: Record<string, StatusKind> = {
   pending_approval: "warn",
   armed: "ok",
+  paused: "idle",
 };
 
 /** A status the daemon grows later renders as itself in the neutral kind,

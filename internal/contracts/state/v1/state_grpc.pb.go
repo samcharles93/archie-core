@@ -104,6 +104,8 @@ const (
 	StateStoreService_UpdateBinding_FullMethodName              = "/state.v1.StateStoreService/UpdateBinding"
 	StateStoreService_DeleteBinding_FullMethodName              = "/state.v1.StateStoreService/DeleteBinding"
 	StateStoreService_ApproveBinding_FullMethodName             = "/state.v1.StateStoreService/ApproveBinding"
+	StateStoreService_PauseBinding_FullMethodName               = "/state.v1.StateStoreService/PauseBinding"
+	StateStoreService_ResumeBinding_FullMethodName              = "/state.v1.StateStoreService/ResumeBinding"
 	StateStoreService_InsertSource_FullMethodName               = "/state.v1.StateStoreService/InsertSource"
 	StateStoreService_GetSource_FullMethodName                  = "/state.v1.StateStoreService/GetSource"
 	StateStoreService_ListSources_FullMethodName                = "/state.v1.StateStoreService/ListSources"
@@ -295,6 +297,8 @@ type StateStoreServiceClient interface {
 	UpdateBinding(ctx context.Context, in *UpdateBindingRequest, opts ...grpc.CallOption) (*UpdateBindingResponse, error)
 	DeleteBinding(ctx context.Context, in *DeleteBindingRequest, opts ...grpc.CallOption) (*DeleteBindingResponse, error)
 	ApproveBinding(ctx context.Context, in *ApproveBindingRequest, opts ...grpc.CallOption) (*ApproveBindingResponse, error)
+	PauseBinding(ctx context.Context, in *PauseBindingRequest, opts ...grpc.CallOption) (*PauseBindingResponse, error)
+	ResumeBinding(ctx context.Context, in *ResumeBindingRequest, opts ...grpc.CallOption) (*ResumeBindingResponse, error)
 	// Source (event-automation.md "Sources"): the capture endpoint and its
 	// signing setting. Secrets travel in plaintext; the store encrypts at rest.
 	InsertSource(ctx context.Context, in *InsertSourceRequest, opts ...grpc.CallOption) (*InsertSourceResponse, error)
@@ -1213,6 +1217,26 @@ func (c *stateStoreServiceClient) ApproveBinding(ctx context.Context, in *Approv
 	return out, nil
 }
 
+func (c *stateStoreServiceClient) PauseBinding(ctx context.Context, in *PauseBindingRequest, opts ...grpc.CallOption) (*PauseBindingResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PauseBindingResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_PauseBinding_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ResumeBinding(ctx context.Context, in *ResumeBindingRequest, opts ...grpc.CallOption) (*ResumeBindingResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResumeBindingResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ResumeBinding_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *stateStoreServiceClient) InsertSource(ctx context.Context, in *InsertSourceRequest, opts ...grpc.CallOption) (*InsertSourceResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(InsertSourceResponse)
@@ -1600,6 +1624,8 @@ type StateStoreServiceServer interface {
 	UpdateBinding(context.Context, *UpdateBindingRequest) (*UpdateBindingResponse, error)
 	DeleteBinding(context.Context, *DeleteBindingRequest) (*DeleteBindingResponse, error)
 	ApproveBinding(context.Context, *ApproveBindingRequest) (*ApproveBindingResponse, error)
+	PauseBinding(context.Context, *PauseBindingRequest) (*PauseBindingResponse, error)
+	ResumeBinding(context.Context, *ResumeBindingRequest) (*ResumeBindingResponse, error)
 	// Source (event-automation.md "Sources"): the capture endpoint and its
 	// signing setting. Secrets travel in plaintext; the store encrypts at rest.
 	InsertSource(context.Context, *InsertSourceRequest) (*InsertSourceResponse, error)
@@ -1904,6 +1930,12 @@ func (UnimplementedStateStoreServiceServer) DeleteBinding(context.Context, *Dele
 }
 func (UnimplementedStateStoreServiceServer) ApproveBinding(context.Context, *ApproveBindingRequest) (*ApproveBindingResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ApproveBinding not implemented")
+}
+func (UnimplementedStateStoreServiceServer) PauseBinding(context.Context, *PauseBindingRequest) (*PauseBindingResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PauseBinding not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ResumeBinding(context.Context, *ResumeBindingRequest) (*ResumeBindingResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResumeBinding not implemented")
 }
 func (UnimplementedStateStoreServiceServer) InsertSource(context.Context, *InsertSourceRequest) (*InsertSourceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method InsertSource not implemented")
@@ -3505,6 +3537,42 @@ func _StateStoreService_ApproveBinding_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StateStoreService_PauseBinding_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PauseBindingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).PauseBinding(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_PauseBinding_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).PauseBinding(ctx, req.(*PauseBindingRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ResumeBinding_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResumeBindingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ResumeBinding(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ResumeBinding_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ResumeBinding(ctx, req.(*ResumeBindingRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _StateStoreService_InsertSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(InsertSourceRequest)
 	if err := dec(in); err != nil {
@@ -4214,6 +4282,14 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ApproveBinding",
 			Handler:    _StateStoreService_ApproveBinding_Handler,
+		},
+		{
+			MethodName: "PauseBinding",
+			Handler:    _StateStoreService_PauseBinding_Handler,
+		},
+		{
+			MethodName: "ResumeBinding",
+			Handler:    _StateStoreService_ResumeBinding_Handler,
 		},
 		{
 			MethodName: "InsertSource",

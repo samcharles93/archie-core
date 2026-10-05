@@ -12,12 +12,15 @@ import (
 )
 
 // Status is a binding's state. New bindings are pending_approval; only armed
-// bindings dispatch; any edit returns to pending_approval; Approve arms.
+// bindings dispatch; any edit returns to pending_approval; Approve arms. Pause
+// stops an armed binding, and Resume returns it to pending_approval so it is
+// approved again before it fires.
 type Status string
 
 const (
 	StatusPendingApproval Status = "pending_approval"
 	StatusArmed           Status = "armed"
+	StatusPaused          Status = "paused"
 )
 
 // Matcher selects the captures a binding applies to, by source path segment.

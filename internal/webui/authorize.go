@@ -126,9 +126,10 @@ func actionOf(method string) access.Action {
 // routeOverride returns the action, kind and record key a specific route
 // shape carries, or ok=false when the method-and-kind fallback applies.
 func routeOverride(action access.Action, path string) (access.Action, access.ResourceKind, string, bool) {
+	if command, ok := bindingCommand(action, path); ok {
+		return command, access.KindBinding, segmentValue(path, 2), true
+	}
 	switch {
-	case action == access.ActionCreate && matchSegment(path, "/api/bindings/", "/approve"):
-		return access.ActionApprove, access.KindBinding, segmentValue(path, 2), true
 	case matchSegment(path, "/api/tasks/", "/logs"):
 		return access.ActionReadLogs, access.KindTask, segmentValue(path, 2), true
 	case matchPrefix(path, "/api/access/policies"):
@@ -162,6 +163,20 @@ func routeOverride(action access.Action, path string) (access.Action, access.Res
 		return access.ActionRead, access.KindDashboard, "", true
 	}
 	return action, "", "", false
+}
+
+// bindingCommand maps a binding lifecycle route to its action: approving arms
+// a binding, so it is approval; pausing and resuming change its state.
+func bindingCommand(action access.Action, path string) (access.Action, bool) {
+	switch {
+	case action != access.ActionCreate:
+		return action, false
+	case matchSegment(path, "/api/bindings/", "/approve"):
+		return access.ActionApprove, true
+	case matchSegment(path, "/api/bindings/", "/pause"), matchSegment(path, "/api/bindings/", "/resume"):
+		return access.ActionUpdate, true
+	}
+	return action, false
 }
 
 // kindOf maps a collection route onto the resource kind it addresses.

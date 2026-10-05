@@ -1,6 +1,7 @@
 package postgres_test
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -90,5 +91,61 @@ func assertUndispatched(t *testing.T, eda *postgres.EDA, want int) {
 	}
 	if len(got) != want {
 		t.Fatalf("undispatched captures = %d, want %d", len(got), want)
+	}
+}
+
+// A binding moves pending -> armed -> paused -> pending, and refuses any other
+// transition; a paused binding is offered no captures.
+func TestBindingLifecycle(t *testing.T) {
+	ctx := t.Context()
+	eda := pgstore.EDA(t, nil)
+	eventTypeID, err := eda.InsertEventType(ctx, eventtype.EventType{Source: "forge", Name: "push"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mappingID, err := eda.InsertMapping(ctx, mapping.Mapping{Name: "push", EventTypeID: eventTypeID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := eda.InsertBinding(ctx, binding.Binding{
+		Name: "on-push", Matcher: binding.Matcher{Source: "forge"}, MappingID: mappingID, Workflow: "tdd",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eda.InsertCapture(ctx, storecontract.CapturedEvent{
+		Source: "forge", Body: "{}", Authenticated: true, ReceivedAt: time.Now(),
+	}, time.Hour, 100); err != nil {
+		t.Fatal(err)
+	}
+	steps := []struct {
+		name    string
+		apply   func(context.Context, string) error
+		wantErr error
+		status  binding.Status
+		offered int
+	}{
+		{"a pending binding cannot pause", eda.PauseBinding, storecontract.ErrBindingTransition, binding.StatusPendingApproval, 0},
+		{"approve arms it", eda.ApproveBinding, nil, binding.StatusArmed, 1},
+		{"an armed binding cannot resume", eda.ResumeBinding, storecontract.ErrBindingTransition, binding.StatusArmed, 1},
+		{"pause stops it", eda.PauseBinding, nil, binding.StatusPaused, 0},
+		{"a paused binding cannot be approved", eda.ApproveBinding, storecontract.ErrBindingTransition, binding.StatusPaused, 0},
+		{"resume returns it to approval", eda.ResumeBinding, nil, binding.StatusPendingApproval, 0},
+	}
+	for _, step := range steps {
+		if err := step.apply(ctx, id); !errors.Is(err, step.wantErr) {
+			t.Fatalf("%s: err = %v, want %v", step.name, err, step.wantErr)
+		}
+		b, err := eda.GetBinding(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if b.Status != step.status {
+			t.Fatalf("%s: status = %q, want %q", step.name, b.Status, step.status)
+		}
+		assertUndispatched(t, eda, step.offered)
+	}
+	if err := eda.PauseBinding(ctx, "missing"); !errors.Is(err, storecontract.ErrBindingNotFound) {
+		t.Fatalf("pause of a missing binding = %v, want ErrBindingNotFound", err)
 	}
 }

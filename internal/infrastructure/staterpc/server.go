@@ -848,6 +848,28 @@ func (s *server) DeleteBinding(ctx context.Context, r *pb.DeleteBindingRequest) 
 	return &pb.DeleteBindingResponse{}, nil
 }
 
+func (s *server) PauseBinding(ctx context.Context, r *pb.PauseBindingRequest) (*pb.PauseBindingResponse, error) {
+	bs, err := s.binding()
+	if err != nil {
+		return nil, err
+	}
+	if err := bs.PauseBinding(ctx, r.Id); err != nil {
+		return nil, s.logErr("PauseBinding", err)
+	}
+	return &pb.PauseBindingResponse{}, nil
+}
+
+func (s *server) ResumeBinding(ctx context.Context, r *pb.ResumeBindingRequest) (*pb.ResumeBindingResponse, error) {
+	bs, err := s.binding()
+	if err != nil {
+		return nil, err
+	}
+	if err := bs.ResumeBinding(ctx, r.Id); err != nil {
+		return nil, s.logErr("ResumeBinding", err)
+	}
+	return &pb.ResumeBindingResponse{}, nil
+}
+
 func (s *server) ApproveBinding(ctx context.Context, r *pb.ApproveBindingRequest) (*pb.ApproveBindingResponse, error) {
 	bs, err := s.binding()
 	if err != nil {
@@ -966,7 +988,11 @@ func (s *server) ListDispatches(ctx context.Context, r *pb.ListDispatchesRequest
 	if err != nil {
 		return nil, err
 	}
-	dispatches, err := bs.ListDispatches(ctx, storecontract.DispatchFilter{
+	ledger, ok := bs.(storecontract.DispatchLedger)
+	if !ok {
+		return nil, errBindingDispatchUnavailable
+	}
+	dispatches, err := ledger.ListDispatches(ctx, storecontract.DispatchFilter{
 		BindingID: r.BindingId, CaptureID: r.CaptureId, TaskID: r.TaskId, Limit: int(r.Limit),
 	})
 	if err != nil {

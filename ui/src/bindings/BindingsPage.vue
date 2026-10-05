@@ -34,6 +34,8 @@ const {
   resetSaveFailure,
   save,
   approve,
+  pause,
+  resume,
   remove,
 } = useBindings();
 
@@ -96,6 +98,8 @@ async function handleDelete(binding: Binding): Promise<void> {
       :failure="failure"
       @edit="startEdit"
       @approve="approve"
+      @pause="pause"
+      @resume="resume"
       @delete="deleting = $event"
     />
 

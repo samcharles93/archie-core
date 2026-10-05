@@ -84,6 +84,10 @@ WHERE id = $1;
 -- name: SetBindingArmed :execrows
 UPDATE bindings SET status = 'armed', updated_at = now() WHERE id = $1;
 
+-- name: TransitionBindingStatus :execrows
+UPDATE bindings SET status = @to_status, updated_at = now()
+WHERE id = @id AND status = @from_status;
+
 -- name: DeleteBinding :execrows
 DELETE FROM bindings WHERE id = $1;
 

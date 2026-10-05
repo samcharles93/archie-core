@@ -153,6 +153,9 @@ func wireTaskLogs(d deps, srv *webui.Server) {
 // wireCaptureSurfaces attaches capture listing, source editing and intake. A
 // store missing a contract degrades that part with a warning.
 func wireCaptureSurfaces(d deps, srv *webui.Server) {
+	if dispatches, ok := d.Store.(storecontract.DispatchLedger); ok {
+		srv.Dispatches = dispatches
+	}
 	captures, hasCaptures := d.Store.(storecontract.CaptureStore)
 	sources, hasSources := d.Store.(storecontract.SourceStore)
 	if !hasCaptures {

@@ -81,7 +81,10 @@ func (s *Server) handleBindingsList(w http.ResponseWriter, r *http.Request) {
 // lastOutcome returns a binding's newest dispatch, or nil when it has none or
 // the ledger is unreadable.
 func (s *Server) lastOutcome(ctx context.Context, bindingID string) *storecontract.Dispatch {
-	rows, err := s.Bindings.ListDispatches(ctx, storecontract.DispatchFilter{BindingID: bindingID, Limit: 1})
+	if s.Dispatches == nil {
+		return nil
+	}
+	rows, err := s.Dispatches.ListDispatches(ctx, storecontract.DispatchFilter{BindingID: bindingID, Limit: 1})
 	if err != nil {
 		s.Log.Warn("binding last outcome", "binding", bindingID, "err", err)
 		return nil
@@ -152,8 +155,8 @@ func (s *Server) handleBindingGet(w http.ResponseWriter, r *http.Request) {
 // path names, linking bindings, captures and tasks to each other.
 func (s *Server) handleDispatches(filterFor func(id string) (storecontract.DispatchFilter, bool)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.Bindings == nil {
-			http.Error(w, "bindings not configured", http.StatusServiceUnavailable)
+		if s.Dispatches == nil {
+			http.Error(w, "dispatch ledger not configured", http.StatusServiceUnavailable)
 			return
 		}
 		filter, ok := filterFor(r.PathValue("id"))
@@ -162,7 +165,7 @@ func (s *Server) handleDispatches(filterFor func(id string) (storecontract.Dispa
 			return
 		}
 		filter.Limit = 50
-		dispatches, err := s.Bindings.ListDispatches(r.Context(), filter)
+		dispatches, err := s.Dispatches.ListDispatches(r.Context(), filter)
 		if err != nil {
 			s.Log.Error("list dispatches", "err", err)
 			http.Error(w, "list dispatches failed", http.StatusInternalServerError)
@@ -238,38 +241,42 @@ func (s *Server) handleBindingDelete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) handleBindingApprove(w http.ResponseWriter, r *http.Request) {
-	if !s.authorizeTaskMutation(w, r) {
-		return
-	}
-	if s.Bindings == nil {
-		http.Error(w, "bindings not configured", http.StatusServiceUnavailable)
-		return
-	}
-	id := r.PathValue("id")
-	if id == "" {
-		http.Error(w, "invalid binding id", http.StatusBadRequest)
-		return
-	}
-	if err := s.Bindings.ApproveBinding(r.Context(), id); err != nil {
-		switch {
-		case errors.Is(err, storecontract.ErrBindingNotFound):
-			http.Error(w, "binding not found", http.StatusNotFound)
-		case errors.Is(err, storecontract.ErrBindingTransition):
-			http.Error(w, "binding cannot be approved from its current state", http.StatusConflict)
-		default:
-			s.Log.Error("approve binding", "err", err, "id", id)
-			http.Error(w, "approve binding failed", http.StatusInternalServerError)
+// handleBindingTransition serves one binding lifecycle command (approve,
+// pause, resume) and answers the binding as it now stands.
+func (s *Server) handleBindingTransition(verb string, apply func(storecontract.BindingStore, context.Context, string) error) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.authorizeTaskMutation(w, r) {
+			return
 		}
-		return
+		if s.Bindings == nil {
+			http.Error(w, "bindings not configured", http.StatusServiceUnavailable)
+			return
+		}
+		id := r.PathValue("id")
+		if id == "" {
+			http.Error(w, "invalid binding id", http.StatusBadRequest)
+			return
+		}
+		if err := apply(s.Bindings, r.Context(), id); err != nil {
+			switch {
+			case errors.Is(err, storecontract.ErrBindingNotFound):
+				http.Error(w, "binding not found", http.StatusNotFound)
+			case errors.Is(err, storecontract.ErrBindingTransition):
+				http.Error(w, "binding cannot "+verb+" from its current state", http.StatusConflict)
+			default:
+				s.Log.Error(verb+" binding", "err", err, "id", id)
+				http.Error(w, verb+" binding failed", http.StatusInternalServerError)
+			}
+			return
+		}
+		updated, err := s.Bindings.GetBinding(r.Context(), id)
+		if err != nil || updated == nil {
+			s.Log.Error("get binding after "+verb, "err", err, "id", id)
+			http.Error(w, verb+" binding failed", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, updated)
 	}
-	updated, err := s.Bindings.GetBinding(r.Context(), id)
-	if err != nil || updated == nil {
-		s.Log.Error("get binding after approve", "err", err, "id", id)
-		http.Error(w, "approve binding failed", http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, updated)
 }
 
 // checkedBinding builds the binding a create or update request describes and

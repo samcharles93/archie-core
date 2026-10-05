@@ -612,6 +612,16 @@ func (c *Client) DeleteBinding(ctx context.Context, id string) error {
 	return unmapError(err)
 }
 
+func (c *Client) PauseBinding(ctx context.Context, id string) error {
+	_, err := c.client.PauseBinding(ctx, &pb.PauseBindingRequest{Id: id})
+	return unmapError(err)
+}
+
+func (c *Client) ResumeBinding(ctx context.Context, id string) error {
+	_, err := c.client.ResumeBinding(ctx, &pb.ResumeBindingRequest{Id: id})
+	return unmapError(err)
+}
+
 func (c *Client) ApproveBinding(ctx context.Context, id string) error {
 	_, err := c.client.ApproveBinding(ctx, &pb.ApproveBindingRequest{Id: id})
 	return unmapError(err)

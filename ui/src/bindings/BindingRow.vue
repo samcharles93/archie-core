@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { Check, Pencil, Trash2 } from "@lucide/vue";
+import { Check, Pause, Pencil, Play, Trash2 } from "@lucide/vue";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,8 @@ const failing = computed(() => {
 const emit = defineEmits<{
   edit: [binding: Binding];
   approve: [binding: Binding];
+  pause: [binding: Binding];
+  resume: [binding: Binding];
   delete: [binding: Binding];
 }>();
 </script>
@@ -89,6 +91,26 @@ const emit = defineEmits<{
         >
           <Check data-icon="inline-start" />
           Approve
+        </Button>
+        <Button
+          v-if="props.binding.status === 'armed'"
+          variant="outline"
+          size="sm"
+          @click="emit('pause', props.binding)"
+        >
+          <Pause data-icon="inline-start" />
+          Pause
+        </Button>
+        <!-- Resuming returns the binding to pending approval, so it is
+             approved again before it fires. -->
+        <Button
+          v-if="props.binding.status === 'paused'"
+          variant="outline"
+          size="sm"
+          @click="emit('resume', props.binding)"
+        >
+          <Play data-icon="inline-start" />
+          Resume
         </Button>
         <Button
           variant="outline"

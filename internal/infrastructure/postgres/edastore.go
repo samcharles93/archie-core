@@ -482,6 +482,34 @@ func (s *EDA) ApproveBinding(ctx context.Context, id string) error {
 	return nil
 }
 
+// PauseBinding stops an armed binding from dispatching.
+func (s *EDA) PauseBinding(ctx context.Context, id string) error {
+	return s.transitionBinding(ctx, id, binding.StatusArmed, binding.StatusPaused, "pause")
+}
+
+// ResumeBinding returns a paused binding to pending_approval: it fires again
+// only once approved.
+func (s *EDA) ResumeBinding(ctx context.Context, id string) error {
+	return s.transitionBinding(ctx, id, binding.StatusPaused, binding.StatusPendingApproval, "resume")
+}
+
+func (s *EDA) transitionBinding(ctx context.Context, id string, from, to binding.Status, verb string) error {
+	n, err := s.q.TransitionBindingStatus(ctx, postgresdb.TransitionBindingStatusParams{
+		ID: id, FromStatus: string(from), ToStatus: string(to),
+	})
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		if _, err := s.q.GetBinding(ctx, id); errors.Is(err, pgx.ErrNoRows) {
+			return storecontract.ErrBindingNotFound
+		}
+		return storecontract.ErrBindingTransition
+	}
+	s.notifyWrite(events.KindBindingChanged, "binding", verb, id)
+	return nil
+}
+
 // --- dispatch ledgers ---
 
 // RecordDispatch writes one at-most-once binding dispatch. binding_version is

@@ -232,11 +232,11 @@ type BindingStore interface {
 	InsertBinding(ctx context.Context, b binding.Binding) (string, error)
 	GetBinding(ctx context.Context, id string) (*binding.Binding, error)
 	ListBindings(ctx context.Context) ([]binding.Binding, error)
-	// ListDispatches returns the newest ledger rows matching filter.
-	ListDispatches(ctx context.Context, filter DispatchFilter) ([]Dispatch, error)
 	UpdateBinding(ctx context.Context, b binding.Binding) error
 	DeleteBinding(ctx context.Context, id string) error
 	ApproveBinding(ctx context.Context, id string) error
+	PauseBinding(ctx context.Context, id string) error
+	ResumeBinding(ctx context.Context, id string) error
 }
 
 // SourceStore persists capture sources keyed by path. Secrets are encrypted
@@ -248,6 +248,12 @@ type SourceStore interface {
 	ListSources(ctx context.Context) ([]source.Source, error)
 	SetSourceSigning(ctx context.Context, path string, from, to source.Signing) error
 	SetSourceSecret(ctx context.Context, path, secret string) error
+}
+
+// DispatchLedger reads the binding dispatch ledger.
+type DispatchLedger interface {
+	// ListDispatches returns the newest ledger rows matching filter.
+	ListDispatches(ctx context.Context, filter DispatchFilter) ([]Dispatch, error)
 }
 
 // TaskPage selects one page of the task list. Empty Statuses matches every

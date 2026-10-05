@@ -283,6 +283,12 @@ export const api = {
     request<T>(`/api/bindings/${encodeURIComponent(id)}/approve`, {
       method: "POST",
     }),
+  // bindingPause stops an armed binding; bindingResume returns it to pending
+  // approval.
+  bindingPause: <T = unknown>(id: string) =>
+    request<T>(`/api/bindings/${encodeURIComponent(id)}/pause`, { method: "POST" }),
+  bindingResume: <T = unknown>(id: string) =>
+    request<T>(`/api/bindings/${encodeURIComponent(id)}/resume`, { method: "POST" }),
   harnessBindings: <T = unknown>() => request<T>("/api/harness/bindings"),
   sources: <T = unknown>() => request<T>("/api/sources"),
   sourceCreate: <T = unknown>(path: string) =>

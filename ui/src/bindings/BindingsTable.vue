@@ -32,6 +32,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   edit: [binding: Binding];
   approve: [binding: Binding];
+  pause: [binding: Binding];
+  resume: [binding: Binding];
   delete: [binding: Binding];
 }>();
 
@@ -98,6 +100,8 @@ const failureTitle = computed(() =>
               :event-types="props.eventTypes"
               @edit="emit('edit', $event)"
               @approve="emit('approve', $event)"
+              @pause="emit('pause', $event)"
+              @resume="emit('resume', $event)"
               @delete="emit('delete', $event)"
             />
           </template>

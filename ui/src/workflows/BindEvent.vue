@@ -204,17 +204,21 @@ async function save(): Promise<void> {
   }
 }
 
-async function approve(): Promise<void> {
+// transition runs one lifecycle command and shows the status it leads to.
+async function transition(command: (id: string) => Promise<unknown>, next: string): Promise<void> {
   if (!props.binding) return;
   error.value = "";
   try {
-    await api.bindingApprove(props.binding.id);
-    status.value = "armed";
+    await command(props.binding.id);
+    status.value = next;
     emit("saved");
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   }
 }
+const approve = () => transition(api.bindingApprove, "armed");
+const pause = () => transition(api.bindingPause, "paused");
+const resume = () => transition(api.bindingResume, "pending_approval");
 </script>
 
 <template>
@@ -313,6 +317,8 @@ async function approve(): Promise<void> {
         <div class="flex gap-2">
           <Button type="submit" size="sm" :disabled="saving || !!blockers.length"><Spinner v-if="saving" />Save binding</Button>
           <Button v-if="binding && status === 'pending_approval'" type="button" size="sm" variant="outline" @click="approve">Approve</Button>
+          <Button v-if="binding && status === 'armed'" type="button" size="sm" variant="outline" @click="pause">Pause</Button>
+          <Button v-if="binding && status === 'paused'" type="button" size="sm" variant="outline" @click="resume">Resume</Button>
         </div>
       </div>
     </form>

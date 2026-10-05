@@ -180,6 +180,8 @@ service StateStoreService {
   rpc UpdateBinding(UpdateBindingRequest) returns (UpdateBindingResponse);
   rpc DeleteBinding(DeleteBindingRequest) returns (DeleteBindingResponse);
   rpc ApproveBinding(ApproveBindingRequest) returns (ApproveBindingResponse);
+  rpc PauseBinding(PauseBindingRequest) returns (PauseBindingResponse);
+  rpc ResumeBinding(ResumeBindingRequest) returns (ResumeBindingResponse);
 
   // Source (event-automation.md "Sources"): the capture endpoint and its
   // signing setting. Secrets travel in plaintext; the store encrypts at rest.
@@ -1090,6 +1092,10 @@ message DeleteBindingResponse {}
 
 message ApproveBindingRequest { string id = 1; }
 message ApproveBindingResponse {}
+message PauseBindingRequest { string id = 1; }
+message PauseBindingResponse {}
+message ResumeBindingRequest { string id = 1; }
+message ResumeBindingResponse {}
 
 message InsertSourceRequest { Source source = 1; }
 message InsertSourceResponse {}
