@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Check, Copy, KeyRound, Lock, LockOpen, Plus, X } from "@lucide/vue";
+import { Check, Copy, KeyRound, Lock, LockOpen, Plus } from "@lucide/vue";
 import { onMounted, ref } from "vue";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -27,6 +27,7 @@ import {
   sourceURL,
   type Source,
 } from "./source-signing";
+import SourceSecret from "./SourceSecret.vue";
 import { useSources } from "./use-sources";
 
 /**
@@ -93,35 +94,7 @@ function url(source: Source): string {
       <AlertDescription>{{ failure }}</AlertDescription>
     </Alert>
 
-    <Alert v-if="revealed">
-      <KeyRound />
-      <AlertTitle class="flex items-center justify-between gap-2">
-        <span class="font-mono"
-          >{{ revealed.path }} · signing secret, shown once</span
-        >
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Dismiss"
-          @click="revealed = null"
-          ><X
-        /></Button>
-      </AlertTitle>
-      <AlertDescription class="flex items-center gap-2">
-        <code class="min-w-0 break-all font-mono text-xs">{{
-          revealed.secret
-        }}</code>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Copy secret"
-          @click="copy(revealed.secret || '')"
-        >
-          <Check v-if="copied === revealed.secret" />
-          <Copy v-else />
-        </Button>
-      </AlertDescription>
-    </Alert>
+    <SourceSecret v-if="revealed" :source="revealed" @dismiss="revealed = null" />
 
     <Card v-if="sources && sources.length">
       <CardContent>

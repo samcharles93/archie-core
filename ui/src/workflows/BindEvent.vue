@@ -9,7 +9,8 @@ import { api } from "@/lib/api";
 import { useLiveResource } from "@/stores/live-updates";
 import { statusKind, statusLabel, takesRepository, type Binding } from "@/bindings/binding-draft";
 import type { Capture } from "@/captures/state";
-import { sourceURL } from "@/sources/source-signing";
+import SourceSecret from "@/sources/SourceSecret.vue";
+import { sourceURL, type Source } from "@/sources/source-signing";
 import type { EventType } from "@/captures/event-types";
 import type { Mapping, Preview } from "@/mappings/state";
 import {
@@ -51,6 +52,8 @@ const rows = ref<Record<string, InputRow>>({});
 const repositoryPath = ref("");
 const preview = ref<Preview | null>(null);
 const saving = ref(false);
+const creatingSource = ref(false);
+const revealed = ref<Source | null>(null);
 const error = ref("");
 const status = ref(props.binding?.status ?? "");
 
@@ -113,6 +116,7 @@ watch([fields, captureId], () => {
 
 const blockers = computed(() => {
   if (!sourcePath.value) return ["pick a source"];
+  if (source.value === NEW_SOURCE) return ["create the source first"];
   if (!capture.value) return [`no event from ${sourcePath.value} yet to preview against`];
   if (payload.value === null) return ["the picked event's body is not JSON"];
   return problems(inputs.value, rows.value, preview.value);
@@ -148,12 +152,28 @@ async function eventTypeFor(c: Capture): Promise<string> {
   return created.id;
 }
 
+async function createSource(): Promise<void> {
+  if (!sourcePath.value || creatingSource.value) return;
+  creatingSource.value = true;
+  error.value = "";
+  try {
+    const created = await api.sourceCreate<Source>(sourcePath.value);
+    revealed.value = created;
+    sources.value.push(created.path);
+    source.value = created.path;
+    newSource.value = "";
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    creatingSource.value = false;
+  }
+}
+
 async function save(): Promise<void> {
   if (blockers.value.length || !capture.value) return;
   saving.value = true;
   error.value = "";
   try {
-    if (source.value === NEW_SOURCE && !sources.value.includes(sourcePath.value)) await api.sourceCreate(sourcePath.value);
     const mappingBody = {
       name: `${workflow.value} ← ${sourcePath.value}`,
       event_type_id: await eventTypeFor(capture.value),
@@ -221,7 +241,10 @@ async function approve(): Promise<void> {
           placeholder="path, e.g. alertmanager"
           class="h-8 w-full rounded-md border border-input bg-background px-2 font-mono text-[13px]"
         />
+        <Button v-if="source === NEW_SOURCE" type="button" size="sm" :disabled="creatingSource || !sourcePath" @click="createSource"><Spinner v-if="creatingSource" />Create source</Button>
       </section>
+
+      <SourceSecret v-if="revealed" :source="revealed" @dismiss="revealed = null" />
 
       <section v-if="sourcePath" class="space-y-1.5">
         <label for="bind-capture" class="text-xs font-medium text-muted-foreground">Example event</label>
