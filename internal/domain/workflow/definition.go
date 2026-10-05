@@ -169,7 +169,10 @@ func ValidateDefinitionCollection(collection WorkflowDefinitionCollection, regis
 		}
 		parsed[entry.ID] = definition
 	}
-	return validateWorkflowCalls(parsed)
+	if err := validateWorkflowCalls(parsed); err != nil {
+		return err
+	}
+	return validateControlTargets(parsed)
 }
 
 // DecodeDefinitionCollection strictly decodes the control-plane projection.

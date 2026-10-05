@@ -3,9 +3,13 @@ package workflow
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 )
 
 // Control step types: they decide where the task goes next.
@@ -165,4 +169,134 @@ func truthy(value any) bool {
 		return v != 0
 	}
 	return true
+}
+
+// validateControlTargets checks every handoff and approve step's target. A
+// literal target must name a workflow the task can follow; a target templated
+// from an agent result must resolve to one of the values the referenced enum
+// allows. A templated target with no enum has no fixed set to check.
+func validateControlTargets(parsed map[string]YAMLDefinition) error {
+	for id, d := range parsed {
+		err := walkSteps(d.Steps, fmt.Sprintf("workflow %q", id), func(where string, step StepRecord) error {
+			target, ok, err := controlTarget(step)
+			if err != nil || !ok {
+				if err != nil {
+					return fmt.Errorf("%s: %w", where, err)
+				}
+				return nil
+			}
+			if !referencePattern.MatchString(target) {
+				return checkControlTarget(where, d.WorkflowInterface, parsed, target)
+			}
+			for _, name := range targetEnum(d, target) {
+				if err := checkControlTarget(where, d.WorkflowInterface, parsed, name); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// controlTarget is the workflow a handoff or approve step routes to, and
+// whether the step is one of those.
+func controlTarget(step StepRecord) (string, bool, error) {
+	var target string
+	switch step.Type {
+	case HandoffStepName:
+		var s handoffSettings
+		if err := decodeSettings(HandoffStepName, step.Settings, &s); err != nil {
+			return "", false, err
+		}
+		target = strings.TrimSpace(s.Workflow)
+	case ApproveStepName:
+		var s approveSettings
+		if err := decodeSettings(ApproveStepName, step.Settings, &s); err != nil {
+			return "", false, err
+		}
+		target = strings.TrimSpace(s.Then)
+	default:
+		return "", false, nil
+	}
+	return target, true, nil
+}
+
+// checkControlTarget refuses a target workflow the task cannot follow: one
+// that is not defined, one that needs a repository the task does not have, or
+// one whose declared inputs the task's own inputs cannot satisfy.
+func checkControlTarget(where string, source task.WorkflowInterface, parsed map[string]YAMLDefinition, target string) error {
+	wf, ok := parsed[target]
+	if !ok {
+		return fmt.Errorf("%s targets %q, which is not defined", where, target)
+	}
+	if wf.RepositoryMode() == task.RepositoryRequired && source.RepositoryMode() != task.RepositoryRequired {
+		return fmt.Errorf("%s targets %q, which needs a repository the task does not have", where, target)
+	}
+	for _, name := range slices.Sorted(maps.Keys(source.Inputs)) {
+		if _, declared := wf.Inputs[name]; !declared {
+			return fmt.Errorf("%s targets %q, which does not declare input %q the task carries", where, target, name)
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(wf.Inputs)) {
+		if wf.Inputs[name].Required && !source.Inputs[name].Required {
+			return fmt.Errorf("%s targets %q, which requires input %q the task may not carry", where, target, name)
+		}
+	}
+	return nil
+}
+
+// targetEnum returns the values a templated target can resolve to: the enum of
+// the agent result field a "{{ steps.<id>.result.<field> }}" reference reads. A
+// target that is not exactly such a reference, or reads a field without an
+// enum, has no fixed set to check and returns none.
+func targetEnum(d YAMLDefinition, target string) []string {
+	match := referencePattern.FindStringSubmatch(target)
+	if match == nil || strings.TrimSpace(target) != match[0] {
+		return nil
+	}
+	parts := strings.Split(match[1], ".")
+	if len(parts) != 4 || parts[0] != "steps" || parts[2] != "result" {
+		return nil
+	}
+	step, ok := findStep(d.Steps, parts[1])
+	if !ok || step.Type != AgentRunStepName {
+		return nil
+	}
+	var s agentRunSettings
+	if err := step.Settings.Decode(&s); err != nil {
+		return nil
+	}
+	properties, _ := s.Result["properties"].(map[string]any)
+	field, _ := properties[parts[3]].(map[string]any)
+	values, _ := field["enum"].([]any)
+	names := make([]string, 0, len(values))
+	for _, value := range values {
+		name, ok := value.(string)
+		if !ok {
+			return nil
+		}
+		names = append(names, name)
+	}
+	return names
+}
+
+// findStep resolves a step by id anywhere in a definition, including a step
+// inside a parallel branch, whose result stays readable after the parallel
+// step.
+func findStep(steps []StepRecord, id string) (StepRecord, bool) {
+	for _, step := range steps {
+		if step.ID == id {
+			return step, true
+		}
+		for _, branch := range step.Parallel {
+			if found, ok := findStep(branch, id); ok {
+				return found, true
+			}
+		}
+	}
+	return StepRecord{}, false
 }
