@@ -16,7 +16,7 @@ import { delivered } from "@/lib/delivered";
 import { compact } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { statusLabel } from "@/lib/task-meta";
-import { cloneControlPlaneValue, useControlPlaneStore, type WorkflowDefinitionCollection } from "@/stores/control-plane";
+import { cloneControlPlaneValue, restoreShippedDefinitions, useControlPlaneStore, type WorkflowDefinitionCollection } from "@/stores/control-plane";
 import { useLiveResource } from "@/stores/live-updates";
 import SlowestStagesCard from "./SlowestStagesCard.vue";
 import StageFailuresCard from "./StageFailuresCard.vue";
@@ -107,7 +107,8 @@ function create() {
 }
 async function restoreShipped() {
   const shipped = store.shippedWorkflows();
-  if (await store.replace("workflow-definitions", cloneControlPlaneValue(shipped)))
+  const restored = restoreShippedDefinitions({ definitions: stored.value }, shipped);
+  if (await store.replace("workflow-definitions", cloneControlPlaneValue(restored)))
     selected.value = shipped.definitions[0]?.id ?? "";
 }
 // The share of a workflow's runs whose work is finished: merged, or ended

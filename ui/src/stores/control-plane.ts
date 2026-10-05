@@ -234,6 +234,15 @@ export function upsertWorkflowDefinition(
   };
 }
 
+// restoreShippedDefinitions resets every shipped workflow to what archie ships
+// and keeps the operator's custom ones, which archie has no copy of to restore.
+export function restoreShippedDefinitions(
+  collection: WorkflowDefinitionCollection,
+  shipped: WorkflowDefinitionCollection,
+): WorkflowDefinitionCollection {
+  return shipped.definitions.reduce(upsertWorkflowDefinition, collection);
+}
+
 export function removeWorkflowDefinition(
   collection: WorkflowDefinitionCollection,
   id: string,

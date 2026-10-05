@@ -5,6 +5,7 @@ import {
   commandBody,
   resourcesForPage,
   upsertWorkflowDefinition,
+  restoreShippedDefinitions,
   removeWorkflowDefinition,
   applyStatusForKind,
 } from "../src/stores/control-plane.ts";
@@ -124,6 +125,20 @@ test("workflow edits replace by id without dropping sibling definitions", () => 
   assert.deepEqual(removeWorkflowDefinition(original, "implement"), {
     definitions: [{ id: "tdd", yaml: "id: tdd\nsteps: []\n" }],
   });
+  // Restoring shipped resets shipped ids and keeps a custom workflow.
+  assert.deepEqual(
+    restoreShippedDefinitions(
+      { definitions: [...original.definitions, { id: "mine", yaml: "id: mine\n" }] },
+      { definitions: [{ id: "implement", yaml: "shipped\n" }] },
+    ),
+    {
+      definitions: [
+        { id: "implement", yaml: "shipped\n" },
+        { id: "tdd", yaml: "id: tdd\nsteps: []\n" },
+        { id: "mine", yaml: "id: mine\n" },
+      ],
+    },
+  );
 });
 
 test("apply status names a process behind the stored version and one that stopped reporting", () => {
