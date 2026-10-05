@@ -13,6 +13,7 @@ import (
 // Process defaults.
 const (
 	defaultGatewayTarget     = "127.0.0.1:8585"
+	defaultListen            = "127.0.0.1:8586"
 	defaultDependencyTimeout = 5 * time.Second
 	defaultShutdownTimeout   = 5 * time.Second
 )
@@ -29,8 +30,12 @@ type Options struct {
 	Config  string
 	Overlay string
 
-	Gateway           ServiceTarget
-	StateStore        ServiceTarget
+	Gateway    ServiceTarget
+	StateStore ServiceTarget
+	// Listen is where MessagingService is served; Token is the bearer token
+	// its callers present on a non-loopback address.
+	Listen            string
+	Token             string
 	DependencyTimeout time.Duration
 	ShutdownTimeout   time.Duration
 }
@@ -38,6 +43,9 @@ type Options struct {
 func withDefaults(o Options) Options {
 	if o.Gateway.Target == "" {
 		o.Gateway.Target = defaultGatewayTarget
+	}
+	if o.Listen == "" {
+		o.Listen = defaultListen
 	}
 	if o.DependencyTimeout <= 0 {
 		o.DependencyTimeout = defaultDependencyTimeout
@@ -60,7 +68,7 @@ func (o Options) validate() error {
 			return err
 		}
 	}
-	return nil
+	return validateServiceTarget("messaging listen", ServiceTarget{Target: o.Listen, Token: o.Token})
 }
 
 func validateServiceTarget(serviceName string, target ServiceTarget) error {

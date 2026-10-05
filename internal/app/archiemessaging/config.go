@@ -30,6 +30,7 @@ type ResolvedConfig struct {
 type projection struct {
 	gateway       ServiceTarget
 	stateStore    ServiceTarget
+	messaging     config.ServiceConnection
 	telegram      config.TelegramConfig
 	workDir       string
 	botUser       string
@@ -87,6 +88,7 @@ func project(cfg config.Config) projection {
 			Token:  cfg.Services.Get(config.ServiceNameGateway).TargetToken,
 		},
 		stateStore:    ServiceTarget{Target: cfg.Services.Get(config.ServiceNameState).Target, Token: cfg.Services.Get(config.ServiceNameState).TargetToken},
+		messaging:     cfg.Services.Get(config.ServiceNameMessaging),
 		telegram:      cfg.Chat.Telegram,
 		workDir:       cfg.WorkDir,
 		botUser:       cfg.BotUser,
@@ -101,6 +103,9 @@ func withEnvTokens(o Options) Options {
 	}
 	if o.StateStore.Token == "" {
 		o.StateStore.Token = os.Getenv("STATE_STORE_TOKEN")
+	}
+	if o.Token == "" {
+		o.Token = os.Getenv("MESSAGING_TOKEN")
 	}
 	return o
 }
@@ -117,6 +122,12 @@ func merge(o Options, p projection) Options {
 	}
 	if o.StateStore.Token == "" {
 		o.StateStore.Token = p.stateStore.Token
+	}
+	if o.Listen == "" {
+		o.Listen = p.messaging.Listen
+	}
+	if o.Token == "" {
+		o.Token = p.messaging.TargetToken
 	}
 	return o
 }

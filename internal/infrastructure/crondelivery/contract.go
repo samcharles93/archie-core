@@ -34,8 +34,8 @@ type RouterStore interface {
 	RunRecorder
 }
 
-// Courier sends one chat message. It must honour ctx.
-type Courier func(ctx context.Context, chatID, text string) error
+// Courier sends one chat message to target. It must honour ctx.
+type Courier func(ctx context.Context, target scheduling.Target, text string) error
 
 // TaskSubmitter submits one unit of work.
 type TaskSubmitter interface {

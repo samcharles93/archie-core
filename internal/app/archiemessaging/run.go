@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
+
+	"google.golang.org/grpc"
 
 	"github.com/samcharles93/archie-core/internal/app/servicekit"
 	"github.com/samcharles93/archie-core/internal/config"
@@ -14,6 +17,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/extension"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
+	"github.com/samcharles93/archie-core/internal/infrastructure/messagingrpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/secretengine"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/secret"
@@ -101,7 +105,28 @@ func Run(ctx context.Context, o Options) error {
 	if err != nil {
 		return err
 	}
+	return serve(ctx, cfg.Options, srv, log)
+}
 
+// serve runs srv and serves MessagingService over it until ctx is cancelled.
+func serve(ctx context.Context, o Options, srv *Service, log *slog.Logger) error {
+	opts, err := messagingrpc.ServerOptions(o.Listen, o.Token)
+	if err != nil {
+		return err
+	}
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", o.Listen)
+	if err != nil {
+		return fmt.Errorf("listen messaging (%s): %w", o.Listen, err)
+	}
+	server := grpc.NewServer(opts...)
+	messagingrpc.RegisterServer(server, srv)
+	go func() {
+		if err := server.Serve(listener); err != nil {
+			log.Error("messaging gRPC server stopped", "err", err)
+		}
+	}()
+	defer server.GracefulStop()
+	log.Info("messaging service listening", "listen", o.Listen)
 	return srv.Start(ctx)
 }
 

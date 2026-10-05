@@ -48,6 +48,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	"github.com/samcharles93/archie-core/internal/infrastructure/extension"
+	"github.com/samcharles93/archie-core/internal/infrastructure/messagingrpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
@@ -167,14 +168,14 @@ type boot struct {
 
 	chatTasks           gateway.TaskCreator
 	defaultChatIdentity string
+	// messaging delivers outbound chat messages through the Messaging Service.
+	messaging *messagingrpc.Client
 
 	startGateways   []func()
 	trees           *worktree.Manager
 	identityRunners []*daemon.IdentityRunner
 	d               *daemon.Daemon
 	// schedulingEngine is the cron/scheduling ticker engine (setupScheduling).
-	// Nil when no chat task creator is configured, in which case startServices
-	// leaves it unstarted rather than running with no reachable job kind.
 	schedulingEngine *scheduling.Engine
 
 	// kindWorkflows/labelWorkflows are the resolved kind/label -> workflow
@@ -469,6 +470,12 @@ func (b *boot) setupGatewayClient() error {
 	}
 	b.addCleanup(cleanup)
 	b.chat = &webui.ChatService{Contract: contract}
+	messaging, closeMessaging, err := composeMessaging(b.cfg.Services, b.secrets)
+	if err != nil {
+		return err
+	}
+	b.addCleanup(closeMessaging)
+	b.messaging = messaging
 	b.setupReadinessProbes()
 	return nil
 }

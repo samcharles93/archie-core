@@ -2,6 +2,7 @@ package archiemessaging
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -17,6 +18,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/infrastructure/messagingrpc"
 	"github.com/samcharles93/archie-core/internal/sdnotify"
 	"github.com/samcharles93/archie-core/internal/secret"
 )
@@ -262,4 +264,23 @@ func (s *Service) Stop() {
 		s.stop()
 	}
 	s.log.Info("messaging service stopped")
+}
+
+// Deliver sends text to chatID through the named running channel.
+func (s *Service) Deliver(ctx context.Context, channel, chatID, text string) error {
+	for _, instance := range s.channels {
+		if instance.name != channel {
+			continue
+		}
+		sender, ok := instance.current().(channels.Sender)
+		if !ok {
+			return fmt.Errorf("%w: channel %q cannot send", messagingrpc.ErrUnavailable, channel)
+		}
+		err := sender.Send(ctx, chatID, text)
+		if errors.Is(err, channels.ErrNotRunning) {
+			return fmt.Errorf("%w: channel %q is not running", messagingrpc.ErrUnavailable, channel)
+		}
+		return err
+	}
+	return fmt.Errorf("%w: no channel %q", messagingrpc.ErrUnavailable, channel)
 }

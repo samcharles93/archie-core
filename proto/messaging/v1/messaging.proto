@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package messaging.v1;
+
+// MessagingService is the Messaging Service's contract: the process that holds
+// the chat channel transports. Other services send outbound messages through
+// it rather than holding channel credentials themselves.
+service MessagingService {
+  // Deliver sends text to one chat on one channel. FAILED_PRECONDITION means
+  // the channel is not running or cannot send; the caller may retry later.
+  rpc Deliver(DeliverRequest) returns (DeliverResponse);
+}
+
+message DeliverRequest {
+  // channel names the channel, such as "telegram".
+  string channel = 1;
+  // chat_id is the channel-native chat identifier.
+  string chat_id = 2;
+  string text = 3;
+}
+
+message DeliverResponse {}

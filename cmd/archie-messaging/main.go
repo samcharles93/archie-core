@@ -26,6 +26,8 @@ func run() int {
 	flag.StringVar(&options.Gateway.Token, "gateway-token", "", "bearer token presented to archie-gateway")
 	flag.StringVar(&options.StateStore.Target, "state-store-target", "", "archie-state-store gRPC address (defaults to [services.state].target)")
 	flag.StringVar(&options.StateStore.Token, "state-store-token", "", "bearer token presented to archie-state-store")
+	flag.StringVar(&options.Listen, "listen", "", "MessagingService gRPC listen address (defaults to [services.messaging].listen)")
+	flag.StringVar(&options.Token, "token", "", "bearer token required from MessagingService callers on a non-loopback listener")
 	flag.DurationVar(&options.DependencyTimeout, "dependency-timeout", 0, "readiness probe timeout (default 5s)")
 	flag.DurationVar(&options.ShutdownTimeout, "shutdown-timeout", 0, "shutdown timeout (default 5s)")
 	flag.Parse()

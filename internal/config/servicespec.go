@@ -44,8 +44,9 @@ type ServiceSpec struct {
 // spelling a consumer looks up and the spelling that was registered are the
 // same token, not two string literals that a typo can separate.
 const (
-	ServiceNameGateway = "gateway"
-	ServiceNameState   = "state"
+	ServiceNameGateway   = "gateway"
+	ServiceNameState     = "state"
+	ServiceNameMessaging = "messaging"
 )
 
 var (
@@ -107,10 +108,11 @@ func RegisteredServices() []ServiceSpec {
 }
 
 func init() {
-	// The two services this repository ships. Everything that differs
+	// The services this repository ships. Everything that differs
 	// between them is an argument here, not a branch somewhere else: the
 	// gateway's target is defaulted while the State Store's is supplied by
 	// the operator, and each falls back to its own token variable.
 	RegisterService(ServiceBoth, ServiceNameGateway, "127.0.0.1:8585", "127.0.0.1:8585", "GATEWAY_TOKEN")
 	RegisterService(ServiceClient, ServiceNameState, "", "127.0.0.1:9090", "STATE_STORE_TOKEN")
+	RegisterService(ServiceBoth, ServiceNameMessaging, "127.0.0.1:8586", "127.0.0.1:8586", "MESSAGING_TOKEN")
 }

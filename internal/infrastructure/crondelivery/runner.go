@@ -38,8 +38,8 @@ func (c *ChatCourier) Run(ctx context.Context, job scheduling.Job) error {
 	if err != nil {
 		return err
 	}
-	if err := c.courier(ctx, spec.Target.ChatID, spec.Payload.Text); err != nil {
-		return fmt.Errorf("crondelivery: deliver job %q to %q: %w", job.ID, spec.Target.ChatID, err)
+	if err := c.courier(ctx, spec.Target, spec.Payload.Text); err != nil {
+		return fmt.Errorf("crondelivery: deliver job %q to %s:%s: %w", job.ID, spec.Target.Channel, spec.Target.ChatID, err)
 	}
 	return nil
 }

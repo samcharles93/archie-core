@@ -36,7 +36,13 @@ func validateSchedules(jobs []scheduling.JobSpec) error {
 			return fmt.Errorf("duplicate schedule %q", job.ID)
 		}
 		seen[job.ID] = struct{}{}
-		if job.Kind != scheduling.KindWorkflow {
+		switch job.Kind {
+		case scheduling.KindWorkflow:
+		case scheduling.KindChat:
+			if job.Target.Channel == "" || job.Target.ChatID == "" || strings.TrimSpace(job.Payload.Text) == "" {
+				return fmt.Errorf("chat schedule %q needs a channel, chat ID and message", job.ID)
+			}
+		default:
 			return fmt.Errorf("schedule %q has unsupported kind %q", job.ID, job.Kind)
 		}
 		if err := job.Schedule.Validate(); err != nil {

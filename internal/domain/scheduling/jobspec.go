@@ -67,9 +67,9 @@ type JobSpec struct {
 // Target identifies where the job's output goes. Empty Target is valid —
 // the delivery runner chooses a default.
 type Target struct {
-	// ChatID is the chat channel id (Telegram chat id, email address,
-	// webhook URL — depends on the channel). Empty defers to a default
-	// chosen by the delivery runner.
+	// Channel names the Messaging Service channel, such as "telegram".
+	Channel string `json:"channel,omitempty"`
+	// ChatID is the channel-native chat id.
 	ChatID string `json:"chat_id,omitempty"`
 }
 

@@ -23,14 +23,14 @@ import HistoryLink from "./HistoryLink.vue";
 
 const KIND = "schedules";
 
-/** A scheduled job; only the "workflow" kind is wired, so every job is one. */
+/** A scheduled job: "workflow" starts a task, "chat" sends a message. */
 interface Job {
   id: string;
   kind: string;
   detail?: string;
   pool?: string;
   schedule: { kind?: string; interval?: string; cron?: string; at?: string };
-  target: Record<string, unknown>;
+  target: { channel?: string; chat_id?: string };
   payload: { text?: string };
   next_run?: string;
 }
@@ -49,6 +49,10 @@ const whenKinds = [
   { value: "interval", label: "Every" },
   { value: "cron", label: "Cron" },
   { value: "once", label: "Once" },
+];
+const jobKinds = [
+  { value: "workflow", label: "Run a task" },
+  { value: "chat", label: "Send a message" },
 ];
 const pools = [
   { value: "", label: "Sequential" },
@@ -123,13 +127,31 @@ const whenKind = (job: Job) => job.schedule.kind || "interval";
           </div>
           <p v-if="jobIssue(i)" class="mt-1.5 text-xs text-danger">{{ jobIssue(i)?.message }}</p>
         </SettingRow>
-        <SettingRow label="Task title" :for="`job-${i}-title`" hint="Empty: the ID.">
+        <SettingRow label="Does">
+          <div class="flex flex-wrap items-center gap-3">
+            <SegmentedControl
+              :model-value="job.kind"
+              label="Does"
+              :options="jobKinds"
+              @update:model-value="(k: string) => { job.kind = k; job.target = k === 'chat' ? { channel: 'telegram', chat_id: '' } : {}; }"
+            />
+            <DraftHint :kind="KIND" :path="`${i}.kind`" />
+          </div>
+        </SettingRow>
+        <SettingRow v-if="job.kind === 'chat'" label="To" :for="`job-${i}-chat`">
+          <div class="flex flex-wrap items-center gap-3">
+            <Input v-model="job.target.channel" class="w-32 font-mono" aria-label="Channel" placeholder="telegram" />
+            <Input :id="`job-${i}-chat`" v-model="job.target.chat_id" class="w-48 font-mono" aria-label="Chat ID" placeholder="Chat ID" />
+            <DraftHint :kind="KIND" :path="`${i}.target.chat_id`" />
+          </div>
+        </SettingRow>
+        <SettingRow v-else label="Task title" :for="`job-${i}-title`" hint="Empty: the ID.">
           <div class="flex flex-wrap items-center gap-3">
             <Input :id="`job-${i}-title`" v-model="job.detail" class="max-w-md" />
             <DraftHint :kind="KIND" :path="`${i}.detail`" />
           </div>
         </SettingRow>
-        <SettingRow label="Instructions" :for="`job-${i}-text`">
+        <SettingRow :label="job.kind === 'chat' ? 'Message' : 'Instructions'" :for="`job-${i}-text`">
           <Textarea :id="`job-${i}-text`" v-model="job.payload.text" :rows="3" />
           <DraftHint :kind="KIND" :path="`${i}.payload.text`" />
         </SettingRow>

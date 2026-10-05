@@ -6,6 +6,7 @@ package channels
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
@@ -25,3 +26,12 @@ type Channel interface {
 	// ValidateConfig checks that the provided configuration is valid for this channel.
 	ValidateConfig(cfg map[string]any) error
 }
+
+// Sender is a channel that can post a message unprompted. Channels that only
+// reply to inbound messages do not implement it.
+type Sender interface {
+	Send(ctx context.Context, chatID, text string) error
+}
+
+// ErrNotRunning is returned by Send while the channel is stopped.
+var ErrNotRunning = errors.New("channel is not running")

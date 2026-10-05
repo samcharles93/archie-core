@@ -6,6 +6,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
+	"github.com/samcharles93/archie-core/internal/infrastructure/messagingrpc"
 	"github.com/samcharles93/archie-core/internal/secret"
 )
 
@@ -27,4 +28,14 @@ func composeChatContract(services config.Services, secrets *secret.Registry, opt
 		return nil, nil, err
 	}
 	return client, cleanup, nil
+}
+
+// composeMessaging builds the Messaging Service client. The connection is
+// lazy, so an absent Messaging Service fails each delivery, not the daemon.
+func composeMessaging(services config.Services, secrets *secret.Registry) (*messagingrpc.Client, func(), error) {
+	target, err := services.RequireTarget(config.ServiceNameMessaging)
+	if err != nil {
+		return nil, nil, err
+	}
+	return messagingrpc.Dial(target, services.ResolvedToken(config.ServiceNameMessaging, secrets.Getenv))
 }

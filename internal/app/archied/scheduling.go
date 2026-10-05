@@ -51,30 +51,32 @@ func schedulingConfig(input configuration.SchedulingInput, bus *events.Bus) (sch
 // subsystem, and the corresponding Stop is registered here via addCleanup so
 // shutdown ordering matches every other daemon-lifecycle subsystem.
 //
-// Only the "workflow" kind is wired: it rides gateway.TaskCreator, the same
-// non-forge-backed task creation path chat's /spawn uses, which is the one
-// production capability here that does not require inventing a channel
-// courier or a synthetic forge owner/repo. A deployment with no chat task
-// creator configured (no [chat] identity profiles) leaves the engine
-// unstarted rather than running with no reachable job kind.
+// The "chat" kind delivers through the Messaging Service. The "workflow" kind
+// rides gateway.TaskCreator, the path chat's /spawn uses, so it is wired only
+// when [chat] identity profiles configure one.
 func (b *boot) setupScheduling() error {
 	cfg, err := schedulingConfig(b.doc.Scheduling, b.bus)
 	if err != nil {
 		return fmt.Errorf("scheduling: %w", err)
 	}
 
-	if b.chatTasks == nil {
-		b.log.Warn("scheduling: no chat task creator configured; ticker engine not started")
-		return nil
-	}
-
 	store := scheduleResourceStore{client: b.controlPlane}
 
-	workflowRunner, err := crondelivery.NewWorkflowTask(store, spawnTaskSubmitter{creator: b.chatTasks, identity: b.defaultChatIdentity})
+	chatRunner, err := crondelivery.NewChatCourier(store, func(ctx context.Context, target scheduling.Target, text string) error {
+		return b.messaging.Deliver(ctx, target.Channel, target.ChatID, text)
+	})
 	if err != nil {
-		return fmt.Errorf("scheduling: build workflow runner: %w", err)
+		return fmt.Errorf("scheduling: build chat runner: %w", err)
 	}
-	router, err := crondelivery.NewRouter(store, map[string]scheduling.Runner{scheduling.KindWorkflow: workflowRunner}, cfg.Events)
+	runners := map[string]scheduling.Runner{scheduling.KindChat: chatRunner}
+	if b.chatTasks != nil {
+		workflowRunner, err := crondelivery.NewWorkflowTask(store, spawnTaskSubmitter{creator: b.chatTasks, identity: b.defaultChatIdentity})
+		if err != nil {
+			return fmt.Errorf("scheduling: build workflow runner: %w", err)
+		}
+		runners[scheduling.KindWorkflow] = workflowRunner
+	}
+	router, err := crondelivery.NewRouter(store, runners, cfg.Events)
 	if err != nil {
 		return fmt.Errorf("scheduling: build router: %w", err)
 	}

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -121,6 +122,9 @@ type Gateway struct {
 	log     *slog.Logger
 	bot     *bot.Bot
 	running bool
+	// outbound is the running bot as Send sees it: Send is called from the
+	// Messaging Service's RPC goroutines, not the update loop that owns bot.
+	outbound atomic.Pointer[bot.Bot]
 
 	// serverURL redirects the Bot API at a test server. Empty in production,
 	// where the library's default endpoint is used. It exists so launch's
@@ -313,6 +317,7 @@ func (g *Gateway) launch(ctx context.Context, client messaging.ChatContract, lif
 		return nil, fmt.Errorf("create bot: %w", err)
 	}
 	g.bot = b
+	g.outbound.Store(b)
 
 	g.registerCommandHandlers(b, client)
 
@@ -384,6 +389,7 @@ func (g *Gateway) Stop(ctx context.Context) error {
 	}
 	g.log.Info("stopping telegram gateway")
 	g.running = false
+	g.outbound.Store(nil)
 
 	g.abandonAllLive(ctx)
 
@@ -822,6 +828,25 @@ func (g *Gateway) sendMessage(ctx context.Context, b *bot.Bot, chatID int64, mes
 		}
 		g.sendBlocks(ctx, b, chatID, messageThreadID, part, "send message part failed")
 	}
+}
+
+// Send delivers text to chatID, split like a reply. It fails if the bot is not
+// running or any part is rejected.
+func (g *Gateway) Send(ctx context.Context, chatID, text string) error {
+	b := g.outbound.Load()
+	if b == nil {
+		return channels.ErrNotRunning
+	}
+	id, err := strconv.ParseInt(chatID, 10, 64)
+	if err != nil {
+		return fmt.Errorf("telegram chat id %q: %w", chatID, err)
+	}
+	for _, part := range splitBlocks(markdownToBlocks(text), messageMaxLen) {
+		if g.sendBlocks(ctx, b, id, 0, part, "deliver message failed") == 0 {
+			return fmt.Errorf("telegram rejected a message to chat %d", id)
+		}
+	}
+	return nil
 }
 
 // sendBlocks sends one rich message and returns its ID, or 0. A rejected rich
