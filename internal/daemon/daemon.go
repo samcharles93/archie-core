@@ -708,9 +708,7 @@ func (d *Daemon) claimAndEnqueue(ctx context.Context, b binding.Binding, c store
 	if err := d.BindingDispatcher.SetDispatchTask(ctx, b.ID, c.ID, task.ID); err != nil {
 		d.Log.Warn("binding dispatch: record task", "binding", b.ID, "capture", c.ID, "task", task.ID, "error", err)
 	}
-	if c.Unsigned {
-		d.markUnsignedStart(ctx, task.ID, b, c)
-	}
+	d.markBindingStart(ctx, task.ID, b, c)
 }
 
 // authorizeDispatch checks the identity may run the workflow. A denial is
@@ -762,16 +760,19 @@ func signatureOf(c storecontract.CapturedEvent) string {
 	return "unverified"
 }
 
-// markUnsignedStart records on a task's timeline that an unsigned event
-// started it.
-func (d *Daemon) markUnsignedStart(ctx context.Context, taskID int64, b binding.Binding, c storecontract.CapturedEvent) {
+// markBindingStart records on a task's timeline the binding and captured
+// event that started it.
+func (d *Daemon) markBindingStart(ctx context.Context, taskID int64, b binding.Binding, c storecontract.CapturedEvent) {
 	if _, err := d.Store.InsertEvent(ctx, events.Event{
 		TaskID: taskID,
-		Kind:   events.KindUnsignedEvent,
-		Detail: fmt.Sprintf("started by an unsigned event from source %q", c.Source),
-		Data:   map[string]any{"source": c.Source, "capture_id": c.ID, "binding_id": b.ID},
+		Kind:   events.KindBindingStarted,
+		Detail: fmt.Sprintf("started by binding %q from source %q", b.Name, c.Source),
+		Data: map[string]any{
+			"binding_id": b.ID, "binding_name": b.Name, "binding_version": b.Version,
+			"capture_id": c.ID, "source": c.Source, "unsigned": c.Unsigned,
+		},
 	}); err != nil {
-		d.Log.Warn("binding dispatch: unsigned marker", "task", taskID, "error", err)
+		d.Log.Warn("binding dispatch: start marker", "task", taskID, "error", err)
 	}
 }
 

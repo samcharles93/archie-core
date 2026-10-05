@@ -89,10 +89,12 @@ const (
 	KindBindingChanged = "binding_changed"
 	KindMappingChanged = "mapping_changed"
 
-	// KindUnsignedEvent marks a task started by an event from an approved
-	// unsigned source, so its timeline shows that nothing authenticated
-	// the sender. data: source, capture_id, binding_id.
-	KindUnsignedEvent = "unsigned_event"
+	// KindBindingStarted marks a task a binding started from a captured
+	// event, naming both so the timeline links to them; unsigned flags an
+	// event from an approved unsigned source, which nothing authenticated.
+	// data: binding_id, binding_name, binding_version, capture_id, source,
+	// unsigned.
+	KindBindingStarted = "binding_started"
 
 	// KindWorkflowCallStarted marks the moment a workflow.call step
 	// started its callee run. data:

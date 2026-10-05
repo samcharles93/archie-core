@@ -52,13 +52,17 @@ test("a source's URL escapes nothing a valid path can hold", () => {
 
 test("a task started by an unsigned event says so on its timeline", () => {
   const line = describeTimelineEvent({
-    kind: "unsigned_event",
-    data: { source: "firewall" },
+    kind: "binding_started",
+    data: { source: "firewall", binding_name: "fw", capture_id: "c1", unsigned: true },
   });
   assert.deepEqual(line, {
     title: "Started by an unsigned event",
     detail: "source firewall",
     tone: "warn",
+    links: [
+      { label: "binding fw", to: "/events?tab=bindings" },
+      { label: "captured event", to: "/events?tab=inspector&capture=c1" },
+    ],
   });
   assert.equal(
     describeTimelineEvent({ kind: "stage_start", stage: "plan" }).tone,

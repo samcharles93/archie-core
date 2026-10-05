@@ -51,6 +51,8 @@ export interface TimelineLine {
   detail: string;
   /** Set for an event a reader must not skim past. */
   tone?: "warn";
+  /** Records the event names, as dashboard paths. */
+  links?: { label: string; to: string }[];
 }
 
 export function describeTimelineEvent(ev: TaskEvent = {}): TimelineLine {
@@ -125,13 +127,16 @@ export function describeTimelineEvent(ev: TaskEvent = {}): TimelineLine {
       detail: "The effective task-runtime configuration for this run.",
     };
   }
-  if (ev.kind === "unsigned_event") {
+  if (ev.kind === "binding_started") {
     const source = text(data.source);
-    return {
-      title: "Started by an unsigned event",
-      detail: source ? `source ${source}` : "",
-      tone: "warn",
-    };
+    const capture = text(data.capture_id);
+    const links = [
+      { label: `binding ${text(data.binding_name) || text(data.binding_id)}`, to: "/events?tab=bindings" },
+      ...(capture ? [{ label: "captured event", to: `/events?tab=inspector&capture=${encodeURIComponent(capture)}` }] : []),
+    ];
+    if (data.unsigned === true)
+      return { title: "Started by an unsigned event", detail: source ? `source ${source}` : "", tone: "warn", links };
+    return { title: "Started by an event", detail: source ? `source ${source}` : "", links };
   }
   if (ev.kind === "changes_captured") {
     const totals = (data.totals ?? {}) as { files?: unknown };

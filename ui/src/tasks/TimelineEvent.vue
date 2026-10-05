@@ -31,6 +31,15 @@ const line = computed(() => describeTimelineEvent(props.event));
       <div v-if="line.detail" class="mt-0.5 text-xs text-fg-muted">
         {{ line.detail }}
       </div>
+      <div v-if="line.links?.length" class="mt-0.5 flex gap-3 text-xs">
+        <RouterLink
+          v-for="link in line.links"
+          :key="link.to"
+          :to="link.to"
+          class="text-fg-muted underline-offset-2 hover:text-foreground hover:underline"
+          >{{ link.label }}</RouterLink
+        >
+      </div>
       <div class="mt-0.5 text-xs text-fg-subtle">{{ ago(event.at) }}</div>
     </div>
   </li>
