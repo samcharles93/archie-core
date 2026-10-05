@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { Ellipsis, RotateCcw, Trash2 } from "@lucide/vue";
+import { Ellipsis, RotateCcw, Trash2, X } from "@lucide/vue";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +13,8 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import StepRun from "./StepRun.vue";
+import { withRuns, workflowGraph } from "./workflow-graph";
 import StepEditor from "./StepEditor.vue";
 import WorkflowSettings from "./WorkflowSettings.vue";
 import RunWorkflowButton from "./RunWorkflowButton.vue";
@@ -58,17 +60,26 @@ watch(selectedStep, (path) => {
 });
 const localError = ref("");
 
-const { runs, watched, watchedRun, stages, pick, follow, refresh } = useWorkflowRuns(selected);
+const { runs, watched, watchedRun, stages, attempt, pick, follow, refresh } = useWorkflowRuns(selected);
+const stepTab = ref("definition");
+const selectedNode = computed(() => withRuns(workflowGraph(yaml.value), stages.value).nodes.find((node) => JSON.stringify(node.data.path) === JSON.stringify(selectedStep.value))?.data);
+function openStep(path: StepPath): void {
+ selectedStep.value = path;
+ stepTab.value = selectedNode.value?.run && watchedRun.value ? "run" : "definition";
+}
+watch(watched, () => { selectedStep.value = null; });
 const triggers = useWorkflowTriggers(selected);
 
 // Canvas edits are edits to the YAML; a newly placed step opens for editing.
 const stepTypeNames = computed(() => vocabulary.value.map((info) => info.name));
 function insertAt(after: number, type: string): void {
+  stepTab.value = "definition";
   const inserted = insertStep(yaml.value, after, type);
   yaml.value = inserted.source;
   selectedStep.value = inserted.path;
 }
 function duplicateAt(path: StepPath): void {
+  stepTab.value = "definition";
   const copied = duplicateStep(yaml.value, path);
   yaml.value = copied.source;
   selectedStep.value = copied.path;
@@ -224,7 +235,7 @@ function syncScroll(event: Event): void {
             :selected="selectedStep"
             :triggers="triggers"
             :types="stepTypeNames"
-            @edit="selectedStep = $event"
+            @edit="openStep"
             @settings="selectedStep = null; settingsOpen = true"
             @insert="insertAt"
             @duplicate="duplicateAt"
@@ -247,8 +258,20 @@ function syncScroll(event: Event): void {
             enter-active-class="transition duration-200"
             leave-active-class="transition duration-150"
           >
-            <div v-if="selectedStep" class="absolute inset-y-0 right-0 overflow-hidden rounded-r-lg">
+            <div v-if="selectedStep" class="absolute inset-y-0 right-0 flex flex-col overflow-hidden rounded-r-lg border-l border-border bg-card shadow-xl">
+              <template v-if="selectedNode?.run && watchedRun">
+                <div class="flex items-center gap-2 border-b border-border px-3 py-2">
+                  <Tabs v-model="stepTab"><TabsList><TabsTrigger value="run">Run</TabsTrigger><TabsTrigger value="definition">Definition</TabsTrigger></TabsList></Tabs>
+                  <span class="min-w-0 flex-1 truncate text-xs" :title="selectedNode.run.name">{{ selectedNode.run.name }}</span>
+                  <Button type="button" variant="ghost" size="icon-sm" aria-label="Close step details" @click="selectedStep = null"><X /></Button>
+                </div>
+                <div v-if="stepTab === 'run'" class="min-h-0 w-[32rem] max-w-[calc(100vw-3rem)] flex-1 overflow-y-auto">
+                  <StepRun :task="watchedRun" :attempt="attempt" :stage="selectedNode.run" :stages="stages" />
+                </div>
+              </template>
               <StepEditor
+                class="min-h-0 flex-1"
+                v-if="stepTab === 'definition' || !selectedNode?.run || !watchedRun"
                 :key="JSON.stringify(selectedStep)"
                 v-model:yaml="yaml"
                 :path="selectedStep"

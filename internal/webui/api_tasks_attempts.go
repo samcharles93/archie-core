@@ -55,12 +55,25 @@ type taskAttemptView struct {
 // present (empty when the stage recorded none) so a consumer can tell "no error
 // text" from a field it did not receive.
 type taskStageView struct {
+	ID         int64           `json:"id"`
+	Name       string          `json:"name"`
+	Seq        int             `json:"seq"`
+	Status     string          `json:"status"`
+	StartedAt  *time.Time      `json:"started_at,omitempty"`
+	DurationMS *int64          `json:"duration_ms,omitempty"`
+	Error      string          `json:"error"`
+	FinishedAt *time.Time      `json:"finished_at,omitempty"`
+	Agents     []taskAgentView `json:"agents,omitempty"`
+}
+
+type taskAgentView struct {
+	ID         int64      `json:"id"`
 	Name       string     `json:"name"`
-	Seq        int        `json:"seq"`
 	Status     string     `json:"status"`
-	StartedAt  *time.Time `json:"started_at,omitempty"`
-	DurationMS *int64     `json:"duration_ms,omitempty"`
-	Error      string     `json:"error"`
+	Detail     string     `json:"detail"`
+	TokensUsed int64      `json:"tokens_used"`
+	StartedAt  time.Time  `json:"started_at"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
 }
 
 // handleTaskAttempts returns a task's attempts from its events, each with the
@@ -231,7 +244,7 @@ func stageViewsFromSteps(steps []task.StepExecution, inFlight bool) []taskStageV
 		if s.Kind != task.StepKindStage {
 			continue
 		}
-		view := taskStageView{Name: s.Name, Seq: len(stages), Status: mapStepStatus(s.Status, inFlight)}
+		view := taskStageView{ID: s.ID, Name: s.Name, Seq: len(stages), Status: mapStepStatus(s.Status, inFlight)}
 		if s.Status == taskstate.StepFailed {
 			view.Error = s.Detail
 		}
@@ -240,8 +253,21 @@ func stageViewsFromSteps(steps []task.StepExecution, inFlight bool) []taskStageV
 			view.StartedAt = &started
 		}
 		if !s.FinishedAt.IsZero() {
+			finished := s.FinishedAt
+			view.FinishedAt = &finished
 			duration := s.FinishedAt.Sub(s.StartedAt).Milliseconds()
 			view.DurationMS = &duration
+		}
+		for _, child := range steps {
+			if child.ParentID != s.ID || child.Kind != task.StepKindAgent {
+				continue
+			}
+			agent := taskAgentView{ID: child.ID, Name: child.Name, Status: mapStepStatus(child.Status, inFlight), Detail: child.Detail, TokensUsed: child.TokensUsed, StartedAt: child.StartedAt}
+			if !child.FinishedAt.IsZero() {
+				finished := child.FinishedAt
+				agent.FinishedAt = &finished
+			}
+			view.Agents = append(view.Agents, agent)
 		}
 		stages = append(stages, view)
 	}

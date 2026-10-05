@@ -33,7 +33,21 @@ export interface StepNodeData {
 }
 
 /** One recorded run of a step, from the task's attempts view. */
+export interface AgentRun {
+  id: number;
+  name: string;
+  status: string;
+  detail: string;
+  tokens_used: number;
+  started_at: string;
+  finished_at?: string;
+}
+
 export interface StageRun {
+  id?: number;
+  started_at?: string;
+  finished_at?: string;
+  agents?: AgentRun[];
   name: string;
   status: "ok" | "failed" | "interrupted" | "running" | "unknown" | string;
   duration_ms?: number;

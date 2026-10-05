@@ -277,6 +277,7 @@ func runBranch(ctx context.Context, tc *TaskContext, stages []Stage) error {
 // spent without the branches racing on one task.
 func (tc *TaskContext) branch(name string) *TaskContext {
 	clone := *tc
+	clone.workflowBranch = name
 	taskCopy := *tc.Task
 	taskCopy.TokensUsed, taskCopy.Iterations = 0, 0
 	clone.Task = &taskCopy

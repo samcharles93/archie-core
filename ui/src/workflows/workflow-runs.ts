@@ -23,6 +23,7 @@ export function useWorkflowRuns(workflow: Ref<string>) {
   const runs = ref<WorkflowRun[]>([]);
   const watched = ref("");
   const stages = ref<StageRun[]>([]);
+  const attempt = ref(0);
   let picked = false;
 
   async function loadRuns(): Promise<void> {
@@ -38,11 +39,15 @@ export function useWorkflowRuns(workflow: Ref<string>) {
   async function loadStages(): Promise<void> {
     if (!watched.value) {
       stages.value = [];
+      attempt.value = 0;
       return;
     }
-    const view = await api.taskAttempts<AttemptsView>(watched.value).catch(() => null);
+    const requested = watched.value;
+    const view = await api.taskAttempts<AttemptsView>(requested).catch(() => null);
+    if (watched.value !== requested) return;
     const latest = [...(view?.attempts ?? [])].sort((a, b) => b.attempt - a.attempt)[0];
     stages.value = latest?.stages ?? [];
+    attempt.value = latest?.attempt ?? 0;
   }
 
   // "Definition only" is a choice too, and a refresh must not undo it.
@@ -60,7 +65,11 @@ export function useWorkflowRuns(workflow: Ref<string>) {
     picked = false;
     void refresh();
   }, { immediate: true });
-  watch(watched, () => void loadStages());
+  watch(watched, () => {
+    stages.value = [];
+    attempt.value = 0;
+    void loadStages();
+  });
   useLiveResource("tasks", () => void refresh(), 300);
 
   const watchedRun = computed(() => runs.value.find((run) => String(run.id) === watched.value));
@@ -72,5 +81,5 @@ export function useWorkflowRuns(workflow: Ref<string>) {
     await refresh();
   }
 
-  return { runs, watched, watchedRun, stages, pick, follow, refresh };
+  return { runs, watched, watchedRun, stages, attempt, pick, follow, refresh };
 }

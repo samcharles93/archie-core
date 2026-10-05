@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"regexp"
 	"strings"
 	"time"
@@ -114,7 +115,8 @@ type TaskContext struct {
 	// body is running: every agent call the stage makes records itself as
 	// this step's child. Zero outside a stage body, which is how the stage
 	// unit tests run their bodies.
-	StepID int64
+	StepID         int64
+	workflowBranch string
 	// BuildSummary is the builder agent's finish summary  --  the PR body.
 	BuildSummary string
 	// BuildNoChanges is set when the builder returned StatusPassed but
@@ -169,8 +171,19 @@ func (tc *TaskContext) Emit(kind, stage, detail string, data map[string]any) {
 		Attempt:  tc.Task.Attempt,
 		Stage:    stage,
 		Detail:   detail,
-		Data:     data,
+		Data:     tc.activityData(kind, data),
 	})
+}
+
+// Activity belongs to the recorded stage, even when an agent uses its own name.
+func (tc *TaskContext) activityData(kind string, data map[string]any) map[string]any {
+	if tc.StepID == 0 || (kind != events.KindToolCall && kind != events.KindAgentFinish) {
+		return data
+	}
+	out := make(map[string]any, len(data)+2)
+	maps.Copy(out, data)
+	out["step_id"], out["branch"] = tc.StepID, tc.workflowBranch
+	return out
 }
 
 // EmitDurable persists evaluation-critical telemetry before publishing it to
@@ -184,7 +197,7 @@ func (tc *TaskContext) EmitDurable(ctx context.Context, kind, stage, detail stri
 	event := events.Event{
 		At: time.Now().UTC(), Kind: kind, TaskID: tc.Task.ID, Repo: tc.Task.Owner + "/" + tc.Task.Repo,
 		Issue: tc.Task.IssueNumber, Workflow: tc.Task.Workflow, Attempt: tc.Task.Attempt,
-		Stage: stage, Detail: detail, Data: data,
+		Stage: stage, Detail: detail, Data: tc.activityData(kind, data),
 	}
 	id, err := tc.Store.InsertEvent(ctx, event)
 	if err != nil {
@@ -497,6 +510,9 @@ var goTestOKLine = regexp.MustCompile(`^ok\s+\S+`)
 // RunAgentChild records one agent call as a child step of the current stage.
 // A failed write parks the execution. Outside a recorded run it just runs.
 func (tc *TaskContext) RunAgentChild(ctx context.Context, name string, run func() (agentrun.Result, error)) (agentrun.Result, error) {
+	if tc.workflowBranch != "" {
+		name = tc.workflowBranch + "/" + name
+	}
 	stepID, _, err := tc.startChildStep(ctx, task.StepKindAgent, name)
 	if err != nil {
 		return agentrun.Result{}, err
