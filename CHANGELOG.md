@@ -5,6 +5,246 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.47.0] - 2026-10-06
+
+### archied
+
+- Install with one command: `curl -fsSL https://raw.githubusercontent.com/samcharles93/archie-core/main/install.sh | bash` downloads this release, verifies its checksum and runs `archied setup`. `--from-source` builds a checkout instead.
+- `archied setup` asks for the PostgreSQL URL. Left blank, it uses the bundled Compose database with a generated password stored in `~/.config/archie/env` as `PGPASSWORD`, not in `config.toml`.
+- The bundled PostgreSQL listens on 127.0.0.1 only. A database created before this release keeps its old `archie` password; enter its URL at setup or recreate the volume.
+- The release zip carries `docker-compose.yml`.
+- Extensions need unprivileged user namespaces. On Ubuntu 23.10 and later run `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` or extensions fail to start.
+- fix(app): assign the temp-file close result on the error path
+- fix(webhook): set a ReadHeaderTimeout on the forge webhook receivers
+- fix(forge): refuse a review line number that does not fit an int
+- fix(storepkg): mask the tar mode to the permission bits before narrowing
+- fix(webui): navigate the Events chain once, not twice
+- feat(tools): fail the gate when docs cite a path that no longer exists
+- fix(webhookguard): verify uppercase-hex HMAC signatures
+- fix(configuration): make bot_user required, defaulted, and named
+- feat(workflow): add the command.run step type
+- fix(controlplane): an absent MCP server field inherits the file value
+- fix(build): restore the go fix fixpoint, and give the formatter one owner
+- fix(archied): restore contextcheck directives and drop unused adapter
+- feat(secretengine): serve secret engines as go-plugin extensions
+- refactor(statestore): own package for the State Store service; access reset moves to archie-state-store
+- refactor(archied): gateway owns model work; daemon drops chat runtime, tools, memory and curators
+- refactor(archiegateway): own package for the Gateway service
+- fix(services): services wait for peers instead of exiting; restarted broker keeps its endpoint
+- refactor(archieplaybooks): fold archie-playbooks into archied playbooks lint|serve
+- refactor(agentrun): agent stage contract moves to the domain layer
+- refactor(agentexec): model loop moves to agentexec/modelloop
+- fix(configuration): bindings encryption keys must use the env engine
+- feat(storepkg): fetch packages from any registry, plain HTTP on loopback only
+- feat(webui): install, accept and enable extensions from the dashboard
+- feat(presence): every service re-stamps a presence record in the State Store
+- refactor(plugin): delete Yaegi daemon plugins and plugin_dir
+- refactor(module): the log action is built in; delete the module loader and reconciler
+- refactor(skill): delete Yaegi skill scripts and the run_go_script tool
+- refactor(examples): the firewall workflow moves to archipelago
+- feat(presence): services card on the status page and archied status
+- feat(archiemessaging): verify update reports against archied's presence and restore release announcements
+- fix(configuration): an overlay stands in for a missing config file; dev overlay is complete
+- feat(access): edit org, workspace and object policies from the dashboard; refuse owner lockout
+- feat(access): instance network rules at the capture receiver; policies reload without a restart
+- feat(staterpc): attribute State Store calls to the calling service; policy audit records it
+- feat(controlplane): playbooks and agent profiles install from packages; the daemon reads eda-playbooks live
+- feat(forgeext): forge surface served by extensions; forge.type names the installed package
+- refactor(forge): github and gitea leave core; webhooks parse in the forge extension
+- feat(staterpc): the State Store derives org and actor from the principal archie-ui forwards
+- feat(channelext): chat channels served by extensions; messaging runs the enabled ones
+- refactor(channels): webhook and email run only as extensions; their channel settings go
+- feat(skills): skill packages project into a skills resource the gateway reads live
+- fix(gatewayrpc): sender_id and rate_limited cross the chat wire
+- fix(controlplane): change history names kinds and reads only the caller's org
+- feat(contracts)!: requests no longer name their org; the State Store derives it from the caller
+- feat(identity): personal API tokens, created and revoked from the dashboard, act as their owner
+- fix(archieui): a sign-in provider outage is a health issue, not a startup failure
+- feat(staterpc): one run credential per task, kept in the State Store, authorizes its store calls and its push
+- fix(forgerpc): forge calls need the run credential and reach only the run's own repository
+- feat(controlplane): identity credential grants edited from the dashboard and applied live
+- feat(daemon): a workflow that names an identity runs as it; the dispatcher needs run on the workflow
+- feat(staterpc): every run start is audited by the State Store, or the run credential is withdrawn
+- refactor(forgerpc): identity RPC subjects are keyed by identity ID
+- fix(nats): containers log in with their run credential and reach only their task's subjects
+- feat(egress): the run credential is the proxy login; Kit secrets resolve per request from live grants
+- fix(webui): bind the container runtime document's keys, drop the blank Advanced page
+- fix(webui): drop the repository review switch the server no longer accepts
+- feat(controlplane): serve the step vocabulary in the workflow-definitions schema; the editor checks step types against it
+- fix(ui): drop the topbar nav's edge fade that clipped the first item
+- refactor(workflow): delete the bootstrap smoke-test workflow and its intake kind
+- feat(workflow): step ids, {{ }} references to earlier results, agent.run result schemas, workflow.finish and on_failure
+- feat(workflow): repository step types; implement and tdd ship as YAML in general steps
+- feat(workflow): when conditions, handoff, human approval and forge steps; feasibility and triage ship as YAML
+- feat(workflow): retries, parallel branches, review steps; every shipped workflow is YAML and the per-workflow step types are gone
+- feat(ui): workflow canvas renders each definition as a step graph with data edges, parallel branches and conditions
+- feat(ui): the workflow canvas watches a run live: each step shows its state, duration and error, and the view follows the step in progress
+- feat(controlplane): serve each step type's settings schema; the workflow editor checks settings before save
+- feat(ui): build workflows on the canvas: step palette, schema-driven settings forms, references to earlier results, reorder and remove
+- feat(ui): the canvas Start node lists what starts the workflow: issue routes, event bindings, playbooks and other workflows
+- feat(ui): canvas authoring by right-click menu and + insertion points; steps edit in a slide-in panel and show what they do
+- fix(ui): workflow page header is one tab row with save and a more menu; drop the ID field, step list, version footer and the meaningless origin pill
+- feat(ui): drive workflows from the canvas: run a workflow, act on the watched run, edit workflow settings from the Start node; the canvas fills the viewport
+- feat(ui): inspect workflow step runs from canvas
+- feat(workflow): resume a parked run from a chosen step
+- feat(ui): bind an event to a workflow from its Start node
+- fix(ui): reveal signing secret in canvas source creation
+- feat(ui): select review gate findings before approval
+- fix(ui): load task debug reliably and copy JSON output
+- fix(postgres): queue a review that arrives during a remediation
+- fix(ui): keep JSON copy inline on hover
+- fix(webui): stop returning database_url from /api/config
+- refactor(config): drop unused dispatch state labels
+- feat(gateway): serve the dashboard skills and curators over ChatService
+- refactor(archieui): leave channel reload unserved by the gateway
+- feat(releaseupdate): install from release artifacts with journaled rollback, topology check and channels
+- feat(gateway): load SOUL into the chat prompt per turn
+- refactor(config): drop the unwired artifact sender and [artifacts] config
+- feat(messaging): serve MessagingService.Deliver and deliver chat schedules through it
+- refactor(gateway)!: drop budget_key with the webhook chat channel
+- refactor(configuration): delete the dead runtime config overlay
+- fix(daemon): record terminal non-dispatch outcomes so a capture is evaluated once
+- fix(daemon): refuse a disabled workflow on every start path
+- fix(workflow): validate workflow.call inside parallel branches
+- fix(workflow): validate handoff and approve targets at save
+- feat(taskactions): rejecting a pr_open task closes its pull request
+- feat(eda): link binding dispatches to the captures and tasks they started
+- feat(eda): record every terminal binding outcome and flag failing bindings
+- feat(workflow): record parallel branch steps as their own steps
+- feat(workflow): record steps skipped by when as skipped
+- feat(webui): page and filter the task list on the server
+- fix(webui): admit dashboard work requests through the State Store and honour the workflow's repository mode
+- fix(ui): restoring shipped workflows keeps custom ones
+- refactor(org): rename the default org to org-sys
+- fix(postgres): collect inline comments on a review queued behind a running remediation
+- fix(daemon): webhook forge intake does not poll for issues
+- refactor(archied): drop the unreachable multi-identity webhook skip; validation refuses it
+- feat(access): the dashboard operator is a person owning org-sys
+- fix(workflow): refuse undeclared inputs and result fields at save
+- fix(ui): offer resume only where the server accepts it
+- feat(daemon): the timeline names and links the binding and capture that started a task
+- feat(eda): pause and resume a binding; resuming goes back through approval
+- feat(org): org, workspace and membership API
+- fix(webui): the org-sys owner is the instance owner
+- fix(webui): member changes need the admin grant and owner changes an owner
+- feat(daemon): withdrawing an issue declines its queued or running work
+- feat(workflow): later steps read a waited workflow.call's outputs as its result
+- feat(workflow): record each failed attempt of a retried step
+- feat(daemon): record an approving review on the task's timeline
+- feat(workflow): each remediation round names its number, cap and the review it answers
+- fix(ui): show step retries as archie's record, not the agent's report
+- feat(webui): run details show inputs, outputs and workflow.call links both ways
+- feat(webui): page through task logs
+- feat(eda): name and delete capture sources; an armed binding blocks the delete
+- feat(ui): edit retry backoff and needs on the canvas
+- fix(controlplane): report watch outages and align live/restart kind labels
+- feat(taskactions): merge pull request action from the task
+- fix(daemon): withdraw only issues the same dispatch rule found eligible and then lost
+- feat(org): instance admins manage every org
+- feat(ui): org area with members, agents, workspaces, access and tokens
+- fix(ui): trim filler prose and expose appearance in settings nav
+- fix(archiegateway,agentexec,agentworker): rely on ai-sdk reasoning token selection
+- feat(ui): org switcher and new org for instance admins
+- fix(extension): confine each extension's network to its accepted egress hosts
+- fix(captureintake): unwrap form-encoded webhook payloads
+- fix(captureintake): decode any form-encoded webhook body to JSON
+- fix(modelloop): feed the cached model catalog to the runtime so reasoning models get the right token parameter
+- fix(webui): list services with the State Store marked down when it is unreachable
+- fix(release): push the release commit and its tag atomically
+- fix(eda): dispatch each webhook delivery once, however often the sender retries it
+- fix(eda): name a source's delivery header in the dashboard instead of a built-in sender list
+- fix(modelloop): mark reasoning models from the carried model limits, in the gateway and the agent worker
+- feat(telegram): /stop stops the chat agent, else the tasks it created, or one task; delete the dead approval actions
+- feat(storepkg): install packages from a signed default catalogue, listed on the Extensions page
+- feat(setup): one guided flow; ask for PostgreSQL and generate the bundled database's password
+- fix(setup): keep the generated database password out of config.toml
+- feat(install): install from a verified release with curl | bash; ship docker-compose.yml in the release
+
+### archie-agent
+
+- fix(forge): refuse a review line number that does not fit an int
+- fix(webhookguard): verify uppercase-hex HMAC signatures
+- feat(workflow): add the command.run step type
+- feat(secretengine): serve secret engines as go-plugin extensions
+- refactor(statestore): own package for the State Store service; access reset moves to archie-state-store
+- fix(services): services wait for peers instead of exiting; restarted broker keeps its endpoint
+- refactor(agentrun): agent stage contract moves to the domain layer
+- refactor(agentexec): model loop moves to agentexec/modelloop
+- fix(configuration): bindings encryption keys must use the env engine
+- feat(presence): every service re-stamps a presence record in the State Store
+- refactor(plugin): delete Yaegi daemon plugins and plugin_dir
+- refactor(module): the log action is built in; delete the module loader and reconciler
+- refactor(skill): delete Yaegi skill scripts and the run_go_script tool
+- feat(access): edit org, workspace and object policies from the dashboard; refuse owner lockout
+- feat(access): instance network rules at the capture receiver; policies reload without a restart
+- feat(staterpc): attribute State Store calls to the calling service; policy audit records it
+- feat(controlplane): playbooks and agent profiles install from packages; the daemon reads eda-playbooks live
+- feat(forgeext): forge surface served by extensions; forge.type names the installed package
+- refactor(forge): github and gitea leave core; webhooks parse in the forge extension
+- feat(staterpc): the State Store derives org and actor from the principal archie-ui forwards
+- feat(channelext): chat channels served by extensions; messaging runs the enabled ones
+- refactor(channels): webhook and email run only as extensions; their channel settings go
+- feat(skills): skill packages project into a skills resource the gateway reads live
+- fix(controlplane): change history names kinds and reads only the caller's org
+- feat(contracts)!: requests no longer name their org; the State Store derives it from the caller
+- feat(identity): personal API tokens, created and revoked from the dashboard, act as their owner
+- fix(archieui): a sign-in provider outage is a health issue, not a startup failure
+- feat(staterpc): one run credential per task, kept in the State Store, authorizes its store calls and its push
+- fix(forgerpc): forge calls need the run credential and reach only the run's own repository
+- feat(daemon): a workflow that names an identity runs as it; the dispatcher needs run on the workflow
+- feat(staterpc): every run start is audited by the State Store, or the run credential is withdrawn
+- refactor(forgerpc): identity RPC subjects are keyed by identity ID
+- fix(nats): containers log in with their run credential and reach only their task's subjects
+- feat(egress): the run credential is the proxy login; Kit secrets resolve per request from live grants
+- feat(controlplane): serve the step vocabulary in the workflow-definitions schema; the editor checks step types against it
+- refactor(workflow): delete the bootstrap smoke-test workflow and its intake kind
+- feat(workflow): step ids, {{ }} references to earlier results, agent.run result schemas, workflow.finish and on_failure
+- feat(workflow): repository step types; implement and tdd ship as YAML in general steps
+- feat(workflow): when conditions, handoff, human approval and forge steps; feasibility and triage ship as YAML
+- feat(workflow): retries, parallel branches, review steps; every shipped workflow is YAML and the per-workflow step types are gone
+- feat(controlplane): serve each step type's settings schema; the workflow editor checks settings before save
+- feat(ui): the canvas Start node lists what starts the workflow: issue routes, event bindings, playbooks and other workflows
+- feat(ui): inspect workflow step runs from canvas
+- feat(workflow): resume a parked run from a chosen step
+- fix(postgres): queue a review that arrives during a remediation
+- refactor(config): drop unused dispatch state labels
+- refactor(config): drop the unwired artifact sender and [artifacts] config
+- feat(messaging): serve MessagingService.Deliver and deliver chat schedules through it
+- refactor(gateway)!: drop budget_key with the webhook chat channel
+- fix(daemon): record terminal non-dispatch outcomes so a capture is evaluated once
+- fix(workflow): validate workflow.call inside parallel branches
+- fix(workflow): validate handoff and approve targets at save
+- feat(taskactions): rejecting a pr_open task closes its pull request
+- feat(eda): link binding dispatches to the captures and tasks they started
+- feat(workflow): record parallel branch steps as their own steps
+- feat(workflow): record steps skipped by when as skipped
+- feat(webui): page and filter the task list on the server
+- refactor(org): rename the default org to org-sys
+- fix(postgres): collect inline comments on a review queued behind a running remediation
+- feat(access): the dashboard operator is a person owning org-sys
+- fix(workflow): refuse undeclared inputs and result fields at save
+- feat(daemon): the timeline names and links the binding and capture that started a task
+- feat(eda): pause and resume a binding; resuming goes back through approval
+- feat(org): org, workspace and membership API
+- feat(daemon): withdrawing an issue declines its queued or running work
+- feat(workflow): later steps read a waited workflow.call's outputs as its result
+- feat(workflow): record each failed attempt of a retried step
+- feat(daemon): record an approving review on the task's timeline
+- feat(workflow): each remediation round names its number, cap and the review it answers
+- feat(webui): run details show inputs, outputs and workflow.call links both ways
+- feat(webui): page through task logs
+- feat(eda): name and delete capture sources; an armed binding blocks the delete
+- feat(taskactions): merge pull request action from the task
+- feat(org): instance admins manage every org
+- fix(archiegateway,agentexec,agentworker): rely on ai-sdk reasoning token selection
+- fix(extension): confine each extension's network to its accepted egress hosts
+- fix(modelloop): feed the cached model catalog to the runtime so reasoning models get the right token parameter
+- fix(eda): dispatch each webhook delivery once, however often the sender retries it
+- fix(eda): name a source's delivery header in the dashboard instead of a built-in sender list
+- fix(modelloop): mark reasoning models from the carried model limits, in the gateway and the agent worker
+- feat(telegram): /stop stops the chat agent, else the tasks it created, or one task; delete the dead approval actions
+- feat(storepkg): install packages from a signed default catalogue, listed on the Extensions page
+
 ## [1.46.0] - 2026-10-02
 
 ### archied
