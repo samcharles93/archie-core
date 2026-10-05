@@ -88,7 +88,7 @@ async function restartFrom(from: string): Promise<void> {
     restarting.value = false;
   }
 }
-const triggers = useWorkflowTriggers(selected);
+const { triggers, reload: reloadTriggers } = useWorkflowTriggers(selected);
 
 // Canvas edits are edits to the YAML; a newly placed step opens for editing.
 const stepTypeNames = computed(() => vocabulary.value.map((info) => info.name));
@@ -272,7 +272,7 @@ function syncScroll(event: Event): void {
             leave-active-class="transition duration-150"
           >
             <div v-if="settingsOpen" class="absolute inset-y-0 right-0 overflow-hidden rounded-r-lg">
-              <WorkflowSettings v-model:yaml="yaml" :triggers="triggers" @close="settingsOpen = false" />
+              <WorkflowSettings v-model:yaml="yaml" :triggers="triggers" @close="settingsOpen = false" @bound="reloadTriggers" />
             </div>
           </Transition>
           <Transition

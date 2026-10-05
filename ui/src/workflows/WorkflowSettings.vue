@@ -1,14 +1,24 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { Plus, Trash2, X } from "@lucide/vue";
 
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { statusKind, statusLabel, type Binding } from "@/bindings/binding-draft";
+import BindEvent from "./BindEvent.vue";
 import { setWorkflowField, workflowField } from "./workflow-edit";
 import type { WorkflowTrigger } from "./workflow-triggers";
 
 const props = defineProps<{ yaml: string; triggers: WorkflowTrigger[] }>();
-const emit = defineEmits<{ "update:yaml": [string]; close: [] }>();
+const emit = defineEmits<{ "update:yaml": [string]; close: []; bound: [] }>();
+
+// The bind flow replaces the settings in this panel; null binding is a new one.
+const binding = ref<Binding | null | undefined>();
+function bound(): void {
+  binding.value = undefined;
+  emit("bound");
+}
 
 type Spec = { type?: string; required?: boolean };
 const TYPES = ["string", "number", "bool", "object", "array", "any"];
@@ -53,6 +63,8 @@ const repository = computed(() => text("repository") || "required");
 
 <template>
   <aside class="flex h-full w-[24rem] flex-col border-l border-border bg-card shadow-xl">
+    <BindEvent v-if="binding !== undefined" :yaml="yaml" :binding="binding" @back="binding = undefined" @saved="bound" />
+    <template v-else>
     <header class="flex items-center gap-2 border-b border-border px-4 py-3">
       <div class="min-w-0 flex-1">
         <div class="text-sm font-medium">Workflow settings</div>
@@ -143,16 +155,24 @@ const repository = computed(() => text("repository") || "required");
       <section class="space-y-1.5">
         <div class="flex items-center text-xs font-medium text-muted-foreground">
           Starts when
-          <RouterLink to="/events?tab=bindings" class="ml-auto flex items-center gap-0.5 hover:text-foreground"><Plus class="size-3" /> Bind an event</RouterLink>
+          <button type="button" class="ml-auto flex items-center gap-0.5 hover:text-foreground" @click="binding = null"><Plus class="size-3" /> Bind an event</button>
         </div>
         <ul v-if="triggers.length" class="divide-y divide-border rounded-md border border-border">
-          <li v-for="trigger in triggers" :key="trigger.kind + trigger.label" class="flex items-center gap-2 px-3 py-2 text-[13px]">
-            <span class="truncate">{{ trigger.label }}</span>
-            <span v-if="trigger.detail" class="ml-auto truncate text-xs text-fg-subtle">{{ trigger.detail }}</span>
+          <li v-for="trigger in triggers" :key="trigger.kind + trigger.label" class="text-[13px]">
+            <button v-if="trigger.binding" type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-secondary" @click="binding = trigger.binding">
+              <span class="truncate">{{ trigger.label }}</span>
+              <Badge v-if="trigger.binding.status !== 'armed'" :variant="statusKind(trigger.binding.status)">{{ statusLabel(trigger.binding.status) }}</Badge>
+              <span v-if="trigger.detail" class="ml-auto truncate text-xs text-fg-subtle">{{ trigger.detail }}</span>
+            </button>
+            <div v-else class="flex items-center gap-2 px-3 py-2">
+              <span class="truncate">{{ trigger.label }}</span>
+              <span v-if="trigger.detail" class="ml-auto truncate text-xs text-fg-subtle">{{ trigger.detail }}</span>
+            </div>
           </li>
         </ul>
         <p v-else class="text-xs text-fg-subtle">Nothing starts it automatically. Run it by hand, or bind an event.</p>
       </section>
     </div>
+    </template>
   </aside>
 </template>

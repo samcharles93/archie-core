@@ -3,18 +3,21 @@ import { parse } from "yaml";
 
 import { api } from "@/lib/api";
 import { useControlPlaneStore } from "@/stores/control-plane";
+import type { Binding } from "@/bindings/binding-draft";
 
 /** One way a workflow gets started. */
 export interface WorkflowTrigger {
   kind: "issue" | "event" | "playbook" | "workflow";
   label: string;
   detail?: string;
+  /** The event binding this trigger is, for editing it. */
+  binding?: Binding;
 }
 
 export interface TriggerSources {
   /** Issue label kind to workflow, with "default" for an unlabelled issue. */
   routes: Record<string, string>;
-  bindings: { name?: string; workflow?: string; matcher?: { source?: string } }[];
+  bindings: Binding[];
   playbooks: { id: string; yaml: string }[];
   definitions: { id: string; yaml: string }[];
 }
@@ -46,7 +49,7 @@ export function triggersFor(id: string, sources: TriggerSources): WorkflowTrigge
   }
   for (const binding of sources.bindings) {
     if (binding.workflow !== id) continue;
-    triggers.push({ kind: "event", label: binding.name || "Event binding", detail: binding.matcher?.source });
+    triggers.push({ kind: "event", label: binding.name || "Event binding", detail: binding.matcher?.source, binding });
   }
   for (const playbook of sources.playbooks) {
     const value = parseQuietly(playbook.yaml);
@@ -105,11 +108,12 @@ function resultChoices(steps: unknown[], reference: unknown): string[] {
 export function useWorkflowTriggers(id: Ref<string>) {
   const store = useControlPlaneStore();
   const bindings = ref<TriggerSources["bindings"]>([]);
-  onMounted(async () => {
-    const response = await api.bindings<{ bindings?: TriggerSources["bindings"] }>().catch(() => null);
+  async function reload(): Promise<void> {
+    const response = await api.bindings<{ bindings?: Binding[] }>().catch(() => null);
     bindings.value = response?.bindings ?? [];
-  });
-  return computed(() =>
+  }
+  onMounted(reload);
+  const triggers = computed(() =>
     triggersFor(id.value, {
       routes: store.intakeRoutes(),
       bindings: bindings.value,
@@ -117,4 +121,5 @@ export function useWorkflowTriggers(id: Ref<string>) {
       definitions: (store.stateFor("workflow-definitions").resource?.value as { definitions?: TriggerSources["definitions"] } | undefined)?.definitions ?? [],
     }),
   );
+  return { triggers, reload };
 }
