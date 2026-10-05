@@ -7,10 +7,8 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
-	"mime"
 	"net"
 	"net/http"
-	"net/url"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/access"
@@ -104,12 +102,6 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Verified on the raw bytes, before redaction parses them.
 	authenticated, unsigned := verify(src, r.Header, body)
 
-	contentType := r.Header.Get("Content-Type")
-	if payload, ok := formPayload(contentType, body); ok {
-		body, contentType = payload, "application/json"
-		r.Header.Set("Content-Type", contentType)
-	}
-
 	headers, _ := json.Marshal(r.Header)
 	redactedHeaders, err := webhookguard.RedactPayload(headers)
 	if err != nil {
@@ -127,7 +119,7 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ReceivedAt:    time.Now().UTC(),
 		Source:        path,
 		RemoteAddr:    r.RemoteAddr,
-		ContentType:   contentType,
+		ContentType:   r.Header.Get("Content-Type"),
 		Headers:       string(redactedHeaders),
 		Body:          string(redactedBody),
 		Authenticated: authenticated,
@@ -204,25 +196,6 @@ func verify(src *source.Source, h http.Header, body []byte) (authenticated, unsi
 		sig = h.Get("X-Signature-256")
 	}
 	return webhookguard.VerifyHMAC(body, sig, src.Secret), false
-}
-
-// formPayload unwraps the JSON a form-encoded delivery carries in its payload
-// field, GitHub's default webhook content type, so it types and maps like a
-// JSON delivery.
-func formPayload(contentType string, body []byte) ([]byte, bool) {
-	mt, _, err := mime.ParseMediaType(contentType)
-	if err != nil || mt != "application/x-www-form-urlencoded" {
-		return nil, false
-	}
-	form, err := url.ParseQuery(string(body))
-	if err != nil {
-		return nil, false
-	}
-	payload := form.Get("payload")
-	if !json.Valid([]byte(payload)) {
-		return nil, false
-	}
-	return []byte(payload), true
 }
 
 func (rc *Receiver) logger() *slog.Logger {
