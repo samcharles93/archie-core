@@ -84,6 +84,60 @@ func TestEvaluatedCaptureIsNotReoffered(t *testing.T) {
 	}
 }
 
+// A sender's retry of one delivery is captured again but dispatches once,
+// even when both copies are offered before either is claimed.
+func TestRedeliveryDispatchesOnce(t *testing.T) {
+	ctx := t.Context()
+	eda := pgstore.EDA(t, nil)
+	eventTypeID, err := eda.InsertEventType(ctx, eventtype.EventType{Source: "forge", Name: "push"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mappingID, err := eda.InsertMapping(ctx, mapping.Mapping{Name: "push", EventTypeID: eventTypeID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bindingID, err := eda.InsertBinding(ctx, binding.Binding{
+		Name: "on-push", Matcher: binding.Matcher{Source: "forge"}, MappingID: mappingID, Workflow: "tdd",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := eda.ApproveBinding(ctx, bindingID); err != nil {
+		t.Fatal(err)
+	}
+	capture := func(delivery string) string {
+		id, err := eda.InsertCapture(ctx, storecontract.CapturedEvent{
+			Source: "forge", Body: "{}", Authenticated: true, ReceivedAt: time.Now(), Delivery: delivery,
+		}, time.Hour, 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+
+	original, retry := capture("X-GitHub-Delivery:abc"), capture("X-GitHub-Delivery:abc")
+	assertUndispatched(t, eda, 2)
+	if err := eda.RecordDispatch(ctx, bindingID, 1, original, 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := eda.RecordDispatch(ctx, bindingID, 1, retry, 0, ""); !errors.Is(err, storecontract.ErrAlreadyDispatched) {
+		t.Fatalf("dispatch of the retry = %v, want ErrAlreadyDispatched", err)
+	}
+	assertUndispatched(t, eda, 0)
+
+	capture("X-GitHub-Delivery:def")
+	capture("")
+	assertUndispatched(t, eda, 2)
+	captures, err := eda.ListCaptures(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(captures) != 4 {
+		t.Fatalf("captures = %d, want 4: a retry is still recorded", len(captures))
+	}
+}
+
 func assertUndispatched(t *testing.T, eda *postgres.EDA, want int) {
 	t.Helper()
 	got, err := eda.ListUndispatchedCaptures(t.Context(), []string{"forge"}, 10)

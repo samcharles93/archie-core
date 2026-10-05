@@ -1,24 +1,24 @@
 -- EDA queries: captures, mappings, bindings, dispatch ledgers, tool_calls.
 
 -- name: InsertCapture :exec
-INSERT INTO captures (id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned, event_type)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
+INSERT INTO captures (id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned, event_type, delivery)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11);
 
 -- name: ListCaptures :many
-SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned, event_type, org_id, workspace_id
+SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned, event_type, org_id, workspace_id, delivery
 FROM captures
 ORDER BY received_at DESC
 LIMIT $1;
 
 -- name: ListUndispatchedCaptures :many
-SELECT c.id, c.source, c.remote_addr, c.content_type, c.headers, c.body, c.authenticated, c.received_at, c.unsigned, c.event_type, c.org_id, c.workspace_id
+SELECT c.id, c.source, c.remote_addr, c.content_type, c.headers, c.body, c.authenticated, c.received_at, c.unsigned, c.event_type, c.org_id, c.workspace_id, c.delivery
 FROM captures c
 WHERE c.source = ANY(@sources::text[])
   AND c.event_type <> ''
   AND EXISTS (
 	SELECT 1 FROM bindings b JOIN mappings m ON m.id = b.mapping
 	WHERE b.source = c.source AND b.status = 'armed' AND m.event_type = c.event_type
-	  AND NOT EXISTS (SELECT 1 FROM binding_dispatches d WHERE d.binding = b.id AND d.capture = c.id)
+	  AND NOT EXISTS (SELECT 1 FROM binding_dispatches d WHERE d.binding = b.id AND d.delivery = c.delivery)
   )
 ORDER BY c.received_at DESC
 LIMIT @entry_limit;
@@ -91,9 +91,10 @@ WHERE id = @id AND status = @from_status;
 -- name: DeleteBinding :execrows
 DELETE FROM bindings WHERE id = $1;
 
--- name: InsertBindingDispatch :exec
-INSERT INTO binding_dispatches (binding, binding_version, capture, task_id, reason)
-VALUES ($1, $2, $3, $4, $5);
+-- name: InsertBindingDispatch :execrows
+INSERT INTO binding_dispatches (binding, binding_version, capture, task_id, reason, delivery)
+SELECT @binding, @binding_version, c.id, @task_id, @reason, c.delivery
+FROM captures c WHERE c.id = @capture;
 
 -- name: SetBindingDispatchTask :exec
 UPDATE binding_dispatches SET task_id = $3 WHERE binding = $1 AND capture = $2;

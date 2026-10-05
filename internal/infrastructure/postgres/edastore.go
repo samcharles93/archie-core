@@ -86,6 +86,10 @@ func (s *EDA) InsertCapture(ctx context.Context, c storecontract.CapturedEvent, 
 		return "", err
 	}
 	id := newRecordID()
+	delivery := c.Delivery
+	if delivery == "" {
+		delivery = id
+	}
 	if err := s.q.InsertCapture(ctx, postgresdb.InsertCaptureParams{
 		ID:            id,
 		Source:        c.Source,
@@ -97,6 +101,7 @@ func (s *EDA) InsertCapture(ctx context.Context, c storecontract.CapturedEvent, 
 		Unsigned:      c.Unsigned,
 		ReceivedAt:    received.UTC(),
 		EventType:     eventType,
+		Delivery:      delivery,
 	}); err != nil {
 		return "", fmt.Errorf("edastore: insert capture: %w", err)
 	}
@@ -132,6 +137,7 @@ func captureValue(r postgresdb.Capture) storecontract.CapturedEvent {
 		Authenticated: r.Authenticated,
 		EventType:     r.EventType,
 		Unsigned:      r.Unsigned,
+		Delivery:      r.Delivery,
 	}
 }
 
@@ -512,18 +518,22 @@ func (s *EDA) transitionBinding(ctx context.Context, id string, from, to binding
 
 // --- dispatch ledgers ---
 
-// RecordDispatch writes one at-most-once binding dispatch. binding_version is
-// stored but is not part of the unique key, so a version bump does not permit
-// re-dispatching the same (binding, capture). A non-empty reason records an
+// RecordDispatch writes one at-most-once binding dispatch, keyed on the
+// capture's delivery so a retried delivery is refused like the original.
+// binding_version is stored but is not part of the key, so a version bump does
+// not permit re-dispatching the same delivery. A non-empty reason records an
 // evaluation that ended without a task.
 func (s *EDA) RecordDispatch(ctx context.Context, bindingID string, bindingVersion int64, captureID string, taskID int64, reason string) error {
-	err := s.q.InsertBindingDispatch(ctx, postgresdb.InsertBindingDispatchParams{
+	n, err := s.q.InsertBindingDispatch(ctx, postgresdb.InsertBindingDispatchParams{
 		Binding:        bindingID,
 		BindingVersion: bindingVersion,
 		Capture:        captureID,
 		TaskID:         taskID,
 		Reason:         reason,
 	})
+	if err == nil && n == 0 {
+		return fmt.Errorf("edastore: record dispatch: capture %q not found", captureID)
+	}
 	return ledgerWrite(err, "edastore: record dispatch")
 }
 

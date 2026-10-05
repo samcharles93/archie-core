@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/access"
@@ -132,6 +133,7 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Body:          string(redactedBody),
 		Authenticated: authenticated,
 		Unsigned:      unsigned,
+		Delivery:      deliveryID(r.Header),
 	}
 	id, err := rc.Captures.InsertCapture(r.Context(), c, rc.Retention, rc.MaxEvents)
 	if err != nil {
@@ -204,6 +206,25 @@ func verify(src *source.Source, h http.Header, body []byte) (authenticated, unsi
 		sig = h.Get("X-Signature-256")
 	}
 	return webhookguard.VerifyHMAC(body, sig, src.Secret), false
+}
+
+// deliveryHeaders carry a sender's ID for one delivery, repeated unchanged on
+// every retry of it: GitHub, Gitea, Gogs, GitLab, Standard Webhooks, and the
+// generic idempotency key.
+var deliveryHeaders = []string{
+	"X-GitHub-Delivery", "X-Gitea-Delivery", "X-Gogs-Delivery",
+	"X-Gitlab-Event-UUID", "Webhook-Id", "Idempotency-Key",
+}
+
+// deliveryID is the sender's delivery ID, or empty when it sends none and
+// each arrival counts as its own delivery.
+func deliveryID(h http.Header) string {
+	for _, name := range deliveryHeaders {
+		if id := strings.TrimSpace(h.Get(name)); id != "" {
+			return name + ":" + id
+		}
+	}
+	return ""
 }
 
 // formPayload turns a form-encoded delivery into JSON so it types and maps

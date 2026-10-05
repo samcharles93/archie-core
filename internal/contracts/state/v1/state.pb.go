@@ -2261,7 +2261,10 @@ type CapturedEvent struct {
 	// arrival; empty is unidentified.
 	EventType string `protobuf:"bytes,9,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
 	// unsigned marks an event taken on an approved unsigned source.
-	Unsigned      bool `protobuf:"varint,10,opt,name=unsigned,proto3" json:"unsigned,omitempty"`
+	Unsigned bool `protobuf:"varint,10,opt,name=unsigned,proto3" json:"unsigned,omitempty"`
+	// delivery names the sender's delivery; a retry of one delivery shares it.
+	// Intake sets the sender's delivery ID; empty takes the capture ID.
+	Delivery      string `protobuf:"bytes,11,opt,name=delivery,proto3" json:"delivery,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2364,6 +2367,13 @@ func (x *CapturedEvent) GetUnsigned() bool {
 		return x.Unsigned
 	}
 	return false
+}
+
+func (x *CapturedEvent) GetDelivery() string {
+	if x != nil {
+		return x.Delivery
+	}
+	return ""
 }
 
 // EventTypeHeaderCondition mirrors internal/domain/eventtype.HeaderCondition.
@@ -14888,7 +14898,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\bactor_id\x18\f \x01(\tR\aactorId\x12\x1d\n" +
 	"\n" +
 	"actor_kind\x18\r \x01(\tR\tactorKind\x12!\n" +
-	"\fprincipal_id\x18\x0e \x01(\tR\vprincipalId\"\xc7\x02\n" +
+	"\fprincipal_id\x18\x0e \x01(\tR\vprincipalId\"\xe3\x02\n" +
 	"\rCapturedEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12;\n" +
 	"\vreceived_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
@@ -14903,7 +14913,8 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\n" +
 	"event_type\x18\t \x01(\tR\teventType\x12\x1a\n" +
 	"\bunsigned\x18\n" +
-	" \x01(\bR\bunsigned\"D\n" +
+	" \x01(\bR\bunsigned\x12\x1a\n" +
+	"\bdelivery\x18\v \x01(\tR\bdelivery\"D\n" +
 	"\x18EventTypeHeaderCondition\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\"U\n" +

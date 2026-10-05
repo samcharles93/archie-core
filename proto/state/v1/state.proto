@@ -472,6 +472,9 @@ message CapturedEvent {
   string event_type = 9;
   // unsigned marks an event taken on an approved unsigned source.
   bool unsigned = 10;
+  // delivery names the sender's delivery; a retry of one delivery shares it.
+  // Intake sets the sender's delivery ID; empty takes the capture ID.
+  string delivery = 11;
 }
 
 // EventTypeHeaderCondition mirrors internal/domain/eventtype.HeaderCondition.

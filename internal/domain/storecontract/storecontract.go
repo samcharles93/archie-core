@@ -366,6 +366,10 @@ type CapturedEvent struct {
 	// Unsigned marks an event that arrived on an approved unsigned source.
 	// It dispatches without Authenticated and is flagged wherever it shows.
 	Unsigned bool `json:"unsigned"`
+	// Delivery names the sender's delivery; a retry of one delivery shares
+	// it, so a binding dispatches each delivery once. Intake sets the
+	// sender's delivery ID; the store fills the capture ID when it is empty.
+	Delivery string `json:"delivery"`
 }
 
 // Dispatchable reports whether a binding may start a task from this event:

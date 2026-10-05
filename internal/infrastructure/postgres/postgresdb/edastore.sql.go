@@ -412,34 +412,38 @@ func (q *Queries) InsertBinding(ctx context.Context, arg InsertBindingParams) er
 	return err
 }
 
-const insertBindingDispatch = `-- name: InsertBindingDispatch :exec
-INSERT INTO binding_dispatches (binding, binding_version, capture, task_id, reason)
-VALUES ($1, $2, $3, $4, $5)
+const insertBindingDispatch = `-- name: InsertBindingDispatch :execrows
+INSERT INTO binding_dispatches (binding, binding_version, capture, task_id, reason, delivery)
+SELECT $1, $2, c.id, $3, $4, c.delivery
+FROM captures c WHERE c.id = $5
 `
 
 type InsertBindingDispatchParams struct {
 	Binding        string
 	BindingVersion int64
-	Capture        string
 	TaskID         int64
 	Reason         string
+	Capture        string
 }
 
-func (q *Queries) InsertBindingDispatch(ctx context.Context, arg InsertBindingDispatchParams) error {
-	_, err := q.db.Exec(ctx, insertBindingDispatch,
+func (q *Queries) InsertBindingDispatch(ctx context.Context, arg InsertBindingDispatchParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertBindingDispatch,
 		arg.Binding,
 		arg.BindingVersion,
-		arg.Capture,
 		arg.TaskID,
 		arg.Reason,
+		arg.Capture,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const insertCapture = `-- name: InsertCapture :exec
 
-INSERT INTO captures (id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned, event_type)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+INSERT INTO captures (id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned, event_type, delivery)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 `
 
 type InsertCaptureParams struct {
@@ -453,6 +457,7 @@ type InsertCaptureParams struct {
 	ReceivedAt    time.Time
 	Unsigned      bool
 	EventType     string
+	Delivery      string
 }
 
 // EDA queries: captures, mappings, bindings, dispatch ledgers, tool_calls.
@@ -468,6 +473,7 @@ func (q *Queries) InsertCapture(ctx context.Context, arg InsertCaptureParams) er
 		arg.ReceivedAt,
 		arg.Unsigned,
 		arg.EventType,
+		arg.Delivery,
 	)
 	return err
 }
@@ -733,7 +739,7 @@ func (q *Queries) ListBindings(ctx context.Context) ([]ListBindingsRow, error) {
 }
 
 const listCaptures = `-- name: ListCaptures :many
-SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned, event_type, org_id, workspace_id
+SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned, event_type, org_id, workspace_id, delivery
 FROM captures
 ORDER BY received_at DESC
 LIMIT $1
@@ -761,6 +767,7 @@ func (q *Queries) ListCaptures(ctx context.Context, limit int32) ([]Capture, err
 			&i.EventType,
 			&i.OrgID,
 			&i.WorkspaceID,
+			&i.Delivery,
 		); err != nil {
 			return nil, err
 		}
@@ -886,14 +893,14 @@ func (q *Queries) ListSources(ctx context.Context) ([]Source, error) {
 }
 
 const listUndispatchedCaptures = `-- name: ListUndispatchedCaptures :many
-SELECT c.id, c.source, c.remote_addr, c.content_type, c.headers, c.body, c.authenticated, c.received_at, c.unsigned, c.event_type, c.org_id, c.workspace_id
+SELECT c.id, c.source, c.remote_addr, c.content_type, c.headers, c.body, c.authenticated, c.received_at, c.unsigned, c.event_type, c.org_id, c.workspace_id, c.delivery
 FROM captures c
 WHERE c.source = ANY($1::text[])
   AND c.event_type <> ''
   AND EXISTS (
 	SELECT 1 FROM bindings b JOIN mappings m ON m.id = b.mapping
 	WHERE b.source = c.source AND b.status = 'armed' AND m.event_type = c.event_type
-	  AND NOT EXISTS (SELECT 1 FROM binding_dispatches d WHERE d.binding = b.id AND d.capture = c.id)
+	  AND NOT EXISTS (SELECT 1 FROM binding_dispatches d WHERE d.binding = b.id AND d.delivery = c.delivery)
   )
 ORDER BY c.received_at DESC
 LIMIT $2
@@ -926,6 +933,7 @@ func (q *Queries) ListUndispatchedCaptures(ctx context.Context, arg ListUndispat
 			&i.EventType,
 			&i.OrgID,
 			&i.WorkspaceID,
+			&i.Delivery,
 		); err != nil {
 			return nil, err
 		}

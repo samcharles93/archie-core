@@ -193,7 +193,7 @@ func capturedEventProto(c storecontract.CapturedEvent) *pb.CapturedEvent {
 		Id: c.ID, ReceivedAt: timestamp(c.ReceivedAt), Source: c.Source,
 		RemoteAddr: c.RemoteAddr, ContentType: c.ContentType, Headers: c.Headers,
 		Body: c.Body, Authenticated: c.Authenticated, EventType: c.EventType,
-		Unsigned: c.Unsigned,
+		Unsigned: c.Unsigned, Delivery: c.Delivery,
 	}
 }
 
@@ -205,7 +205,7 @@ func capturedEventValue(c *pb.CapturedEvent) storecontract.CapturedEvent {
 		ID: c.Id, ReceivedAt: timeValue(c.ReceivedAt), Source: c.Source,
 		RemoteAddr: c.RemoteAddr, ContentType: c.ContentType, Headers: c.Headers,
 		Body: c.Body, Authenticated: c.Authenticated, EventType: c.EventType,
-		Unsigned: c.Unsigned,
+		Unsigned: c.Unsigned, Delivery: c.Delivery,
 	}
 }
 

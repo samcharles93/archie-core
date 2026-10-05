@@ -79,6 +79,7 @@ type BindingDispatch struct {
 	TaskID         int64
 	DispatchedAt   time.Time
 	Reason         string
+	Delivery       string
 }
 
 type Capture struct {
@@ -94,6 +95,7 @@ type Capture struct {
 	EventType     string
 	OrgID         string
 	WorkspaceID   string
+	Delivery      string
 }
 
 type CaptureRefusal struct {
