@@ -462,6 +462,12 @@ func (d *Daemon) maintainAndDrain(ctx context.Context) {
 // identity poll loops pass the identity's own forge and configForIdentity,
 // so each identity polls with its own bot user, label, and trigger.
 func (d *Daemon) pollIssuesWithConfig(ctx context.Context, fg forge.Forge, cfg config.Config, repo config.Repo) []forge.Issue {
+	// Webhook intake hears about issues as they change; polling as well would
+	// spend forge API quota to find the same work. The receiver runs from the
+	// root forge settings, so their mode decides for every identity.
+	if d.Cfg.Get().Forge.Intake == config.ForgeIntakeWebhook {
+		return nil
+	}
 	switch cfg.Dispatch.Trigger {
 	case "label":
 		// Empty-label rule shared with workintake.MatchesDispatch: a label
