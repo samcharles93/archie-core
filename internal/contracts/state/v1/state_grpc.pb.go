@@ -100,6 +100,7 @@ const (
 	StateStoreService_InsertBinding_FullMethodName              = "/state.v1.StateStoreService/InsertBinding"
 	StateStoreService_GetBinding_FullMethodName                 = "/state.v1.StateStoreService/GetBinding"
 	StateStoreService_ListBindings_FullMethodName               = "/state.v1.StateStoreService/ListBindings"
+	StateStoreService_ListDispatches_FullMethodName             = "/state.v1.StateStoreService/ListDispatches"
 	StateStoreService_UpdateBinding_FullMethodName              = "/state.v1.StateStoreService/UpdateBinding"
 	StateStoreService_DeleteBinding_FullMethodName              = "/state.v1.StateStoreService/DeleteBinding"
 	StateStoreService_ApproveBinding_FullMethodName             = "/state.v1.StateStoreService/ApproveBinding"
@@ -110,6 +111,7 @@ const (
 	StateStoreService_SetSourceSecret_FullMethodName            = "/state.v1.StateStoreService/SetSourceSecret"
 	StateStoreService_ArmedBindingsForSource_FullMethodName     = "/state.v1.StateStoreService/ArmedBindingsForSource"
 	StateStoreService_RecordDispatch_FullMethodName             = "/state.v1.StateStoreService/RecordDispatch"
+	StateStoreService_SetDispatchTask_FullMethodName            = "/state.v1.StateStoreService/SetDispatchTask"
 	StateStoreService_RecordPlaybookDispatch_FullMethodName     = "/state.v1.StateStoreService/RecordPlaybookDispatch"
 	StateStoreService_DeletePlaybookDispatches_FullMethodName   = "/state.v1.StateStoreService/DeletePlaybookDispatches"
 	StateStoreService_StreamUndispatchedCaptures_FullMethodName = "/state.v1.StateStoreService/StreamUndispatchedCaptures"
@@ -289,6 +291,7 @@ type StateStoreServiceClient interface {
 	InsertBinding(ctx context.Context, in *InsertBindingRequest, opts ...grpc.CallOption) (*InsertBindingResponse, error)
 	GetBinding(ctx context.Context, in *GetBindingRequest, opts ...grpc.CallOption) (*GetBindingResponse, error)
 	ListBindings(ctx context.Context, in *ListBindingsRequest, opts ...grpc.CallOption) (*ListBindingsResponse, error)
+	ListDispatches(ctx context.Context, in *ListDispatchesRequest, opts ...grpc.CallOption) (*ListDispatchesResponse, error)
 	UpdateBinding(ctx context.Context, in *UpdateBindingRequest, opts ...grpc.CallOption) (*UpdateBindingResponse, error)
 	DeleteBinding(ctx context.Context, in *DeleteBindingRequest, opts ...grpc.CallOption) (*DeleteBindingResponse, error)
 	ApproveBinding(ctx context.Context, in *ApproveBindingRequest, opts ...grpc.CallOption) (*ApproveBindingResponse, error)
@@ -302,6 +305,7 @@ type StateStoreServiceClient interface {
 	// Dispatch
 	ArmedBindingsForSource(ctx context.Context, in *ArmedBindingsForSourceRequest, opts ...grpc.CallOption) (*ArmedBindingsForSourceResponse, error)
 	RecordDispatch(ctx context.Context, in *RecordDispatchRequest, opts ...grpc.CallOption) (*RecordDispatchResponse, error)
+	SetDispatchTask(ctx context.Context, in *SetDispatchTaskRequest, opts ...grpc.CallOption) (*SetDispatchTaskResponse, error)
 	// Playbook dispatch ledger (eda-playbook-engine.md gap 2): one durable
 	// at-most-once record per (playbook, version, event, action) for the
 	// side-effecting positions. Administrative, like RecordDispatch: a
@@ -1169,6 +1173,16 @@ func (c *stateStoreServiceClient) ListBindings(ctx context.Context, in *ListBind
 	return out, nil
 }
 
+func (c *stateStoreServiceClient) ListDispatches(ctx context.Context, in *ListDispatchesRequest, opts ...grpc.CallOption) (*ListDispatchesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListDispatchesResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ListDispatches_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *stateStoreServiceClient) UpdateBinding(ctx context.Context, in *UpdateBindingRequest, opts ...grpc.CallOption) (*UpdateBindingResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(UpdateBindingResponse)
@@ -1263,6 +1277,16 @@ func (c *stateStoreServiceClient) RecordDispatch(ctx context.Context, in *Record
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RecordDispatchResponse)
 	err := c.cc.Invoke(ctx, StateStoreService_RecordDispatch_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) SetDispatchTask(ctx context.Context, in *SetDispatchTaskRequest, opts ...grpc.CallOption) (*SetDispatchTaskResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetDispatchTaskResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_SetDispatchTask_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1572,6 +1596,7 @@ type StateStoreServiceServer interface {
 	InsertBinding(context.Context, *InsertBindingRequest) (*InsertBindingResponse, error)
 	GetBinding(context.Context, *GetBindingRequest) (*GetBindingResponse, error)
 	ListBindings(context.Context, *ListBindingsRequest) (*ListBindingsResponse, error)
+	ListDispatches(context.Context, *ListDispatchesRequest) (*ListDispatchesResponse, error)
 	UpdateBinding(context.Context, *UpdateBindingRequest) (*UpdateBindingResponse, error)
 	DeleteBinding(context.Context, *DeleteBindingRequest) (*DeleteBindingResponse, error)
 	ApproveBinding(context.Context, *ApproveBindingRequest) (*ApproveBindingResponse, error)
@@ -1585,6 +1610,7 @@ type StateStoreServiceServer interface {
 	// Dispatch
 	ArmedBindingsForSource(context.Context, *ArmedBindingsForSourceRequest) (*ArmedBindingsForSourceResponse, error)
 	RecordDispatch(context.Context, *RecordDispatchRequest) (*RecordDispatchResponse, error)
+	SetDispatchTask(context.Context, *SetDispatchTaskRequest) (*SetDispatchTaskResponse, error)
 	// Playbook dispatch ledger (eda-playbook-engine.md gap 2): one durable
 	// at-most-once record per (playbook, version, event, action) for the
 	// side-effecting positions. Administrative, like RecordDispatch: a
@@ -1867,6 +1893,9 @@ func (UnimplementedStateStoreServiceServer) GetBinding(context.Context, *GetBind
 func (UnimplementedStateStoreServiceServer) ListBindings(context.Context, *ListBindingsRequest) (*ListBindingsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListBindings not implemented")
 }
+func (UnimplementedStateStoreServiceServer) ListDispatches(context.Context, *ListDispatchesRequest) (*ListDispatchesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListDispatches not implemented")
+}
 func (UnimplementedStateStoreServiceServer) UpdateBinding(context.Context, *UpdateBindingRequest) (*UpdateBindingResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateBinding not implemented")
 }
@@ -1896,6 +1925,9 @@ func (UnimplementedStateStoreServiceServer) ArmedBindingsForSource(context.Conte
 }
 func (UnimplementedStateStoreServiceServer) RecordDispatch(context.Context, *RecordDispatchRequest) (*RecordDispatchResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RecordDispatch not implemented")
+}
+func (UnimplementedStateStoreServiceServer) SetDispatchTask(context.Context, *SetDispatchTaskRequest) (*SetDispatchTaskResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetDispatchTask not implemented")
 }
 func (UnimplementedStateStoreServiceServer) RecordPlaybookDispatch(context.Context, *RecordPlaybookDispatchRequest) (*RecordPlaybookDispatchResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RecordPlaybookDispatch not implemented")
@@ -3401,6 +3433,24 @@ func _StateStoreService_ListBindings_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StateStoreService_ListDispatches_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListDispatchesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ListDispatches(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ListDispatches_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ListDispatches(ctx, req.(*ListDispatchesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _StateStoreService_UpdateBinding_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(UpdateBindingRequest)
 	if err := dec(in); err != nil {
@@ -3577,6 +3627,24 @@ func _StateStoreService_RecordDispatch_Handler(srv interface{}, ctx context.Cont
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StateStoreServiceServer).RecordDispatch(ctx, req.(*RecordDispatchRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_SetDispatchTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetDispatchTaskRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).SetDispatchTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_SetDispatchTask_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).SetDispatchTask(ctx, req.(*SetDispatchTaskRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -4132,6 +4200,10 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _StateStoreService_ListBindings_Handler,
 		},
 		{
+			MethodName: "ListDispatches",
+			Handler:    _StateStoreService_ListDispatches_Handler,
+		},
+		{
 			MethodName: "UpdateBinding",
 			Handler:    _StateStoreService_UpdateBinding_Handler,
 		},
@@ -4170,6 +4242,10 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RecordDispatch",
 			Handler:    _StateStoreService_RecordDispatch_Handler,
+		},
+		{
+			MethodName: "SetDispatchTask",
+			Handler:    _StateStoreService_SetDispatchTask_Handler,
 		},
 		{
 			MethodName: "RecordPlaybookDispatch",

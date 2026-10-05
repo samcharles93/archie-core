@@ -8,6 +8,8 @@ package postgresdb
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const armedBindingsForSource = `-- name: ArmedBindingsForSource :many
@@ -597,6 +599,64 @@ func (q *Queries) InsertToolCall(ctx context.Context, arg InsertToolCallParams) 
 	return err
 }
 
+const listBindingDispatches = `-- name: ListBindingDispatches :many
+SELECT binding, binding_version, capture, task_id, reason, dispatched_at
+FROM binding_dispatches
+WHERE ($1::text IS NULL OR binding = $1)
+  AND ($2::text IS NULL OR capture = $2)
+  AND ($3::bigint IS NULL OR task_id = $3)
+ORDER BY dispatched_at DESC
+LIMIT $4
+`
+
+type ListBindingDispatchesParams struct {
+	Binding    pgtype.Text
+	Capture    pgtype.Text
+	TaskID     pgtype.Int8
+	EntryLimit int32
+}
+
+type ListBindingDispatchesRow struct {
+	Binding        string
+	BindingVersion int64
+	Capture        string
+	TaskID         int64
+	Reason         string
+	DispatchedAt   time.Time
+}
+
+func (q *Queries) ListBindingDispatches(ctx context.Context, arg ListBindingDispatchesParams) ([]ListBindingDispatchesRow, error) {
+	rows, err := q.db.Query(ctx, listBindingDispatches,
+		arg.Binding,
+		arg.Capture,
+		arg.TaskID,
+		arg.EntryLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListBindingDispatchesRow
+	for rows.Next() {
+		var i ListBindingDispatchesRow
+		if err := rows.Scan(
+			&i.Binding,
+			&i.BindingVersion,
+			&i.Capture,
+			&i.TaskID,
+			&i.Reason,
+			&i.DispatchedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listBindings = `-- name: ListBindings :many
 SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param, org_id
 FROM bindings ORDER BY created_at DESC
@@ -881,6 +941,21 @@ func (q *Queries) SetBindingArmed(ctx context.Context, id string) (int64, error)
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const setBindingDispatchTask = `-- name: SetBindingDispatchTask :exec
+UPDATE binding_dispatches SET task_id = $3 WHERE binding = $1 AND capture = $2
+`
+
+type SetBindingDispatchTaskParams struct {
+	Binding string
+	Capture string
+	TaskID  int64
+}
+
+func (q *Queries) SetBindingDispatchTask(ctx context.Context, arg SetBindingDispatchTaskParams) error {
+	_, err := q.db.Exec(ctx, setBindingDispatchTask, arg.Binding, arg.Capture, arg.TaskID)
+	return err
 }
 
 const setSourceSecret = `-- name: SetSourceSecret :execrows

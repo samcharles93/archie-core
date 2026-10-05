@@ -247,14 +247,14 @@ export const api = {
       method: "DELETE",
       parse: false,
     }),
-  // capture_id is an int64 on the wire (mappingPreviewRequest), so it is sent
-  // as a number: a JSON string is rejected as an invalid request body.
-  mappingPreview: <T = unknown>(captureId: number, fields: unknown) =>
+  mappingPreview: <T = unknown>(captureId: string, fields: unknown) =>
     request<T>("/api/mappings/preview", {
       method: "POST",
       body: { capture_id: captureId, fields },
     }),
   bindings: <T = unknown>() => request<T>("/api/bindings"),
+  dispatches: <T = unknown>(kind: "bindings" | "captures" | "tasks", id: string) =>
+    request<T>(`/api/${kind}/${encodeURIComponent(id)}/dispatches`),
   bindingCreate: <T = unknown>(binding: Payload) =>
     request<T>("/api/bindings", { method: "POST", body: binding }),
   bindingUpdate: <T = unknown>(id: string, binding: Payload) =>

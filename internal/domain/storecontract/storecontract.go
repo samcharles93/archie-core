@@ -228,6 +228,8 @@ type BindingStore interface {
 	InsertBinding(ctx context.Context, b binding.Binding) (string, error)
 	GetBinding(ctx context.Context, id string) (*binding.Binding, error)
 	ListBindings(ctx context.Context) ([]binding.Binding, error)
+	// ListDispatches returns the newest ledger rows matching filter.
+	ListDispatches(ctx context.Context, filter DispatchFilter) ([]Dispatch, error)
 	UpdateBinding(ctx context.Context, b binding.Binding) error
 	DeleteBinding(ctx context.Context, id string) error
 	ApproveBinding(ctx context.Context, id string) error
@@ -242,6 +244,25 @@ type SourceStore interface {
 	ListSources(ctx context.Context) ([]source.Source, error)
 	SetSourceSigning(ctx context.Context, path string, from, to source.Signing) error
 	SetSourceSecret(ctx context.Context, path, secret string) error
+}
+
+// Dispatch is one binding/capture ledger row: the task it started, or the
+// reason it started none.
+type Dispatch struct {
+	BindingID      string    `json:"binding_id"`
+	BindingVersion int64     `json:"binding_version"`
+	CaptureID      string    `json:"capture_id"`
+	TaskID         int64     `json:"task_id,omitempty"`
+	Reason         string    `json:"reason,omitempty"`
+	DispatchedAt   time.Time `json:"dispatched_at"`
+}
+
+// DispatchFilter narrows ListDispatches; empty fields match any row.
+type DispatchFilter struct {
+	BindingID string
+	CaptureID string
+	TaskID    int64
+	Limit     int
 }
 
 // BindingDispatcher looks up armed bindings, lists undispatched captures and
@@ -262,6 +283,8 @@ type BindingDispatcher interface {
 		reason string,
 	) error
 	ListUndispatchedCaptures(ctx context.Context, sources []string, limit int) ([]CapturedEvent, error)
+	// SetDispatchTask records the task a claimed dispatch started.
+	SetDispatchTask(ctx context.Context, bindingID, captureID string, taskID int64) error
 }
 
 // BindingTaskCreator is the single-method consumer-facing surface for

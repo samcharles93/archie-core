@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import { StatusPill } from "@/components/ui/status-pill";
 import { statusKind, statusLabel } from "@/lib/task-meta";
+import DispatchLinks from "@/bindings/DispatchLinks.vue";
 import StartNewRun from "./StartNewRun.vue";
 import TaskRowActions from "./TaskRowActions.vue";
 import { pillFor } from "./status-pill";
@@ -63,6 +64,7 @@ const headerActions = computed(() =>
             rel="noreferrer"
             >{{ run.task.owner }}/{{ run.task.repo }} #{{ run.task.issue_number }}<ArrowUpRight class="size-3" aria-hidden="true"
           /></a>
+          <DispatchLinks kind="tasks" :id="id" />
           <a
             v-if="run.task?.pr_url && run.task?.pr_number"
             class="inline-flex items-center gap-0.5 font-mono text-xs text-fg-muted hover:text-foreground"

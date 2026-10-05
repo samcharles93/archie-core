@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DispatchLinks from "./DispatchLinks.vue";
 import { computed, ref, watch } from "vue";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -312,6 +313,11 @@ const title = computed(() => (props.binding ? "Edit binding" : "New binding"));
             </FieldDescription>
           </Field>
         </FieldGroup>
+
+        <section v-if="props.binding" class="mt-4 flex flex-col gap-2">
+          <h3 class="text-sm font-medium">Recent dispatches</h3>
+          <DispatchLinks kind="bindings" :id="props.binding.id" />
+        </section>
 
         <!-- Beside the buttons, not at the top: the dialog scrolls, and Save is
              clicked at the bottom, where a refusal must be seen. -->

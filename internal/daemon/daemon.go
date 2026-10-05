@@ -701,6 +701,9 @@ func (d *Daemon) claimAndEnqueue(ctx context.Context, b binding.Binding, c store
 		d.Log.Warn("binding dispatch: enqueue", "binding", b.ID, "capture", c.ID, "error", err)
 		return
 	}
+	if err := d.BindingDispatcher.SetDispatchTask(ctx, b.ID, c.ID, task.ID); err != nil {
+		d.Log.Warn("binding dispatch: record task", "binding", b.ID, "capture", c.ID, "task", task.ID, "error", err)
+	}
 	if c.Unsigned {
 		d.markUnsignedStart(ctx, task.ID, b, c)
 	}

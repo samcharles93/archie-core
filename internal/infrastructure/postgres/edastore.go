@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
@@ -496,6 +497,41 @@ func (s *EDA) RecordDispatch(ctx context.Context, bindingID string, bindingVersi
 		Reason:         reason,
 	})
 	return ledgerWrite(err, "edastore: record dispatch")
+}
+
+// SetDispatchTask records the task a claimed dispatch started.
+func (s *EDA) SetDispatchTask(ctx context.Context, bindingID, captureID string, taskID int64) error {
+	err := s.q.SetBindingDispatchTask(ctx, postgresdb.SetBindingDispatchTaskParams{Binding: bindingID, Capture: captureID, TaskID: taskID})
+	if err != nil {
+		return fmt.Errorf("edastore: set dispatch task: %w", err)
+	}
+	return nil
+}
+
+// ListDispatches returns the newest ledger rows matching filter.
+func (s *EDA) ListDispatches(ctx context.Context, filter storecontract.DispatchFilter) ([]storecontract.Dispatch, error) {
+	params := postgresdb.ListBindingDispatchesParams{EntryLimit: int32(min(max(filter.Limit, 1), 500))} //nolint:gosec // clamped
+	if filter.BindingID != "" {
+		params.Binding = pgtype.Text{String: filter.BindingID, Valid: true}
+	}
+	if filter.CaptureID != "" {
+		params.Capture = pgtype.Text{String: filter.CaptureID, Valid: true}
+	}
+	if filter.TaskID != 0 {
+		params.TaskID = pgtype.Int8{Int64: filter.TaskID, Valid: true}
+	}
+	rows, err := s.q.ListBindingDispatches(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("edastore: list dispatches: %w", err)
+	}
+	out := make([]storecontract.Dispatch, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, storecontract.Dispatch{
+			BindingID: r.Binding, BindingVersion: r.BindingVersion, CaptureID: r.Capture,
+			TaskID: r.TaskID, Reason: r.Reason, DispatchedAt: r.DispatchedAt,
+		})
+	}
+	return out, nil
 }
 
 func (s *EDA) RecordPlaybookDispatch(ctx context.Context, playbookID, playbookVersion, eventID, actionID string) error {

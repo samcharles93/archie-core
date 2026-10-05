@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { ago } from "@/lib/format";
 import { captureSignature } from "./capture-signature";
 import CapturePayload from "./CapturePayload.vue";
+import DispatchLinks from "@/bindings/DispatchLinks.vue";
 import { selected } from "./state";
 
 /**
@@ -90,6 +91,10 @@ watch(selected, () => {
         <div class="flex flex-col gap-5">
           <CapturePayload label="Payload" :raw="selected.body" />
           <CapturePayload label="Headers" :raw="selected.headers" />
+          <section class="flex flex-col gap-2">
+            <h3 class="text-sm font-medium">Dispatches</h3>
+            <DispatchLinks kind="captures" :id="selected.id" />
+          </section>
         </div>
       </CardContent>
     </Card>

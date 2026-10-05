@@ -47,7 +47,7 @@ const loading = ref(true);
 
 const source = ref("");
 const newSource = ref("");
-const captureId = ref<number | null>(null);
+const captureId = ref<string | null>(null);
 const rows = ref<Record<string, InputRow>>({});
 const repositoryPath = ref("");
 const preview = ref<Preview | null>(null);

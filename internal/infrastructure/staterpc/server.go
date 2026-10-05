@@ -948,6 +948,35 @@ func (s *server) RecordDispatch(ctx context.Context, r *pb.RecordDispatchRequest
 	return &pb.RecordDispatchResponse{}, nil
 }
 
+func (s *server) SetDispatchTask(ctx context.Context, r *pb.SetDispatchTaskRequest) (*pb.SetDispatchTaskResponse, error) {
+	if s.deps.BindingDispatcher == nil {
+		return nil, errBindingDispatchUnavailable
+	}
+	if err := s.deps.BindingDispatcher.SetDispatchTask(ctx, r.BindingId, r.CaptureId, r.TaskId); err != nil {
+		return nil, s.logErr("SetDispatchTask", err)
+	}
+	return &pb.SetDispatchTaskResponse{}, nil
+}
+
+func (s *server) ListDispatches(ctx context.Context, r *pb.ListDispatchesRequest) (*pb.ListDispatchesResponse, error) {
+	bs, err := s.binding()
+	if err != nil {
+		return nil, err
+	}
+	dispatches, err := bs.ListDispatches(ctx, storecontract.DispatchFilter{
+		BindingID: r.BindingId, CaptureID: r.CaptureId, TaskID: r.TaskId, Limit: int(r.Limit),
+	})
+	if err != nil {
+		return nil, s.logErr("ListDispatches", err)
+	}
+	return &pb.ListDispatchesResponse{Dispatches: mapValues(dispatches, func(d storecontract.Dispatch) *pb.Dispatch {
+		return &pb.Dispatch{
+			BindingId: d.BindingID, BindingVersion: d.BindingVersion, CaptureId: d.CaptureID,
+			TaskId: d.TaskID, Reason: d.Reason, DispatchedAt: timestamp(d.DispatchedAt),
+		}
+	})}, nil
+}
+
 // Playbook dispatch
 
 func (s *server) RecordPlaybookDispatch(ctx context.Context, r *pb.RecordPlaybookDispatchRequest) (*pb.RecordPlaybookDispatchResponse, error) {

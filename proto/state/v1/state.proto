@@ -176,6 +176,7 @@ service StateStoreService {
   rpc InsertBinding(InsertBindingRequest) returns (InsertBindingResponse);
   rpc GetBinding(GetBindingRequest) returns (GetBindingResponse);
   rpc ListBindings(ListBindingsRequest) returns (ListBindingsResponse);
+  rpc ListDispatches(ListDispatchesRequest) returns (ListDispatchesResponse);
   rpc UpdateBinding(UpdateBindingRequest) returns (UpdateBindingResponse);
   rpc DeleteBinding(DeleteBindingRequest) returns (DeleteBindingResponse);
   rpc ApproveBinding(ApproveBindingRequest) returns (ApproveBindingResponse);
@@ -191,6 +192,7 @@ service StateStoreService {
   // Dispatch
   rpc ArmedBindingsForSource(ArmedBindingsForSourceRequest) returns (ArmedBindingsForSourceResponse);
   rpc RecordDispatch(RecordDispatchRequest) returns (RecordDispatchResponse);
+  rpc SetDispatchTask(SetDispatchTaskRequest) returns (SetDispatchTaskResponse);
   // Playbook dispatch ledger (eda-playbook-engine.md gap 2): one durable
   // at-most-once record per (playbook, version, event, action) for the
   // side-effecting positions. Administrative, like RecordDispatch: a
@@ -1119,6 +1121,31 @@ message RecordDispatchRequest {
   string reason = 5;
 }
 message RecordDispatchResponse {}
+
+message SetDispatchTaskRequest {
+  string binding_id = 1;
+  string capture_id = 2;
+  int64 task_id = 3;
+}
+message SetDispatchTaskResponse {}
+
+// ListDispatchesRequest filters the binding dispatch ledger; empty fields
+// match any row.
+message ListDispatchesRequest {
+  string binding_id = 1;
+  string capture_id = 2;
+  int64 task_id = 3;
+  int32 limit = 4;
+}
+message Dispatch {
+  string binding_id = 1;
+  int64 binding_version = 2;
+  string capture_id = 3;
+  int64 task_id = 4;
+  string reason = 5;
+  google.protobuf.Timestamp dispatched_at = 6;
+}
+message ListDispatchesResponse { repeated Dispatch dispatches = 1; }
 
 message RecordPlaybookDispatchRequest {
   string playbook_id = 1;

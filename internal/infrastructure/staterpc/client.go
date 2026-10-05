@@ -573,6 +573,26 @@ func (c *Client) ListBindings(ctx context.Context) ([]binding.Binding, error) {
 	return mapValues(r.Bindings, bindingValue), nil
 }
 
+func (c *Client) ListDispatches(ctx context.Context, filter storecontract.DispatchFilter) ([]storecontract.Dispatch, error) {
+	r, err := c.client.ListDispatches(ctx, &pb.ListDispatchesRequest{
+		BindingId: filter.BindingID, CaptureId: filter.CaptureID, TaskId: filter.TaskID, Limit: int32(filter.Limit), //nolint:gosec // the store clamps it
+	})
+	if err != nil {
+		return nil, unmapError(err)
+	}
+	return mapValues(r.Dispatches, func(d *pb.Dispatch) storecontract.Dispatch {
+		return storecontract.Dispatch{
+			BindingID: d.BindingId, BindingVersion: d.BindingVersion, CaptureID: d.CaptureId,
+			TaskID: d.TaskId, Reason: d.Reason, DispatchedAt: timeValue(d.DispatchedAt),
+		}
+	}), nil
+}
+
+func (c *Client) SetDispatchTask(ctx context.Context, bindingID, captureID string, taskID int64) error {
+	_, err := c.client.SetDispatchTask(ctx, &pb.SetDispatchTaskRequest{BindingId: bindingID, CaptureId: captureID, TaskId: taskID})
+	return unmapError(err)
+}
+
 func (c *Client) UpdateBinding(ctx context.Context, b binding.Binding) error {
 	_, err := c.client.UpdateBinding(ctx, &pb.UpdateBindingRequest{Binding: bindingProto(b)})
 	return unmapError(err)

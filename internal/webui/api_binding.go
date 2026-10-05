@@ -128,6 +128,30 @@ func (s *Server) handleBindingGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, b)
 }
 
+// handleDispatches serves the newest dispatch ledger rows for the resource the
+// path names, linking bindings, captures and tasks to each other.
+func (s *Server) handleDispatches(filterFor func(id string) (storecontract.DispatchFilter, bool)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.Bindings == nil {
+			http.Error(w, "bindings not configured", http.StatusServiceUnavailable)
+			return
+		}
+		filter, ok := filterFor(r.PathValue("id"))
+		if !ok {
+			http.Error(w, "invalid id", http.StatusBadRequest)
+			return
+		}
+		filter.Limit = 50
+		dispatches, err := s.Bindings.ListDispatches(r.Context(), filter)
+		if err != nil {
+			s.Log.Error("list dispatches", "err", err)
+			http.Error(w, "list dispatches failed", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, dispatches)
+	}
+}
+
 func (s *Server) handleBindingUpdate(w http.ResponseWriter, r *http.Request) {
 	if !s.authorizeTaskMutation(w, r) {
 		return

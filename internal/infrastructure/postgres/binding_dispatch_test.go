@@ -14,7 +14,8 @@ import (
 )
 
 // A capture a binding evaluated without dispatching is recorded once and not
-// offered to that binding again; a later dispatch of the pair is refused.
+// offered to that binding again; a later dispatch of the pair is refused. A
+// dispatch records the task it started, and the ledger lists by any end.
 func TestEvaluatedCaptureIsNotReoffered(t *testing.T) {
 	ctx := t.Context()
 	eda := pgstore.EDA(t, nil)
@@ -50,6 +51,34 @@ func TestEvaluatedCaptureIsNotReoffered(t *testing.T) {
 	assertUndispatched(t, eda, 0)
 	if err := eda.RecordDispatch(ctx, bindingID, 1, captureID, 0, ""); !errors.Is(err, storecontract.ErrAlreadyDispatched) {
 		t.Fatalf("dispatch after a filtered evaluation = %v, want ErrAlreadyDispatched", err)
+	}
+
+	// A second capture dispatches; the ledger links it to the task it started.
+	dispatched, err := eda.InsertCapture(ctx, storecontract.CapturedEvent{
+		Source: "forge", Body: "{}", Authenticated: true, ReceivedAt: time.Now(),
+	}, time.Hour, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := eda.RecordDispatch(ctx, bindingID, 1, dispatched, 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := eda.SetDispatchTask(ctx, bindingID, dispatched, 42); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := eda.ListDispatches(ctx, storecontract.DispatchFilter{TaskID: 42, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].CaptureID != dispatched || rows[0].BindingID != bindingID {
+		t.Fatalf("dispatches for task 42 = %+v, want the dispatched capture", rows)
+	}
+	all, err := eda.ListDispatches(ctx, storecontract.DispatchFilter{BindingID: bindingID, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("dispatches for the binding = %d, want 2", len(all))
 	}
 }
 

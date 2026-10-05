@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -282,6 +283,16 @@ func (s *Server) registerMappingAndBindingRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/bindings/{id}", s.handleBindingUpdate)
 	mux.HandleFunc("DELETE /api/bindings/{id}", s.handleBindingDelete)
 	mux.HandleFunc("POST /api/bindings/{id}/approve", s.handleBindingApprove)
+	mux.HandleFunc("GET /api/bindings/{id}/dispatches", s.handleDispatches(func(id string) (storecontract.DispatchFilter, bool) {
+		return storecontract.DispatchFilter{BindingID: id}, id != ""
+	}))
+	mux.HandleFunc("GET /api/captures/{id}/dispatches", s.handleDispatches(func(id string) (storecontract.DispatchFilter, bool) {
+		return storecontract.DispatchFilter{CaptureID: id}, id != ""
+	}))
+	mux.HandleFunc("GET /api/tasks/{id}/dispatches", s.handleDispatches(func(id string) (storecontract.DispatchFilter, bool) {
+		taskID, err := strconv.ParseInt(id, 10, 64)
+		return storecontract.DispatchFilter{TaskID: taskID}, err == nil && taskID > 0
+	}))
 	mux.HandleFunc("GET /api/sources", s.handleSourcesList)
 	mux.HandleFunc("POST /api/sources", s.handleSourceCreate)
 	mux.HandleFunc("POST /api/sources/{path}/signing", s.handleSourceSigning)

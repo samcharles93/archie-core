@@ -43,7 +43,7 @@ export interface Mapping {
 /** A captured inbound event. Its body is redacted before it is stored, and is
  * the only thing a path is ever resolved against. */
 export interface Capture {
-  id: number;
+  id: string;
   source?: string;
   received_at?: string;
   body: string;
@@ -74,7 +74,7 @@ export interface MappingDraft {
   eventTypeId: string;
   fields: MappingField[];
   /** The capture the payload and the preview resolve against, or null. */
-  captureId: number | null;
+  captureId: string | null;
   /** The parsed capture body, or null when no capture is picked. */
   payload: unknown;
   payloadError: string | null;

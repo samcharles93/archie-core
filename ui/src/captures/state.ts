@@ -18,7 +18,7 @@ import { loadEventTypes } from "./event-type-state";
  * what the page prints is what the store holds.
  */
 export interface Capture {
-  id: number;
+  id: string;
   received_at?: string;
   source?: string;
   remote_addr?: string;
@@ -80,7 +80,7 @@ export async function load(): Promise<void> {
  * it. A capture that has aged out cannot be resolved: the list is the only
  * read of a capture's body, so an id it no longer carries has nothing to show.
  * Reports whether it found one. */
-export function selectById(id: number): boolean {
+export function selectById(id: string): boolean {
   const found = captures.value.find((capture) => capture.id === id);
   if (found) selected.value = found;
   return Boolean(found);

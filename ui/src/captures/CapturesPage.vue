@@ -71,8 +71,8 @@ onMounted(async () => {
   // The URL names a selection before the window is read, so the restore waits
   // for the list; an id it no longer holds falls back to the newest capture,
   // which is what a page opened with nothing named starts on too.
-  const named = Number(route.query.capture);
-  if (!Number.isInteger(named) || !selectById(named)) selectNewest();
+  const named = String(route.query.capture ?? "");
+  if (!named || !selectById(named)) selectNewest();
 });
 
 onBeforeUnmount(() => {

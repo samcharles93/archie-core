@@ -91,6 +91,18 @@ DELETE FROM bindings WHERE id = $1;
 INSERT INTO binding_dispatches (binding, binding_version, capture, task_id, reason)
 VALUES ($1, $2, $3, $4, $5);
 
+-- name: SetBindingDispatchTask :exec
+UPDATE binding_dispatches SET task_id = $3 WHERE binding = $1 AND capture = $2;
+
+-- name: ListBindingDispatches :many
+SELECT binding, binding_version, capture, task_id, reason, dispatched_at
+FROM binding_dispatches
+WHERE (sqlc.narg(binding)::text IS NULL OR binding = sqlc.narg(binding))
+  AND (sqlc.narg(capture)::text IS NULL OR capture = sqlc.narg(capture))
+  AND (sqlc.narg(task_id)::bigint IS NULL OR task_id = sqlc.narg(task_id))
+ORDER BY dispatched_at DESC
+LIMIT @entry_limit;
+
 -- name: InsertPlaybookDispatch :exec
 INSERT INTO playbook_dispatches (playbook_id, playbook_version, event_id, action_id)
 VALUES ($1, $2, $3, $4);
