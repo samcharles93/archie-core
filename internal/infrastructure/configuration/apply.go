@@ -7,18 +7,7 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
-
-	"github.com/samcharles93/archie-core/internal/config"
 )
-
-// ApplyOverlayValues decodes a nested map of overrides into cfg, replacing
-// only the keys present. overrides is not mutated.
-func ApplyOverlayValues(cfg *config.Config, overrides map[string]any) error {
-	if len(overrides) == 0 {
-		return nil
-	}
-	return applyOverlayMapping(cfg, overrides)
-}
 
 // applyOverlayFile layers the overlay file at path over target and returns
 // the file's unconsumed keys.

@@ -141,25 +141,6 @@ func (l *Loader) Overlay(basePath, overlayPath string) (*Document, error) {
 	return l.overlayFile(basePath, overlayPath)
 }
 
-// ApplyOverlay layers runtime overrides over a copy of doc, then defaults and
-// validates. doc is not mutated.
-func (l *Loader) ApplyOverlay(doc *Document, overrides map[string]any) (*Document, error) {
-	next := *doc
-	next.Config = doc.Config.Clone()
-	next.Provenance.Origins = append([]Origin(nil), doc.Provenance.Origins...)
-	if len(overrides) == 0 {
-		return l.finalize(&next, Validate)
-	}
-	if err := ApplyOverlayValues(&next.Config, overrides); err != nil {
-		return nil, err
-	}
-	if err := applySchedulingOverlay(&next.Scheduling, overrides); err != nil {
-		return nil, err
-	}
-	next.Provenance.record(Origin{Path: "config_overlay (runtime)", Role: RoleMain, Layer: LayerOverlay})
-	return l.finalize(&next, Validate)
-}
-
 func (l *Loader) overlayFile(basePath, overlayPath string) (*Document, error) {
 	doc := &Document{}
 

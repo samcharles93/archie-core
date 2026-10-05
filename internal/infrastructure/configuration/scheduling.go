@@ -1,10 +1,7 @@
 package configuration
 
 import (
-	"fmt"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
 // SchedulingInput is the external [scheduling] input document. It deliberately
@@ -55,20 +52,4 @@ func decodeSchedulingFileKeys(path string, target *SchedulingInput) ([]string, e
 	}
 	*target = doc.Scheduling
 	return keys, nil
-}
-
-func applySchedulingOverlay(target *SchedulingInput, overrides map[string]any) error {
-	if len(overrides) == 0 {
-		return nil
-	}
-	data, err := yaml.Marshal(overrides)
-	if err != nil {
-		return fmt.Errorf("%w: encoding scheduling overlay: %w", ErrUnreadable, err)
-	}
-	doc := schedulingDocument{Scheduling: *target}
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return fmt.Errorf("%w: parsing scheduling overlay: %w", ErrUnreadable, err)
-	}
-	*target = doc.Scheduling
-	return nil
 }
