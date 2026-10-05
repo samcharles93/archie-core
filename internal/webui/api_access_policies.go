@@ -122,5 +122,5 @@ func instanceOwner(r *http.Request) bool {
 	if !ok {
 		principal = access.SharedTokenOwner()
 	}
-	return principal.Org == org.DefaultOrgID && principal.Role("") == org.RoleOwner
+	return principal.InstanceAdmin()
 }

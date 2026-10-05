@@ -19,20 +19,19 @@ func (s *Server) orgReady(w http.ResponseWriter) bool {
 	return true
 }
 
-// orgInPath resolves the route's {id}, requiring it to be the caller's own
-// org: the dashboard has no instance-admin view yet, so a path that names
-// another tenant reads as not found rather than leaking it.
+// orgInPath resolves the route's {id}: the caller's own org, or any org for
+// an instance admin. Another tenant reads as not found rather than leaking.
 func (s *Server) orgInPath(w http.ResponseWriter, r *http.Request) (org.OrgID, bool) {
-	caller := policyOrg(r)
-	if r.PathValue("id") != string(caller) {
+	id := org.OrgID(r.PathValue("id"))
+	if id != policyOrg(r) && !instanceOwner(r) {
 		http.Error(w, "org not found", http.StatusNotFound)
 		return "", false
 	}
-	return caller, true
+	return id, true
 }
 
-// handleOrgsList lists the caller's org only. The State Store contract lists
-// every org; instance-admin widening is a later change.
+// handleOrgsList lists every org to an instance admin and the caller's own
+// to anyone else.
 func (s *Server) handleOrgsList(w http.ResponseWriter, r *http.Request) {
 	if !s.orgReady(w) {
 		return
@@ -45,11 +44,50 @@ func (s *Server) handleOrgsList(w http.ResponseWriter, r *http.Request) {
 	caller := policyOrg(r)
 	out := []org.Org{}
 	for _, value := range values {
-		if value.ID == caller {
+		if value.ID == caller || instanceOwner(r) {
 			out = append(out, value)
 		}
 	}
 	writeJSON(w, map[string]any{"orgs": out})
+}
+
+// handleOrgCreate creates an org with its default workspace and first owner.
+// Only an instance admin may.
+func (s *Server) handleOrgCreate(w http.ResponseWriter, r *http.Request) {
+	if !s.orgReady(w) {
+		return
+	}
+	if !instanceOwner(r) {
+		http.Error(w, "only an instance admin creates orgs", http.StatusForbidden)
+		return
+	}
+	creator, ok := s.Orgs.(org.Creator)
+	if !ok {
+		http.Error(w, "org creation unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	var request struct {
+		ID            string `json:"id"`
+		Name          string `json:"name"`
+		OwnerIdentity string `json:"owner_identity"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&request); err != nil {
+		http.Error(w, "invalid org: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	created, err := creator.CreateOrg(r.Context(), org.Org{ID: org.OrgID(request.ID), Name: request.Name}, identity.IdentityID(request.OwnerIdentity))
+	if err != nil {
+		writeOrgError(w, err)
+		return
+	}
+	// The new org's role policies were seeded; load them so its owner can act.
+	if s.ReloadAccess != nil {
+		if err := s.ReloadAccess(r.Context()); err != nil {
+			s.logf("reload access after org create", "err", err)
+		}
+	}
+	w.WriteHeader(http.StatusCreated)
+	writeJSON(w, map[string]any{"org": created})
 }
 
 func (s *Server) handleOrgGet(w http.ResponseWriter, r *http.Request) {

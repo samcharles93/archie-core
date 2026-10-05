@@ -73,6 +73,17 @@ func (p Principal) Role(ws org.WorkspaceID) org.Role {
 	return orgRole
 }
 
+// InstanceAdmin reports whether the principal owns the default org (org-sys):
+// its owners administer the whole instance, whichever org they act in.
+func (p Principal) InstanceAdmin() bool {
+	for _, m := range p.Memberships {
+		if m.OrgID == org.DefaultOrgID && m.WorkspaceID == "" && m.Role == org.RoleOwner {
+			return true
+		}
+	}
+	return false
+}
+
 // Resource is the record acted on: its type, its workspace and org as
 // parents, its owner and its state.
 type Resource struct {

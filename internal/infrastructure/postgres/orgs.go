@@ -24,20 +24,40 @@ func orgFromRow(o postgresdb.Org) org.Org {
 	return org.Org{ID: org.OrgID(o.ID), Name: o.Name}
 }
 
-// CreateOrg inserts a new org; re-creating an existing ID is ErrOrgExists.
-func (s *Store) CreateOrg(ctx context.Context, value org.Org) (org.Org, error) {
+// CreateOrg inserts a new org, its default workspace and its owner in one
+// transaction, so an org never exists without someone who can act in it.
+// Re-creating an existing ID is ErrOrgExists.
+func (s *Store) CreateOrg(ctx context.Context, value org.Org, owner identity.IdentityID) (org.Org, error) {
 	if err := value.Validate(); err != nil {
 		return org.Org{}, err
 	}
-	if err := s.queries().InsertOrg(ctx, postgresdb.InsertOrgParams{
-		ID: string(value.ID), Name: value.Name,
-	}); err != nil {
+	membership := org.Membership{IdentityID: owner, OrgID: value.ID, Role: org.RoleOwner}
+	if err := membership.Validate(); err != nil {
+		return org.Org{}, err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return org.Org{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := postgresdb.New(tx)
+	if err := q.InsertOrg(ctx, postgresdb.InsertOrgParams{ID: string(value.ID), Name: value.Name}); err != nil {
 		if isUniqueViolation(err) {
 			return org.Org{}, fmt.Errorf("%w: %s", org.ErrOrgExists, value.ID)
 		}
 		return org.Org{}, err
 	}
-	return value, nil
+	if err := q.InsertWorkspace(ctx, postgresdb.InsertWorkspaceParams{
+		ID: string(org.DefaultWorkspaceID), OrgID: string(value.ID), Name: "Default",
+	}); err != nil {
+		return org.Org{}, err
+	}
+	if err := q.EnsureMembership(ctx, postgresdb.EnsureMembershipParams{
+		IdentityID: string(owner), OrgID: string(value.ID), Role: string(org.RoleOwner),
+	}); err != nil {
+		return org.Org{}, err
+	}
+	return value, tx.Commit(ctx)
 }
 
 // GetOrg returns one org by ID, or ErrOrgNotFound.

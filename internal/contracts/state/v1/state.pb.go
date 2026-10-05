@@ -14033,12 +14033,15 @@ func (x *GetOrgResponse) GetOrg() *Org {
 	return nil
 }
 
+// CreateOrgRequest creates an org with its default workspace and its first
+// owner. Only an instance admin may.
 type CreateOrgRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name            string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	OwnerIdentityId string                 `protobuf:"bytes,3,opt,name=owner_identity_id,json=ownerIdentityId,proto3" json:"owner_identity_id,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *CreateOrgRequest) Reset() {
@@ -14081,6 +14084,13 @@ func (x *CreateOrgRequest) GetId() string {
 func (x *CreateOrgRequest) GetName() string {
 	if x != nil {
 		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateOrgRequest) GetOwnerIdentityId() string {
+	if x != nil {
+		return x.OwnerIdentityId
 	}
 	return ""
 }
@@ -15627,10 +15637,11 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\rGetOrgRequest\x12\x15\n" +
 	"\x06org_id\x18\x01 \x01(\tR\x05orgId\"1\n" +
 	"\x0eGetOrgResponse\x12\x1f\n" +
-	"\x03org\x18\x01 \x01(\v2\r.state.v1.OrgR\x03org\"6\n" +
+	"\x03org\x18\x01 \x01(\v2\r.state.v1.OrgR\x03org\"b\n" +
 	"\x10CreateOrgRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"4\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12*\n" +
+	"\x11owner_identity_id\x18\x03 \x01(\tR\x0fownerIdentityId\"4\n" +
 	"\x11CreateOrgResponse\x12\x1f\n" +
 	"\x03org\x18\x01 \x01(\v2\r.state.v1.OrgR\x03org\".\n" +
 	"\x15ListWorkspacesRequest\x12\x15\n" +

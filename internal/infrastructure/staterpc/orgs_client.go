@@ -11,8 +11,8 @@ import (
 // The Client serves the dashboard's org surface over the contract.
 var _ org.API = (*Client)(nil)
 
-func (c *Client) CreateOrg(ctx context.Context, value org.Org) (org.Org, error) {
-	r, err := c.client.CreateOrg(ctx, &pb.CreateOrgRequest{Id: string(value.ID), Name: value.Name})
+func (c *Client) CreateOrg(ctx context.Context, value org.Org, owner identity.IdentityID) (org.Org, error) {
+	r, err := c.client.CreateOrg(ctx, &pb.CreateOrgRequest{Id: string(value.ID), Name: value.Name, OwnerIdentityId: string(owner)})
 	if err != nil {
 		return org.Org{}, unmapError(err)
 	}

@@ -331,6 +331,7 @@ func (s *Server) registerConfigAndLogRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/control-plane/audit", s.handleAudit)
 	mux.HandleFunc("GET /api/identities", s.handleIdentitiesList)
 	mux.HandleFunc("GET /api/orgs", s.handleOrgsList)
+	mux.HandleFunc("POST /api/orgs", s.handleOrgCreate)
 	mux.HandleFunc("GET /api/orgs/{id}", s.handleOrgGet)
 	mux.HandleFunc("GET /api/orgs/{id}/workspaces", s.handleOrgWorkspacesList)
 	mux.HandleFunc("POST /api/orgs/{id}/workspaces", s.handleOrgWorkspaceCreate)

@@ -146,6 +146,10 @@ export const api = {
   deletePolicy: (policy: unknown) =>
     request<void>("/api/access/policies", { method: "DELETE", body: policy, parse: false }),
   orgs: <T = unknown>() => request<T>("/api/orgs"),
+  // orgCreate makes an org with its default workspace and first owner; only
+  // an instance admin may.
+  orgCreate: <T = unknown>(org: { id: string; name: string; owner_identity: string }) =>
+    request<T>("/api/orgs", { method: "POST", body: org }),
   org: <T = unknown>(id: string) => request<T>(`/api/orgs/${encodeURIComponent(id)}`),
   orgWorkspaces: <T = unknown>(id: string) =>
     request<T>(`/api/orgs/${encodeURIComponent(id)}/workspaces`),

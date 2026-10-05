@@ -12,8 +12,9 @@ import (
 // Repository persists the tenant boundary. A store that implements it owns
 // ID conflict rules (org and workspace IDs are caller-provided and unique).
 type Repository interface { //nolint:interfacebloat // one tenant-boundary store contract: orgs, workspaces, memberships and agent assignments
-	// CreateOrg inserts a new org; re-creating an existing ID is an error.
-	CreateOrg(context.Context, Org) (Org, error)
+	// CreateOrg inserts a new org with its default workspace and owner;
+	// re-creating an existing ID is an error.
+	CreateOrg(context.Context, Org, identity.IdentityID) (Org, error)
 	// GetOrg returns one org by ID, or ErrOrgNotFound.
 	GetOrg(context.Context, OrgID) (Org, error)
 	// ListOrgs returns every org, oldest first.
@@ -53,6 +54,12 @@ type API interface {
 	EnsureMembership(context.Context, Membership) error
 	RemoveMembership(context.Context, Membership) error
 	AssignAgent(context.Context, AgentAssignment) error
+}
+
+// Creator makes an org with its default workspace and first owner, the one
+// instance-admin write the dashboard carries.
+type Creator interface {
+	CreateOrg(context.Context, Org, identity.IdentityID) (Org, error)
 }
 
 // Upgrader performs the resumable default org/workspace upgrade.

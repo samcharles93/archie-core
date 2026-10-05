@@ -1398,9 +1398,12 @@ message ListOrgsRequest {}
 message ListOrgsResponse { repeated Org orgs = 1; }
 message GetOrgRequest { string org_id = 1; }
 message GetOrgResponse { Org org = 1; }
+// CreateOrgRequest creates an org with its default workspace and its first
+// owner. Only an instance admin may.
 message CreateOrgRequest {
   string id = 1;
   string name = 2;
+  string owner_identity_id = 3;
 }
 message CreateOrgResponse { Org org = 1; }
 message ListWorkspacesRequest { string org_id = 1; }

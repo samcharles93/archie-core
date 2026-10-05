@@ -3,11 +3,13 @@ package staterpc
 import (
 	"context"
 	"errors"
+	"slices"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
+	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/org"
 )
@@ -69,6 +71,11 @@ func (s *server) ListOrgs(ctx context.Context, _ *pb.ListOrgsRequest) (*pb.ListO
 	if err != nil {
 		return nil, s.orgErr("ListOrgs", err)
 	}
+	// Only an instance admin sees every org; anyone else sees their own.
+	if p, ok := access.PrincipalFromContext(ctx); !ok || !p.InstanceAdmin() {
+		caller := org.OrgFromContext(ctx)
+		values = slices.DeleteFunc(values, func(o org.Org) bool { return o.ID != caller })
+	}
 	out := make([]*pb.Org, len(values))
 	for i := range values {
 		out[i] = orgProto(values[i])
@@ -78,13 +85,25 @@ func (s *server) ListOrgs(ctx context.Context, _ *pb.ListOrgsRequest) (*pb.ListO
 
 // orgInForce is the org a request is served for: the one the caller's
 // principal carries. A request field cannot choose another tenant.
-func orgInForce(ctx context.Context) org.OrgID { return org.OrgFromContext(ctx) }
+// orgFor is the org a request acts in: the caller's own, or the one it names
+// when the caller is an instance admin. Anyone else naming another org still
+// acts in their own, so the contract cannot reach another tenant.
+func orgFor(ctx context.Context, requested string) org.OrgID {
+	caller := org.OrgFromContext(ctx)
+	if requested == "" || org.OrgID(requested) == caller {
+		return caller
+	}
+	if p, ok := access.PrincipalFromContext(ctx); ok && p.InstanceAdmin() {
+		return org.OrgID(requested)
+	}
+	return caller
+}
 
-func (s *server) GetOrg(ctx context.Context, _ *pb.GetOrgRequest) (*pb.GetOrgResponse, error) {
+func (s *server) GetOrg(ctx context.Context, r *pb.GetOrgRequest) (*pb.GetOrgResponse, error) {
 	if s.deps.Orgs == nil {
 		return nil, errOrgsUnavailable
 	}
-	value, err := s.deps.Orgs.GetOrg(ctx, orgInForce(ctx))
+	value, err := s.deps.Orgs.GetOrg(ctx, orgFor(ctx, r.GetOrgId()))
 	if err != nil {
 		return nil, s.orgErr("GetOrg", err)
 	}
@@ -95,18 +114,27 @@ func (s *server) CreateOrg(ctx context.Context, r *pb.CreateOrgRequest) (*pb.Cre
 	if s.deps.Orgs == nil {
 		return nil, errOrgsUnavailable
 	}
-	value, err := s.deps.Orgs.CreateOrg(ctx, orgValue(&pb.Org{Id: r.GetId(), Name: r.GetName()}))
+	if p, ok := access.PrincipalFromContext(ctx); !ok || !p.InstanceAdmin() {
+		return nil, status.Error(codes.PermissionDenied, "only an instance admin creates orgs")
+	}
+	value, err := s.deps.Orgs.CreateOrg(ctx, orgValue(&pb.Org{Id: r.GetId(), Name: r.GetName()}), identity.IdentityID(r.GetOwnerIdentityId()))
 	if err != nil {
 		return nil, s.orgErr("CreateOrg", err)
+	}
+	// The new org's role policies are what let its owner act in it.
+	if s.deps.Policies != nil {
+		if err := s.deps.Policies.EnsureShippedOrgPolicies(ctx, value.ID); err != nil {
+			return nil, s.logErr("CreateOrg policies", err)
+		}
 	}
 	return &pb.CreateOrgResponse{Org: orgProto(value)}, nil
 }
 
-func (s *server) ListWorkspaces(ctx context.Context, _ *pb.ListWorkspacesRequest) (*pb.ListWorkspacesResponse, error) {
+func (s *server) ListWorkspaces(ctx context.Context, r *pb.ListWorkspacesRequest) (*pb.ListWorkspacesResponse, error) {
 	if s.deps.Orgs == nil {
 		return nil, errOrgsUnavailable
 	}
-	values, err := s.deps.Orgs.ListWorkspaces(ctx, orgInForce(ctx))
+	values, err := s.deps.Orgs.ListWorkspaces(ctx, orgFor(ctx, r.GetOrgId()))
 	if err != nil {
 		return nil, s.orgErr("ListWorkspaces", err)
 	}
@@ -121,7 +149,7 @@ func (s *server) CreateWorkspace(ctx context.Context, r *pb.CreateWorkspaceReque
 	if s.deps.Orgs == nil {
 		return nil, errOrgsUnavailable
 	}
-	value := workspaceValue(&pb.Workspace{Id: r.GetId(), OrgId: string(orgInForce(ctx)), Name: r.GetName(), Environment: r.GetEnvironment()})
+	value := workspaceValue(&pb.Workspace{Id: r.GetId(), OrgId: string(orgFor(ctx, r.GetOrgId())), Name: r.GetName(), Environment: r.GetEnvironment()})
 	created, err := s.deps.Orgs.CreateWorkspace(ctx, value)
 	if err != nil {
 		return nil, s.orgErr("CreateWorkspace", err)
@@ -129,11 +157,11 @@ func (s *server) CreateWorkspace(ctx context.Context, r *pb.CreateWorkspaceReque
 	return &pb.CreateWorkspaceResponse{Workspace: workspaceProto(created)}, nil
 }
 
-func (s *server) ListMembers(ctx context.Context, _ *pb.ListMembersRequest) (*pb.ListMembersResponse, error) {
+func (s *server) ListMembers(ctx context.Context, r *pb.ListMembersRequest) (*pb.ListMembersResponse, error) {
 	if s.deps.Orgs == nil {
 		return nil, errOrgsUnavailable
 	}
-	values, err := s.deps.Orgs.ListMembers(ctx, orgInForce(ctx))
+	values, err := s.deps.Orgs.ListMembers(ctx, orgFor(ctx, r.GetOrgId()))
 	if err != nil {
 		return nil, s.orgErr("ListMembers", err)
 	}
@@ -150,7 +178,7 @@ func (s *server) SetMembership(ctx context.Context, r *pb.SetMembershipRequest) 
 	}
 	err := s.deps.Orgs.EnsureMembership(ctx, org.Membership{
 		IdentityID:  identity.IdentityID(r.GetIdentityId()),
-		OrgID:       orgInForce(ctx),
+		OrgID:       orgFor(ctx, r.GetOrgId()),
 		WorkspaceID: org.WorkspaceID(r.GetWorkspaceId()),
 		Role:        org.Role(r.GetRole()),
 	})
@@ -166,7 +194,7 @@ func (s *server) RemoveMembership(ctx context.Context, r *pb.RemoveMembershipReq
 	}
 	err := s.deps.Orgs.RemoveMembership(ctx, org.Membership{
 		IdentityID:  identity.IdentityID(r.GetIdentityId()),
-		OrgID:       orgInForce(ctx),
+		OrgID:       orgFor(ctx, r.GetOrgId()),
 		WorkspaceID: org.WorkspaceID(r.GetWorkspaceId()),
 	})
 	if err != nil {
@@ -181,7 +209,7 @@ func (s *server) AssignAgent(ctx context.Context, r *pb.AssignAgentRequest) (*pb
 	}
 	err := s.deps.Orgs.AssignAgent(ctx, org.AgentAssignment{
 		IdentityID: identity.IdentityID(r.GetIdentityId()),
-		OrgID:      orgInForce(ctx),
+		OrgID:      orgFor(ctx, r.GetOrgId()),
 	})
 	if err != nil {
 		return nil, s.orgErr("AssignAgent", err)

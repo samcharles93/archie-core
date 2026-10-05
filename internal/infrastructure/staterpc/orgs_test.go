@@ -22,7 +22,9 @@ type fakeOrgs struct {
 	agents     []org.AgentAssignment
 }
 
-func (*fakeOrgs) CreateOrg(_ context.Context, value org.Org) (org.Org, error) { return value, nil }
+func (*fakeOrgs) CreateOrg(_ context.Context, value org.Org, _ identity.IdentityID) (org.Org, error) {
+	return value, nil
+}
 
 func (*fakeOrgs) GetOrg(_ context.Context, id org.OrgID) (org.Org, error) {
 	return org.Org{ID: id, Name: "Acme"}, nil

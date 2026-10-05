@@ -35,6 +35,15 @@ func newFakeOrgs() *fakeOrgs {
 
 func (f *fakeOrgs) ListOrgs(context.Context) ([]org.Org, error) { return f.orgs, nil }
 
+func (f *fakeOrgs) CreateOrg(_ context.Context, value org.Org, owner identity.IdentityID) (org.Org, error) {
+	if err := value.Validate(); err != nil {
+		return org.Org{}, err
+	}
+	f.orgs = append(f.orgs, value)
+	f.members[value.ID] = []org.Member{{IdentityID: owner, Role: org.RoleOwner}}
+	return value, nil
+}
+
 func (f *fakeOrgs) GetOrg(_ context.Context, id org.OrgID) (org.Org, error) {
 	for _, o := range f.orgs {
 		if o.ID == id {
@@ -97,6 +106,7 @@ func (f *fakeOrgs) AssignAgent(_ context.Context, value org.AgentAssignment) err
 func orgRoutes(s *Server) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/orgs", s.handleOrgsList)
+	mux.HandleFunc("POST /api/orgs", s.handleOrgCreate)
 	mux.HandleFunc("GET /api/orgs/{id}", s.handleOrgGet)
 	mux.HandleFunc("GET /api/orgs/{id}/workspaces", s.handleOrgWorkspacesList)
 	mux.HandleFunc("POST /api/orgs/{id}/workspaces", s.handleOrgWorkspaceCreate)
@@ -214,6 +224,65 @@ func TestOrgMembershipNeedsItsRole(t *testing.T) {
 			orgRoutes(s).ServeHTTP(rec, req)
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d, body %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+		})
+	}
+}
+
+// TestInstanceAdminOrgs holds the instance-admin boundary: an owner of org-sys
+// lists and opens every org and creates one with its owner; an admin of
+// org-sys sees only its own org and cannot create one.
+func TestInstanceAdminOrgs(t *testing.T) {
+	engine, err := infraaccess.New(access.ShippedOrgPolicies(org.DefaultOrgID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name       string
+		caller     string
+		method     string
+		path       string
+		body       string
+		wantStatus int
+		wantBody   string
+	}{
+		{"an instance admin lists every org", "owner", http.MethodGet, "/api/orgs", "", http.StatusOK, "acme"},
+		{"anyone else lists only their own", "admin", http.MethodGet, "/api/orgs", "", http.StatusOK, string(org.DefaultOrgID)},
+		{"an instance admin opens another org", "owner", http.MethodGet, "/api/orgs/acme/members", "", http.StatusOK, "boss"},
+		{"anyone else does not", "admin", http.MethodGet, "/api/orgs/acme/members", "", http.StatusNotFound, ""},
+		{"an instance admin creates an org with its owner", "owner", http.MethodPost, "/api/orgs", `{"id":"beta","name":"Beta","owner_identity":"sam"}`, http.StatusCreated, "beta"},
+		{"anyone else cannot", "admin", http.MethodPost, "/api/orgs", `{"id":"beta","name":"Beta","owner_identity":"sam"}`, http.StatusForbidden, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			orgs := newFakeOrgs()
+			orgs.orgs = append(orgs.orgs, org.Org{ID: "acme", Name: "Acme"})
+			orgs.members["acme"] = []org.Member{{IdentityID: "boss", Role: org.RoleOwner}}
+			s := &Server{
+				Access: engine, Principals: rolePrincipals{}, Orgs: orgs,
+				Authenticate: func(_ context.Context, token string) (identity.Identity, error) {
+					return identity.Identity{ID: identity.IdentityID(token), Kind: identity.KindUser}, nil
+				},
+			}
+			var body io.Reader
+			if tt.body != "" {
+				body = strings.NewReader(tt.body)
+			}
+			req := httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, body)
+			req.Header.Set("Authorization", "Bearer "+tt.caller)
+			if tt.body != "" {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			rec := httptest.NewRecorder()
+			orgRoutes(s).ServeHTTP(rec, req)
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d, body %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if tt.wantBody != "" && !strings.Contains(rec.Body.String(), tt.wantBody) {
+				t.Fatalf("body = %s, want %q", rec.Body.String(), tt.wantBody)
+			}
+			if tt.caller == "admin" && tt.path == "/api/orgs" && strings.Contains(rec.Body.String(), "acme") {
+				t.Fatalf("a non-admin saw another org: %s", rec.Body.String())
 			}
 		})
 	}

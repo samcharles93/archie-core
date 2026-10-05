@@ -37,13 +37,13 @@ func TestInstanceOwner(t *testing.T) {
 		{"a developer of org-sys is not the instance owner", memberOf("dev", org.DefaultOrgID, org.RoleDeveloper), true, false},
 		{"an owner of another org is not the instance owner", memberOf("other", "acme", org.RoleOwner), true, false},
 		{
-			"an org-sys owner membership while serving another org is not the instance owner",
+			"an org-sys owner acting in another org is still the instance owner",
 			access.Principal{
 				IdentityID:  "other",
 				Org:         "acme",
 				Memberships: []org.Membership{{IdentityID: "other", OrgID: org.DefaultOrgID, Role: org.RoleOwner}},
 			},
-			true, false,
+			true, true,
 		},
 	}
 	for _, tt := range tests {

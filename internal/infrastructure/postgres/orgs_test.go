@@ -15,9 +15,6 @@ import (
 func TestOrgStoreMembers(t *testing.T) {
 	ctx := t.Context()
 	db := pgstore.Open(t)
-	if _, err := db.CreateOrg(ctx, org.Org{ID: "acme", Name: "Acme"}); err != nil {
-		t.Fatalf("create org: %v", err)
-	}
 	for _, id := range []string{"sam", "bot"} {
 		kind := identity.KindUser
 		name := "Sam"
@@ -27,6 +24,9 @@ func TestOrgStoreMembers(t *testing.T) {
 		if _, err := db.Create(ctx, identity.Identity{ID: identity.IdentityID(id), Kind: kind, DisplayName: name, Lifecycle: identity.LifecycleActive}, identity.Audit{ActorID: identity.SystemID, Source: "test", RequestID: "id-" + id}); err != nil {
 			t.Fatalf("create identity %s: %v", id, err)
 		}
+	}
+	if _, err := db.CreateOrg(ctx, org.Org{ID: "acme", Name: "Acme"}, "sam"); err != nil {
+		t.Fatalf("create org: %v", err)
 	}
 
 	if err := db.EnsureMembership(ctx, org.Membership{IdentityID: "sam", OrgID: "acme", Role: org.RoleDeveloper}); err != nil {
