@@ -39,6 +39,22 @@ export function stageStatusMeta(status?: string | null): StageStatusMeta {
  * events whose attempt and stage both match. Returning an array rather than one
  * value keeps a stage that ran two agents honest instead of showing the last.
  */
+/** stageRetries are the failed attempts archie recorded for a retried stage. */
+export function stageRetries(
+  events: TaskEvent[] | null | undefined,
+  attemptNumber: number | null | undefined,
+  stage: string | undefined,
+): TimelineLine[] {
+  return (events || [])
+    .filter(
+      (ev) =>
+        ev?.kind === "step_retried" &&
+        Number(ev.attempt) === Number(attemptNumber) &&
+        (ev.stage || "") === (stage || ""),
+    )
+    .map((ev) => describeTimelineEvent(ev));
+}
+
 export function agentReports(
   events: TaskEvent[] | null | undefined,
   attemptNumber: number | null | undefined,
@@ -48,7 +64,7 @@ export function agentReports(
     .filter(
       (ev) =>
         ev &&
-        (ev.kind === "agent_finish" || ev.kind === "step_retried") &&
+        ev.kind === "agent_finish" &&
         Number(ev.attempt) === Number(attemptNumber) &&
         (ev.stage || "") === (stage || ""),
     )

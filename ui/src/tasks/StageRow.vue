@@ -4,7 +4,7 @@ import { computed } from "vue";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-import { agentReports, stageStatusMeta } from "./stage-rail";
+import { agentReports, stageRetries, stageStatusMeta } from "./stage-rail";
 import { duration } from "./timeline-event";
 import type { Stage, TaskEvent } from "./task-run";
 
@@ -28,6 +28,9 @@ const meta = computed(() => stageStatusMeta(props.stage.status));
 const ran = computed(() => duration(props.stage.duration_ms));
 const reports = computed(() =>
   agentReports(props.events, props.attemptNumber, props.stage.name),
+);
+const retries = computed(() =>
+  stageRetries(props.events, props.attemptNumber, props.stage.name),
 );
 
 // The node carries the status as a shape, the same way the label's own kind
@@ -97,6 +100,13 @@ const nodeClass = computed(() =>
         class="mt-2 rounded-sm border-l-[3px] border-danger bg-danger-soft px-3 py-2 text-sm break-words whitespace-pre-wrap text-fg-muted"
       >
         {{ stage.error }}
+      </div>
+      <div
+        v-for="(retry, i) in retries"
+        :key="`retry-${i}`"
+        class="mt-2 text-xs text-warn"
+      >
+        {{ [retry.title, retry.detail].filter(Boolean).join(" · ") }}
       </div>
       <div
         v-for="(report, i) in reports"
