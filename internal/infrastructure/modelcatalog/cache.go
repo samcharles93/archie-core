@@ -29,9 +29,6 @@ func NewCatalog(cfgPath string) *Catalog {
 	return &Catalog{cachePath: filepath.Join(filepath.Dir(cfgPath), "models.json")}
 }
 
-// Path is the cached catalog file.
-func (c *Catalog) Path() string { return c.cachePath }
-
 // State returns the loaded snapshot and its model references.
 func (c *Catalog) State() (Snapshot, []string) {
 	c.mu.RLock()

@@ -92,7 +92,7 @@ func (b *server) rebuildChatModelRuntime(cfg config.Config) {
 	if b.chatModels == nil {
 		return // this process serves no chat turns
 	}
-	b.setLLM(modelloop.NewRuntime(executionProviders(cfg), b.catalog.Path()))
+	b.setLLM(modelloop.NewRuntime(executionProviders(cfg), cfg.ModelLimits))
 	b.chatModels.SetConfigured(cfg.Models)
 	catalog, models := b.catalogState()
 	b.chatModels.SetModelCatalog(catalog, models)

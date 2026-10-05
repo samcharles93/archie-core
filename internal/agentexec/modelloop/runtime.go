@@ -1,26 +1,26 @@
 package modelloop
 
 import (
-	"os"
+	"strings"
 
 	"github.com/samcharles93/ai-sdk/runtime"
 
+	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 )
 
 // NewRuntime builds a provider runtime for interactive chat or a worker-local
-// workflow stage. Nil means no providers were configured. catalogPath is the
-// models.dev snapshot the service already cached; it supplies each model's
-// reasoning flag so requests use the parameters the model accepts. Empty or
-// unreadable leaves the runtime without model metadata.
-func NewRuntime(providers map[string]agentrun.Provider, catalogPath string) *runtime.Runtime {
+// workflow stage. Nil means no providers were configured. limits is keyed
+// "provider/model"; its Reasoning flag tells the runtime which models need
+// max_completion_tokens instead of max_tokens.
+func NewRuntime(providers map[string]agentrun.Provider, limits map[string]config.ModelLimits) *runtime.Runtime {
 	if len(providers) == 0 {
 		return nil
 	}
 	runtime.RegisterBuiltinClasses()
 	catalog := make(map[string]runtime.ProviderConfig, len(providers))
 	for name, provider := range providers {
-		cfg := runtime.ProviderConfig{ID: name, Class: provider.Class, BaseURL: provider.BaseURL}
+		cfg := runtime.ProviderConfig{ID: name, Class: provider.Class, BaseURL: provider.BaseURL, Models: reasoningModels(name, limits)}
 		if provider.APIKeyEnv == "" {
 			cfg.Auth = runtime.AuthConfig{Type: runtime.AuthTypeNone}
 		} else {
@@ -28,10 +28,15 @@ func NewRuntime(providers map[string]agentrun.Provider, catalogPath string) *run
 		}
 		catalog[name] = cfg
 	}
-	cfg := runtime.Config{Providers: catalog}
-	models := runtime.NewCatalog(runtime.CatalogOptions{})
-	if raw, err := os.ReadFile(catalogPath); err == nil && models.LoadFromJSON(raw) == nil {
-		return runtime.NewRuntimeWithCatalog(cfg, models)
+	return runtime.NewRuntime(runtime.Config{Providers: catalog})
+}
+
+func reasoningModels(provider string, limits map[string]config.ModelLimits) []runtime.ModelConfig {
+	var models []runtime.ModelConfig
+	for ref, l := range limits {
+		if id, ok := strings.CutPrefix(ref, provider+"/"); ok && l.Reasoning {
+			models = append(models, runtime.ModelConfig{ID: id, Reasoning: true})
+		}
 	}
-	return runtime.NewRuntime(cfg)
+	return models
 }

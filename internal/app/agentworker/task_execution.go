@@ -154,10 +154,10 @@ type taskDependencies struct {
 	guardrails *tools.GuardrailEngine
 }
 
-type runnerFactory func(map[string]agentrun.Provider, *slog.Logger) agentrun.Runner
+type runnerFactory func(map[string]agentrun.Provider, map[string]config.ModelLimits, *slog.Logger) agentrun.Runner
 
-func newTaskRunner(providers map[string]agentrun.Provider, log *slog.Logger) agentrun.Runner {
-	return modelloop.NewLoopRunner(modelloop.NewRuntime(providers, ""), log)
+func newTaskRunner(providers map[string]agentrun.Provider, limits map[string]config.ModelLimits, log *slog.Logger) agentrun.Runner {
+	return modelloop.NewLoopRunner(modelloop.NewRuntime(providers, limits), log)
 }
 
 // applyToolLimits sets the task's tool policy and allowlist on a
@@ -186,7 +186,7 @@ func stageRunners(req taskrun.Request, mcpSet *mcpProviderSet, newRunner runnerF
 	if mcpSet != nil && mcpSet.registry != nil {
 		agent = modelloop.NewLoopRunner(llm, log, mcpSet.registry)
 	} else {
-		agent = newRunner(req.Providers, log)
+		agent = newRunner(req.Providers, req.Cfg.ModelLimits, log)
 	}
 	if agent == nil {
 		return nil, fmt.Errorf("no agent runner configured for task %d", req.Task.ID)
@@ -231,7 +231,7 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 	// the task's own model rather than a second provider client.
 	var llm *runtime.Runtime
 	if len(req.MCPServers) > 0 {
-		llm = modelloop.NewRuntime(req.Providers, "")
+		llm = modelloop.NewRuntime(req.Providers, req.Cfg.ModelLimits)
 	}
 	mcpSet, mcpErr := startMCPProviders(ctx, req.MCPServers, taskSamplingHandler(llm, req.Cfg), log)
 	if mcpSet != nil {
