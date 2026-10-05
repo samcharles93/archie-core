@@ -168,10 +168,17 @@ if ! grep -qE '@127\.0\.0\.1:5432/archie' "${ARCHIE_CONFIG_DIR}/config.toml"; th
 elif command -v docker &>/dev/null && [ -f "${ARCHIE_DATA_DIR}/docker-compose.yml" ]; then
   echo "==> Starting PostgreSQL 18 (docker compose up -d postgres)..."
   touch "${ENV_FILE}" && chmod 600 "${ENV_FILE}"
-  docker compose --env-file "${ENV_FILE}" -f "${ARCHIE_DATA_DIR}/docker-compose.yml" up -d postgres ||
-    echo "  [WARN] Could not start PostgreSQL. Start it before the services, or point database_url at your own PostgreSQL 18."
+  if ! docker compose --env-file "${ENV_FILE}" -f "${ARCHIE_DATA_DIR}/docker-compose.yml" up -d postgres; then
+    # Started without their database the services only crash-loop, and if
+    # something else holds 5432 they hit the wrong server.
+    echo "  [WARN] The bundled PostgreSQL did not start, so the services are installed but not started." >&2
+    echo "         If another PostgreSQL holds port 5432, run 'archied setup' and enter its URL, then:" >&2
+    echo "         systemctl --user enable --now ${TOPOLOGY_UNITS}" >&2
+    AUTO_START=false
+  fi
 else
   echo "  [WARN] Docker not found: point database_url in ${ARCHIE_CONFIG_DIR}/config.toml at a PostgreSQL 18 server before starting the services."
+  AUTO_START=false
 fi
 
 # 5. Systemd user service setup & linger configuration
