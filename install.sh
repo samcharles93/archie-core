@@ -1,31 +1,17 @@
 #!/usr/bin/env bash
-# ==============================================================================
-# install.sh - Installer for Archie Core (native archied + managed agent image)
+# install.sh - installs Archie Core for the current user.
 #
-# Follows the XDG Base Directory Specification:
-#   Config: ${XDG_CONFIG_HOME:-~/.config}/archie
-#     - config.toml
-#     - env (environment variables & API secrets)
-#     - persona/
-#     - skills/
-#   Data:   ${XDG_DATA_HOME:-~/.local/share}/archie   (state_dir)
-#     - nats/
-#     - logs/tasks/
-#     - work/
-#     - memories/
-#     - tasks/
-#     - plugins/
-#   Bin:    ${XDG_BIN_HOME:-~/.local/bin}
-#     - archied
-# ==============================================================================
+#   curl -fsSL https://raw.githubusercontent.com/samcharles93/archie-core/main/install.sh | bash
+#
+# Downloads the latest release, verifies it against SHA256SUMS, installs the
+# five services to ${XDG_BIN_HOME:-~/.local/bin}, runs `archied setup`, starts
+# the bundled PostgreSQL and installs systemd user units.
+# Config: ${XDG_CONFIG_HOME:-~/.config}/archie   Data: ${XDG_DATA_HOME:-~/.local/share}/archie
 
 set -euo pipefail
 
-# Determine script location / repo root if executed from within archie-core
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_URL="https://github.com/samcharles93/archie-core.git"
+REPO="samcharles93/archie-core"
 
-# XDG Base Directory resolution
 XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}"
 XDG_DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
 XDG_BIN_HOME="${XDG_BIN_HOME:-${HOME}/.local/bin}"
@@ -35,174 +21,127 @@ ARCHIE_DATA_DIR="${XDG_DATA_HOME}/archie"
 ARCHIE_BIN_DIR="${XDG_BIN_HOME}"
 ENV_FILE="${ARCHIE_CONFIG_DIR}/env"
 
-# Parse optional arguments
 INSTALL_SYSTEMD=true
 ENABLE_LINGER=true
 AUTO_START=true
-INTERACTIVE=true
-
-[ ! -t 0 ] && INTERACTIVE=false
+FROM_SOURCE=false
+# Piped into bash, stdin is the script; setup reads its answers from the
+# terminal instead, so a pipe can still be interactive.
+INTERACTIVE=false
+if (: </dev/tty) 2>/dev/null; then INTERACTIVE=true; fi
 
 usage() {
-  echo "Usage: ./install.sh [options]"
-  echo ""
-  echo "Options:"
-  echo "  --no-systemd       Skip systemd user unit installation"
-  echo "  --no-linger        Skip loginctl enable-linger execution"
-  echo "  --no-start         Install service but do not auto-start archied"
-  echo "  --non-interactive  Run without interactive setup prompts"
-  echo "  --help, -h         Show this help message"
-  echo ""
-  echo "XDG Target Directories:"
-  echo "  Config: ${ARCHIE_CONFIG_DIR}"
-  echo "  Data:   ${ARCHIE_DATA_DIR}"
-  echo "  Bin:    ${ARCHIE_BIN_DIR}"
+  cat <<EOF
+Usage: install.sh [options]
+   or: curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install.sh | bash -s -- [options]
+
+Options:
+  --version X.Y.Z    Install this release instead of the latest
+  --from-source      Build from a checkout (this one, or a fresh clone) instead
+                     of a release; needs Go, git and jq
+  --no-systemd       Skip systemd user units
+  --no-linger        Skip loginctl enable-linger
+  --no-start         Install the units but do not start them
+  --non-interactive  Write an unattended config (no forge, Ollama)
+  --help, -h         Show this help
+EOF
 }
 
-for arg in "$@"; do
-  case "$arg" in
-    --no-systemd)
-      INSTALL_SYSTEMD=false
-      AUTO_START=false
-      shift
-      ;;
-    --no-linger)
-      ENABLE_LINGER=false
-      shift
-      ;;
-    --no-start)
-      AUTO_START=false
-      shift
-      ;;
-    --non-interactive|--batch)
-      INTERACTIVE=false
-      shift
-      ;;
-    --help|-h)
-      usage
-      exit 0
-      ;;
-    *)
-      echo "Error: unknown option '${arg}'" >&2
-      echo "" >&2
-      usage >&2
-      exit 1
-      ;;
+VERSION=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --version) VERSION="${2:?--version needs a value}"; shift ;;
+    --from-source) FROM_SOURCE=true ;;
+    --no-systemd) INSTALL_SYSTEMD=false; AUTO_START=false ;;
+    --no-linger) ENABLE_LINGER=false ;;
+    --no-start) AUTO_START=false ;;
+    --non-interactive|--batch) INTERACTIVE=false ;;
+    --help|-h) usage; exit 0 ;;
+    *) echo "Error: unknown option '$1'" >&2; usage >&2; exit 1 ;;
   esac
+  shift
 done
 
-echo "============================================================"
-echo "  Archie Core Installer (XDG Standard)"
-echo "============================================================"
-echo "Config directory : ${ARCHIE_CONFIG_DIR}"
-echo "Data directory   : ${ARCHIE_DATA_DIR}"
-echo "Bin directory    : ${ARCHIE_BIN_DIR}"
-echo "============================================================"
-echo ""
+need() {
+  for cmd in "$@"; do
+    command -v "$cmd" &>/dev/null || { echo "Error: '$cmd' is required but not installed." >&2; exit 1; }
+  done
+}
 
-# 1. Prerequisite checks
+# 1. Prerequisites
 echo "==> Checking prerequisites..."
-
-# Linux only, deliberately. The installer depends on systemd user units and
-# loginctl linger, and uses GNU sed/bash 4 semantics throughout. Failing here
-# with a clear message beats failing three steps later inside a heredoc.
+# The installer depends on systemd user units and GNU tools.
 if [ "$(uname -s)" != "Linux" ]; then
-  echo "Error: archie-core's installer supports Linux only (needs systemd and loginctl)." >&2
-  echo "       Detected: $(uname -s)" >&2
+  echo "Error: the installer supports Linux only. Detected: $(uname -s)" >&2
   exit 1
 fi
-
-for cmd in git go jq; do
-  if ! command -v "$cmd" &>/dev/null; then
-    echo "Error: '$cmd' is required but not installed." >&2
-    exit 1
-  fi
-done
-
-GO_VERSION="$(go version | awk '{print $3}')"
-echo "  [OK] git: $(git --version)"
-echo "  [OK] go: ${GO_VERSION}"
-
+if [ "${FROM_SOURCE}" = true ]; then
+  need git go jq
+else
+  [ "$(uname -m)" = x86_64 ] || { echo "Error: releases are built for x86_64 only; use --from-source." >&2; exit 1; }
+  need curl unzip sha256sum
+fi
 if command -v docker &>/dev/null; then
-  echo "  [OK] docker: $(docker --version)"
+  echo "  [OK] $(docker --version)"
 else
-  echo "  [WARN] Docker is required for autonomous workflows; chat and the dashboard can still run without it."
+  echo "  [WARN] Docker not found. Agents run in containers and the bundled PostgreSQL needs it."
 fi
 
-# 2. Create directory structure according to XDG standards
-echo "==> Creating XDG directory structure..."
-mkdir -p "${ARCHIE_CONFIG_DIR}"/{persona,skills}
-mkdir -p "${ARCHIE_DATA_DIR}"/{work,memories,tasks,plugins}
-mkdir -p "${ARCHIE_BIN_DIR}"
+mkdir -p "${ARCHIE_CONFIG_DIR}" "${ARCHIE_DATA_DIR}" "${ARCHIE_BIN_DIR}"
 
-# 3. Determine source location
-SRC_DIR=""
-if [ -f "${SCRIPT_DIR}/go.mod" ] && grep -q "github.com/samcharles93/archie-core" "${SCRIPT_DIR}/go.mod"; then
-  SRC_DIR="${SCRIPT_DIR}"
-  echo "==> Installing from local repository: ${SRC_DIR}"
-else
-  SRC_DIR="${ARCHIE_DATA_DIR}/src/archie-core"
-  if [ -d "${SRC_DIR}/.git" ]; then
-    # The shipped tree is Archie's own working copy, so it may legitimately
-    # carry local commits or edits it made while investigating a fault. A bare
-    # `pull --rebase` fails on those and, under `set -e`, aborts the install.
-    # Local state wins: report it and build what is on disk.
-    if [ -n "$(git -C "${SRC_DIR}" status --porcelain)" ]; then
-      echo "==> Local changes in ${SRC_DIR}; skipping update and building as-is."
-    elif ! git -C "${SRC_DIR}" pull --ff-only; then
-      echo "==> Could not fast-forward ${SRC_DIR}; building the existing checkout."
-    fi
+# 2. Binaries. STAGE ends up holding the binaries, release.json, the updater
+# scripts and docker-compose.yml, whichever way they were obtained.
+TMP="$(mktemp -d)"
+trap 'rm -rf "${TMP}"' EXIT
+
+if [ "${FROM_SOURCE}" = true ]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+  if [ -f "${SCRIPT_DIR}/go.mod" ] && grep -q "github.com/${REPO}" "${SCRIPT_DIR}/go.mod"; then
+    SRC_DIR="${SCRIPT_DIR}"
   else
-    echo "==> Cloning archie-core repository to ${SRC_DIR}..."
-    mkdir -p "$(dirname "${SRC_DIR}")"
-    git clone "${REPO_URL}" "${SRC_DIR}"
+    SRC_DIR="${TMP}/src"
+    git clone --quiet --depth=1 "https://github.com/${REPO}.git" "${SRC_DIR}"
   fi
+  echo "==> Building from ${SRC_DIR}..."
+  STAGE="${TMP}/stage"
+  mkdir -p "${STAGE}"
+  # A source build is not a release: it says `dev`, and buildType=binary lets
+  # it self-update.
+  LDFLAGS="-X github.com/${REPO}/internal/buildinfo.Version=dev -X github.com/${REPO}/internal/buildinfo.Runtime=dev -X github.com/${REPO}/internal/installtype.buildType=binary"
+  for cmd in $(jq -er '.required_topology.units | join(" ")' "${SRC_DIR}/release.json"); do
+    (cd "${SRC_DIR}" && go build -ldflags "${LDFLAGS}" -o "${STAGE}/${cmd}" "./cmd/${cmd}")
+  done
+  cp "${SRC_DIR}/release.json" "${SRC_DIR}/docker-compose.yml" "${SRC_DIR}"/scripts/archie-update-* "${STAGE}/"
+else
+  if [ -z "${VERSION}" ]; then
+    tag="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')"
+    [ -n "${tag}" ] || { echo "Error: could not find the latest release." >&2; exit 1; }
+  else
+    tag="v${VERSION}"
+  fi
+  VERSION="${tag##*v}"
+  name="archie-core-archied-v${VERSION}-linux-amd64"
+  echo "==> Downloading Archie ${VERSION}..."
+  base="https://github.com/${REPO}/releases/download/${tag}"
+  curl -fsSL "${base}/${name}.zip" -o "${TMP}/${name}.zip"
+  curl -fsSL "${base}/SHA256SUMS" -o "${TMP}/SHA256SUMS"
+  expected="$(awk -v n="${name}.zip" '$2 == n {print $1}' "${TMP}/SHA256SUMS")"
+  [[ "${expected}" =~ ^[a-f0-9]{64}$ ]] || { echo "Error: ${name}.zip is not in SHA256SUMS." >&2; exit 1; }
+  printf '%s  %s\n' "${expected}" "${TMP}/${name}.zip" | sha256sum --check --status ||
+    { echo "Error: checksum mismatch for ${name}.zip." >&2; exit 1; }
+  unzip -q "${TMP}/${name}.zip" -d "${TMP}"
+  STAGE="${TMP}/${name}"
 fi
 
-TOPOLOGY_UNITS="$(jq -er '.required_topology.units | join(" ")' "$SRC_DIR/release.json")"
+TOPOLOGY_UNITS="$(tr -d '\n' <"${STAGE}/release.json" | sed -n 's/.*"units": *\[\([^]]*\)\].*/\1/p' | tr -d '" ' | tr , ' ')"
+for cmd in ${TOPOLOGY_UNITS}; do
+  install -m755 "${STAGE}/${cmd}" "${ARCHIE_BIN_DIR}/${cmd}"
+done
+install -m755 "${STAGE}"/archie-update-* "${ARCHIE_BIN_DIR}/"
+install -m644 "${STAGE}/docker-compose.yml" "${ARCHIE_DATA_DIR}/docker-compose.yml"
+echo "  Installed ${TOPOLOGY_UNITS} and the updater to ${ARCHIE_BIN_DIR}/"
 
-# 4. Build and install the native daemon. archie-agent is deployed only as
-# the managed task image; installing a host binary would imply an unsupported
-# host execution path.
-echo "==> Building native archie binaries..."
-(
-  cd "${SRC_DIR}"
-  # installtype.buildType must be stamped here: an unstamped archied
-  # refuses to self-update (internal/releaseupdate.ErrUnknownInstallType)
-  # rather than guess whether /update's configured install command is
-  # even the right kind of update for a script-built native binary.
-  # A from-source build is not a release, and CI is the only thing that stamps
-  # one: the version a release carries is written into the artifact CI
-  # publishes -- the zip's binaries and the container image -- and is never
-  # derived from whatever tags a local checkout happens to have. Deriving it
-  # here made a source-built host claim a release it was not running, and made
-  # the stamp a function of the commit graph, which is the one input a
-  # content-checksum build cache cannot see. A source build
-  # says `dev`; its traceability is the checkout it came from.
-  GATEWAY_VERSION="dev"
-  RUNTIME_VERSION="dev"
-  LDFLAGS="-X github.com/samcharles93/archie-core/internal/buildinfo.Version=${GATEWAY_VERSION}"
-  LDFLAGS="${LDFLAGS} -X github.com/samcharles93/archie-core/internal/buildinfo.Runtime=${RUNTIME_VERSION}"
-  LDFLAGS="${LDFLAGS} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary"
-  # Every host binary carries the release it was built from, so the updater can
-  # ask each installed binary what it is.
-  LDFLAGS="${LDFLAGS} -X github.com/samcharles93/archie-core/internal/buildinfo.Version=${GATEWAY_VERSION}"
-  LDFLAGS="${LDFLAGS} -X github.com/samcharles93/archie-core/internal/buildinfo.Runtime=${RUNTIME_VERSION}"
-  # archied does not run alone: the State Store owns the task data, the Gateway
-  # serves the chat contract, the dashboard is its own process, and the
-  # Messaging Service owns the chat channels. Building only archied leaves it
-  # unable to boot, and omitting archie-messaging leaves the Telegram, email and
-  # webhook channels dead with no error anywhere. This list,
-  # the zip's two lists and the two in scripts/archie-update-install must agree;
-  # TestDistZipShipsEveryHostCommand fails when they do not.
-  for cmd in $TOPOLOGY_UNITS; do
-    go build -ldflags "${LDFLAGS}" -o "${ARCHIE_BIN_DIR}/${cmd}" "./cmd/${cmd}"
-  done
-  install -m755 "${SRC_DIR}"/scripts/archie-update-* "${ARCHIE_BIN_DIR}/"
-)
-echo "  Installed archied, archie-gateway, archie-state-store, archie-ui, archie-messaging and updater to ${ARCHIE_BIN_DIR}/"
-
-# 5. Configuration. archied setup asks every question and writes config.toml
+# 3. Configuration. archied setup asks every question and writes config.toml
 # plus any secrets to the env file beside it; this script asks nothing itself.
 if [ ! -f "${ARCHIE_CONFIG_DIR}/config.toml" ]; then
   echo "==> Generating config.toml (archied setup)..."
@@ -212,7 +151,9 @@ if [ ! -f "${ARCHIE_CONFIG_DIR}/config.toml" ]; then
     # Unattended: no forge and keyless Ollama, so the services boot without a secret.
     setup_args=(--defaults -config "${ARCHIE_CONFIG_DIR}/config.toml" -forge-type none)
   fi
-  if ! "${ARCHIE_BIN_DIR}/archied" setup "${setup_args[@]}"; then
+  setup_in=/dev/null
+  [ "${INTERACTIVE}" = true ] && setup_in=/dev/tty
+  if ! "${ARCHIE_BIN_DIR}/archied" setup "${setup_args[@]}" <"${setup_in}"; then
     echo "ERROR: archied setup could not generate ${ARCHIE_CONFIG_DIR}/config.toml" >&2
     exit 1
   fi
@@ -220,32 +161,20 @@ else
   echo "  [SKIP] ${ARCHIE_CONFIG_DIR}/config.toml already exists. Re-run 'archied setup' to change it."
 fi
 
-# Every service fails closed without PostgreSQL. The default database_url is
+# 4. PostgreSQL. Every service fails closed without it. The default database_url is
 # the Compose postgres service, so start it when the config still uses it.
-if ! grep -qF '@127.0.0.1:5432/archie' "${ARCHIE_CONFIG_DIR}/config.toml"; then
+if ! grep -qE '@127\.0\.0\.1:5432/archie' "${ARCHIE_CONFIG_DIR}/config.toml"; then
   echo "  [OK] Using the PostgreSQL server named by database_url."
-elif command -v docker &>/dev/null && [ -f "${SRC_DIR}/docker-compose.yml" ]; then
+elif command -v docker &>/dev/null && [ -f "${ARCHIE_DATA_DIR}/docker-compose.yml" ]; then
   echo "==> Starting PostgreSQL 18 (docker compose up -d postgres)..."
-  docker compose --env-file "${ENV_FILE}" -f "${SRC_DIR}/docker-compose.yml" up -d postgres ||
+  touch "${ENV_FILE}" && chmod 600 "${ENV_FILE}"
+  docker compose --env-file "${ENV_FILE}" -f "${ARCHIE_DATA_DIR}/docker-compose.yml" up -d postgres ||
     echo "  [WARN] Could not start PostgreSQL. Start it before the services, or point database_url at your own PostgreSQL 18."
 else
   echo "  [WARN] Docker not found: point database_url in ${ARCHIE_CONFIG_DIR}/config.toml at a PostgreSQL 18 server before starting the services."
 fi
 
-# 6. Seed skills, personas, memories, and onboarding tasks
-echo "==> Seeding skills and templates..."
-
-# Seed example personas without overwriting existing files
-if [ -d "${SRC_DIR}/examples/persona" ]; then
-  cp -rn "${SRC_DIR}/examples/persona/"* "${ARCHIE_CONFIG_DIR}/persona/" 2>/dev/null || true
-fi
-
-# Seed initial tasks without overwriting existing files
-if [ -d "${SRC_DIR}/examples/tasks" ]; then
-  cp -rn "${SRC_DIR}/examples/tasks/"* "${ARCHIE_DATA_DIR}/tasks/" 2>/dev/null || true
-fi
-
-# 7. Systemd user service setup & linger configuration
+# 5. Systemd user service setup & linger configuration
 SERVICE_INSTALLED=false
 if [ "${INSTALL_SYSTEMD}" = true ] && command -v systemctl &>/dev/null && [ -d "${XDG_CONFIG_HOME}" ]; then
   SYSTEMD_USER_DIR="${XDG_CONFIG_HOME}/systemd/user"
@@ -386,7 +315,7 @@ EOF
   fi
 fi
 
-# 8. Post-installation summary & instructions
+# 6. Post-installation summary & instructions
 echo ""
 echo "============================================================"
 echo "  ✓ Archie Core Installation Complete!"
@@ -394,7 +323,6 @@ echo "============================================================"
 echo ""
 echo "Installation Details:"
 echo "  - Binaries   : ${ARCHIE_BIN_DIR}/{archied,archie-state-store,archie-gateway,archie-ui,archie-messaging}"
-echo "  - Agent image: ghcr.io/samcharles93/archie-agent:latest"
 echo "  - Config     : ${ARCHIE_CONFIG_DIR}/config.toml"
 echo "  - Secrets    : ${ENV_FILE}"
 echo "  - Data       : ${ARCHIE_DATA_DIR}/"
@@ -415,7 +343,7 @@ if [ "${SERVICE_INSTALLED}" = true ] && [ "${AUTO_START}" = true ]; then
   echo "  - Service status    : systemctl --user status archied archie-state-store archie-gateway archie-ui archie-messaging"
   echo "  - Restart daemon    : systemctl --user restart archied"
 else
-  echo "Manual Startup: start the five services as in ${SRC_DIR}/deployments/README.md"
+  echo "Manual Startup: start the five services as in https://github.com/${REPO}/blob/main/deployments/README.md"
 fi
 echo ""
 echo "Dashboard: http://127.0.0.1:8484   Change the config: archied setup"

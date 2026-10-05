@@ -96,25 +96,29 @@ approved. Binding changes require re-approval before they can dispatch work.
 
 ## Run it on a server
 
-You need Linux, PostgreSQL 18, Docker (agents run in containers) and a model:
-local [Ollama](https://ollama.com) or a hosted provider API key.
+You need x86_64 Linux with curl and unzip, Docker (agents and the bundled
+PostgreSQL run in containers) and a model: local [Ollama](https://ollama.com)
+or a hosted provider API key.
 
-1. **Install.** From a clone (needs Go 1.27, git and jq):
+1. **Install.**
 
    ```bash
-   git clone https://github.com/samcharles93/archie-core && cd archie-core
-   ./install.sh
+   curl -fsSL https://raw.githubusercontent.com/samcharles93/archie-core/main/install.sh | bash
    ```
 
-   It builds the five services into `~/.local/bin`, then runs `archied setup`,
-   which asks for the PostgreSQL URL (the default is the bundled Compose
-   database), a model provider and key, and a forge (choose **none** for
+   It downloads the latest release, verifies its checksum, installs the five
+   services into `~/.local/bin` and runs `archied setup`. Setup asks for the
+   PostgreSQL URL (leave it blank for a bundled database with a generated
+   password), a model provider and key, and a forge (choose **none** for
    event-driven automation only). Answers go to `~/.config/archie/config.toml`
-   and keys to `~/.config/archie/env`. It then starts PostgreSQL with Docker
-   Compose when you kept the default, and installs and starts systemd user
-   units. Re-run `archied setup` at any time to change the answers. Use `--no-systemd` to run the
-   processes yourself. A prebuilt release archive works too; its
-   `INSTRUCTIONS.md` covers that path.
+   and secrets to `~/.config/archie/env`. The installer then starts the
+   bundled PostgreSQL with Docker Compose and installs and starts systemd user
+   units. Pass options with `| bash -s -- --help`; `--from-source` builds a
+   checkout instead. Re-run `archied setup` at any time to change the answers.
+
+   Extensions run in an unprivileged user namespace. Ubuntu 23.10 and later
+   block these by default; allow them with
+   `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`.
 
 2. **Check it is up.**
 
