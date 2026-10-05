@@ -173,38 +173,15 @@ func (c *reactionConsumer) handleComment(ctx context.Context, msg eventbus.Messa
 		return
 	}
 
-	// A comment with a parent review is collected into that review's pending
-	// unit, never dispatched alone. Once the unit has been claimed, its input
-	// is frozen: a late comment is dropped, and the round cap bounds the
-	// exchange if the reviewer re-reviews.
-	if task.Status != workflow.StatusQueued || task.Workflow != "remediate" {
-		c.drop(msg, "parent review's unit is no longer pending")
-		return
-	}
-	unit, err := workflow.DecodeReviewUnit(task.ReviewPayload)
-	if err != nil {
-		if errors.Is(err, workflow.ErrNoReviewPayload) {
-			c.drop(msg, "queued remediation carries no review unit")
-			return
-		}
-		c.log.Error("review payload decode failed", "task", task.ID, "err", err)
-		_ = msg.Nak()
-		return
-	}
-	if unit.ReviewID != e.ReviewID {
-		c.drop(msg, "comment's parent review is not the pending unit")
-		return
-	}
-	for _, existing := range unit.Comments {
-		if existing.CommentID == e.CommentID {
-			_ = msg.Ack() // re-delivery of an already-collected comment
-			return
-		}
-	}
-	unit.Comments = append(unit.Comments, workflow.ReviewUnitComment{
-		CommentID: e.CommentID, Path: e.Path, Line: e.Line, Body: e.Body,
+	// A comment with a parent review is collected into that review's unit
+	// while the unit is unclaimed: the queued active unit, or one waiting
+	// behind a running remediation. A claimed unit's input is frozen, so a
+	// late comment is dropped and the round cap bounds the exchange if the
+	// reviewer re-reviews.
+	payload, err := workflow.EncodeReviewUnit(workflow.ReviewUnit{
+		ReviewID: e.ReviewID,
+		Comments: []workflow.ReviewUnitComment{{CommentID: e.CommentID, Path: e.Path, Line: e.Line, Body: e.Body}},
 	})
-	payload, err := workflow.EncodeReviewUnit(unit)
 	if err != nil {
 		c.log.Error("review unit encode failed", "task", task.ID, "err", err)
 		_ = msg.Nak()
@@ -212,8 +189,7 @@ func (c *reactionConsumer) handleComment(ctx context.Context, msg eventbus.Messa
 	}
 	if err := c.remediations.UpdateReviewPayload(ctx, task.ID, payload); err != nil {
 		if errors.Is(err, storecontract.ErrStaleTransition) {
-			// Claimed between the read and the write: the unit is frozen.
-			_ = msg.Ack()
+			c.drop(msg, "parent review's unit is no longer pending")
 			return
 		}
 		c.log.Error("UpdateReviewPayload failed", "task", task.ID, "err", err)

@@ -788,6 +788,8 @@ message BeginRemediationRequest {
 }
 message BeginRemediationResponse {}
 
+// UpdateReviewPayloadRequest merges payload's comments into the unclaimed
+// review unit with the same review id, active or pending.
 message UpdateReviewPayloadRequest {
   int64 task_id = 1;
   string payload = 2;

@@ -106,7 +106,8 @@ type ReviewGateResponder interface {
 // for one task are serialised, so a distinct review that arrives while a
 // remediation owns the task is queued behind it and remediated once that run
 // finishes; a re-delivered unit is absorbed, not queued twice.
-// UpdateReviewPayload appends late-arriving comments to a still-queued unit.
+// UpdateReviewPayload merges late-arriving comments into the unclaimed unit
+// for the same review, active or queued behind a running remediation.
 type RemediationStarter interface {
 	BeginRemediation(ctx context.Context, taskID int64, payload string) error
 	UpdateReviewPayload(ctx context.Context, taskID int64, payload string) error

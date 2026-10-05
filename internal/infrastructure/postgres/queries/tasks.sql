@@ -188,9 +188,15 @@ UPDATE tasks SET status = 'queued', workflow = 'remediate', park_reason = '',
 WHERE id = $1 AND status = 'pr_open' AND workflow = 'remediate'
   AND jsonb_array_length(pending_reviews) > 0;
 
--- name: UpdateReviewPayloadTask :execrows
-UPDATE tasks SET review_payload = $2, updated_at = now()
-WHERE id = $1 AND status = 'queued' AND workflow = 'remediate';
+-- name: LockReviewUnits :one
+-- The remediation's review units, locked so a comment merge cannot race the
+-- claim that freezes the active unit or the promotion of a pending one.
+SELECT status, workflow, review_payload, pending_reviews::text AS pending_reviews
+FROM tasks WHERE id = $1 FOR UPDATE;
+
+-- name: SetReviewUnits :exec
+UPDATE tasks SET review_payload = $2, pending_reviews = CAST(CAST(sqlc.arg(pending_reviews) AS text) AS jsonb), updated_at = now()
+WHERE id = $1;
 
 -- name: SetReviewCursors :execrows
 UPDATE tasks SET review_cursor = $2, watch_comment_id = $3, updated_at = now()

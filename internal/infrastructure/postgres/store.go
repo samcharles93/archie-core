@@ -3,8 +3,10 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -379,18 +381,79 @@ func (s *Store) BeginRemediation(ctx context.Context, taskID int64, payload stri
 	return tx.Commit(ctx)
 }
 
-// UpdateReviewPayload replaces a queued remediation's review unit.
+// UpdateReviewPayload merges payload's comments into the not-yet-claimed unit
+// for the same review: the active unit while the remediation is still queued,
+// or a unit waiting in pending_reviews behind a running one. A unit already
+// claimed is frozen, so a comment for it is ErrStaleTransition.
 func (s *Store) UpdateReviewPayload(ctx context.Context, taskID int64, payload string) error {
-	n, err := s.queries().UpdateReviewPayloadTask(ctx, postgresdb.UpdateReviewPayloadTaskParams{
-		ID: taskID, ReviewPayload: clip(payload, 4000),
-	})
+	incoming, err := workflow.DecodeReviewUnit(payload)
 	if err != nil {
 		return err
 	}
-	if n == 0 {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := postgresdb.New(tx)
+	row, err := q.LockReviewUnits(ctx, taskID)
+	if errors.Is(err, pgx.ErrNoRows) {
 		return storecontract.ErrStaleTransition
 	}
-	return nil
+	if err != nil {
+		return err
+	}
+	if row.Workflow != "remediate" {
+		return storecontract.ErrStaleTransition
+	}
+	var pending []string
+	if err := json.Unmarshal([]byte(row.PendingReviews), &pending); err != nil {
+		return fmt.Errorf("decode pending reviews: %w", err)
+	}
+	active := row.ReviewPayload
+	merged := false
+	if row.Status == workflow.StatusQueued {
+		active, merged = mergeReviewComments(active, incoming)
+	}
+	for i := range pending {
+		if merged {
+			break
+		}
+		pending[i], merged = mergeReviewComments(pending[i], incoming)
+	}
+	if !merged {
+		return storecontract.ErrStaleTransition
+	}
+	encoded, err := json.Marshal(pending)
+	if err != nil {
+		return err
+	}
+	if err := q.SetReviewUnits(ctx, postgresdb.SetReviewUnitsParams{
+		ID: taskID, ReviewPayload: clip(active, 4000), PendingReviews: string(encoded),
+	}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// mergeReviewComments adds incoming's comments to the unit encoded in payload
+// when both are the same review, skipping comments it already holds. It
+// reports whether payload was that review's unit.
+func mergeReviewComments(payload string, incoming workflow.ReviewUnit) (string, bool) {
+	unit, err := workflow.DecodeReviewUnit(payload)
+	if err != nil || unit.ReviewID != incoming.ReviewID {
+		return payload, false
+	}
+	for _, c := range incoming.Comments {
+		if !slices.ContainsFunc(unit.Comments, func(e workflow.ReviewUnitComment) bool { return e.CommentID == c.CommentID }) {
+			unit.Comments = append(unit.Comments, c)
+		}
+	}
+	encoded, err := workflow.EncodeReviewUnit(unit)
+	if err != nil {
+		return payload, false
+	}
+	return encoded, true
 }
 
 // SetReviewCursors persists the poll backstop's per-task review and comment

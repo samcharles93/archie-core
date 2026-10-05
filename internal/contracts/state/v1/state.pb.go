@@ -5566,6 +5566,8 @@ func (*BeginRemediationResponse) Descriptor() ([]byte, []int) {
 	return file_state_v1_state_proto_rawDescGZIP(), []int{86}
 }
 
+// UpdateReviewPayloadRequest merges payload's comments into the unclaimed
+// review unit with the same review id, active or pending.
 type UpdateReviewPayloadRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TaskId        int64                  `protobuf:"varint,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`

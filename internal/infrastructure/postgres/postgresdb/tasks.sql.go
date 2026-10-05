@@ -581,6 +581,32 @@ func (q *Queries) ListTaskSummaries(ctx context.Context, arg ListTaskSummariesPa
 	return items, nil
 }
 
+const lockReviewUnits = `-- name: LockReviewUnits :one
+SELECT status, workflow, review_payload, pending_reviews::text AS pending_reviews
+FROM tasks WHERE id = $1 FOR UPDATE
+`
+
+type LockReviewUnitsRow struct {
+	Status         string
+	Workflow       string
+	ReviewPayload  string
+	PendingReviews string
+}
+
+// The remediation's review units, locked so a comment merge cannot race the
+// claim that freezes the active unit or the promotion of a pending one.
+func (q *Queries) LockReviewUnits(ctx context.Context, id int64) (LockReviewUnitsRow, error) {
+	row := q.db.QueryRow(ctx, lockReviewUnits, id)
+	var i LockReviewUnitsRow
+	err := row.Scan(
+		&i.Status,
+		&i.Workflow,
+		&i.ReviewPayload,
+		&i.PendingReviews,
+	)
+	return i, err
+}
+
 const lockTaskStatus = `-- name: LockTaskStatus :one
 SELECT status FROM tasks WHERE id = $1 FOR UPDATE
 `
@@ -776,6 +802,22 @@ func (q *Queries) SetReviewCursors(ctx context.Context, arg SetReviewCursorsPara
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const setReviewUnits = `-- name: SetReviewUnits :exec
+UPDATE tasks SET review_payload = $2, pending_reviews = CAST(CAST($3 AS text) AS jsonb), updated_at = now()
+WHERE id = $1
+`
+
+type SetReviewUnitsParams struct {
+	ID             int64
+	ReviewPayload  string
+	PendingReviews string
+}
+
+func (q *Queries) SetReviewUnits(ctx context.Context, arg SetReviewUnitsParams) error {
+	_, err := q.db.Exec(ctx, setReviewUnits, arg.ID, arg.ReviewPayload, arg.PendingReviews)
+	return err
 }
 
 const stampTaskBinding = `-- name: StampTaskBinding :exec
@@ -1009,24 +1051,6 @@ func (q *Queries) TransitionTask(ctx context.Context, arg TransitionTaskParams) 
 		arg.ParkClass,
 		arg.Status_2,
 	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const updateReviewPayloadTask = `-- name: UpdateReviewPayloadTask :execrows
-UPDATE tasks SET review_payload = $2, updated_at = now()
-WHERE id = $1 AND status = 'queued' AND workflow = 'remediate'
-`
-
-type UpdateReviewPayloadTaskParams struct {
-	ID            int64
-	ReviewPayload string
-}
-
-func (q *Queries) UpdateReviewPayloadTask(ctx context.Context, arg UpdateReviewPayloadTaskParams) (int64, error) {
-	result, err := q.db.Exec(ctx, updateReviewPayloadTask, arg.ID, arg.ReviewPayload)
 	if err != nil {
 		return 0, err
 	}

@@ -29,10 +29,20 @@ func TestSecondReviewDuringRemediationIsQueued(t *testing.T) {
 	}
 	assertActiveReview(t, db, id, first)
 
+	// An inline comment on the waiting review is collected into its queued
+	// unit rather than dropped, and travels with it when it is promoted.
+	comment := workflow.ReviewUnitComment{CommentID: 5, Path: "main.go", Line: 3, Body: "rename this"}
+	if err := db.UpdateReviewPayload(ctx, id, reviewUnitWith(t, 22, comment)); err != nil {
+		t.Fatalf("comment on the queued review was refused: %v", err)
+	}
+	if err := db.UpdateReviewPayload(ctx, id, reviewUnitWith(t, 22, comment)); err != nil {
+		t.Fatalf("re-delivered comment was refused: %v", err)
+	}
+
 	// The first round runs and finishes; the second, still waiting, is
-	// promoted behind it.
+	// promoted behind it with its comment.
 	runRemediationRound(t, db, id)
-	assertActiveReview(t, db, id, second)
+	assertActiveReview(t, db, id, withComment(t, second, comment))
 
 	// The second round runs and finds nothing left waiting.
 	runRemediationRound(t, db, id)
@@ -103,4 +113,27 @@ func reviewUnit(t *testing.T, reviewID int64) string {
 		t.Fatal(err)
 	}
 	return payload
+}
+
+func reviewUnitWith(t *testing.T, reviewID int64, comment workflow.ReviewUnitComment) string {
+	t.Helper()
+	payload, err := workflow.EncodeReviewUnit(workflow.ReviewUnit{ReviewID: reviewID, Comments: []workflow.ReviewUnitComment{comment}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return payload
+}
+
+func withComment(t *testing.T, payload string, comment workflow.ReviewUnitComment) string {
+	t.Helper()
+	unit, err := workflow.DecodeReviewUnit(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unit.Comments = append(unit.Comments, comment)
+	encoded, err := workflow.EncodeReviewUnit(unit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded
 }
