@@ -19,13 +19,21 @@ const updateResultSentinel = "ARCHIE_UPDATE_RESULT "
 // CommandCatalog reads a Snapshot JSON document from an explicitly configured
 // argv command. It never invokes a shell; deployment tooling remains an
 // administrator-owned adapter.
-type CommandCatalog struct{ Command []string }
+type CommandCatalog struct {
+	Command        []string
+	ReleaseChannel string
+	Pin            string
+}
 
 func (c CommandCatalog) Check(ctx context.Context) (Snapshot, error) {
 	if len(c.Command) == 0 {
 		return Snapshot{}, fmt.Errorf("update check command is empty")
 	}
-	output, err := exec.CommandContext(ctx, c.Command[0], c.Command[1:]...).Output()
+	cmd := exec.CommandContext(ctx, c.Command[0], c.Command[1:]...)
+	if c.ReleaseChannel != "" {
+		cmd.Env = append(cmd.Environ(), "ARCHIE_UPDATE_RELEASE_CHANNEL="+c.ReleaseChannel, "ARCHIE_UPDATE_PIN="+c.Pin)
+	}
+	output, err := cmd.Output()
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("run update check: %w", err)
 	}

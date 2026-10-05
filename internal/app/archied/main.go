@@ -123,6 +123,13 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 		return 0
 	}
 
+	if recovering, err := resumeUpdate(context.Background()); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	} else if recovering {
+		return 0
+	}
+
 	root, cancelRoot := context.WithCancel(context.Background())
 	ctx, stop := signal.NotifyContext(root, os.Interrupt, syscall.SIGTERM)
 	defer stop()

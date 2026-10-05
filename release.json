@@ -1,0 +1,6 @@
+{
+  "required_topology": {
+    "units": ["archie-state-store", "archie-gateway", "archie-ui", "archie-messaging", "archied"],
+    "config_sections": ["services.state", "services.gateway"]
+  }
+}

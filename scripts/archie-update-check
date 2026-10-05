@@ -46,7 +46,7 @@ readonly CURL_TIMEOUT="${ARCHIE_FORGE_TIMEOUT:-20}"
 readonly TOKEN="${ARCHIE_FORGE_TOKEN:-}"
 
 # base 1.7.0-4-g0736708 -> 1.7.0
-base() { printf '%s\n' "${1%%-*}"; }
+base() { printf '%s\n' "$1" | sed -E 's/-[0-9]+-g[0-9a-f]+$//'; }
 
 # installed_for reads the version this binary reports for a named component.
 # archied stamps both its own version and the runtime version the release was
@@ -72,35 +72,33 @@ curl_api() {
   fi
 }
 
-# newest_tag_git resolves the newest tag for a component prefix from the git
-# remote. No local checkout, no working-tree state, no fetch -- `ls-remote`
-# queries the remote directly, so this works on a host that has never cloned
-# anything.
+RELEASE_CHANNEL="${ARCHIE_UPDATE_RELEASE_CHANNEL:-stable}"
+PIN="${ARCHIE_UPDATE_PIN:-}"
+while [ "$#" -gt 0 ]; do
+ case "$1" in
+  --channel) RELEASE_CHANNEL="$2"; shift 2 ;;
+  --pin) PIN="$2"; shift 2 ;;
+  *) echo "unknown option: $1" >&2; exit 1 ;;
+ esac
+done
+select_release() { "$BIN" select-release -channel "$RELEASE_CHANNEL" -pin "$PIN"; }
 newest_tag_git() {
-  local component="$1" tags
-  command -v git >/dev/null 2>&1 || return 1
-  tags="$(git ls-remote --tags --refs "$SOURCE_URL" "$component/v*" 2>/dev/null)" || return 1
-  [ -n "$tags" ] || return 1
-  printf '%s\n' "$tags" | sed 's|.*refs/tags/||' | sed "s|^$component/v||" | sort -V | tail -1
+ local tags
+ tags="$(git ls-remote --tags --refs "$SOURCE_URL" 'archied/v*' 'v*' 2>/dev/null)" || return 1
+ printf '%s\n' "$tags" | awk '{print $2}' | select_release
 }
-
-# newest_tag_api is the API equivalent, used when git is unavailable.
 newest_tag_api() {
-  local component="$1" page payload found total
-  for page in 1 2 3; do
-    payload="$(curl_api "${API_BASE}/repos/${REPO_SLUG}/tags?per_page=100&page=${page}")" || return 1
-    [ -n "$payload" ] || return 1
-    found="$(printf '%s\n' "$payload" \
-      | grep -o "\"name\":[[:space:]]*\"${component}/v[^\"]*\"" \
-      | sed 's|.*"'"${component}"'/v||; s|"$||' | sort -V | tail -1)"
-    if [ -n "$found" ]; then
-      printf '%s\n' "$found"
-      return 0
-    fi
-    total="$(printf '%s\n' "$payload" | grep -c '"name"')"
-    [ "${total:-0}" -lt 100 ] && break
-  done
-  return 1
+ local page payload tags=""
+ for page in $(seq 1 100); do
+  payload="$(curl_api "${API_BASE}/repos/${REPO_SLUG}/tags?per_page=100&page=${page}")" || return 1
+  tags+="$(jq -er '.[].name' <<< "$payload")"$'\n'
+  if [ "$(jq 'length' <<< "$payload")" -lt 100 ]; then
+   printf '%s' "$tags" | select_release
+   return $?
+  fi
+ done
+ echo "tag catalog exceeded pagination limit" >&2
+ return 1
 }
 
 # artifact_state reports whether a tagged release is PUBLISHED with assets,

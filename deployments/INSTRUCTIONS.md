@@ -86,3 +86,45 @@ only `archied` and `archie-agent` are independently versioned).
 carries the Telegram, email and webhook channels since the v1.30.0 extraction, so
 an install (or an upgrade across v1.30.0) needs its unit as well -- see
 `deployments/systemd-user-service.md`.
+
+### Native self-update
+
+`archie-update-install` downloads the approved release's Linux/amd64 archive
+and verifies its `SHA256SUMS` entry before executing or installing it. Releases
+must include `release.json`, all host binaries, and the three updater scripts.
+Older releases without this contract cannot be installed through the artifact
+path. `--from-source` (or `ARCHIE_UPDATE_SOURCE_BUILD=1`) explicitly clones and
+builds the selected release instead.
+
+The update check command accepts `--channel stable` (default), `--channel next`
+(includes prereleases), or `--channel exact-pin --pin 1.2.3`. Set these arguments
+in the control plane's channel settings alongside the existing check command.
+The notification destination remains separate from the release channel.
+
+For scheduled, unattended runs, `archie-update-install --auto` discovers the
+selected release and refuses if the daemon reports work in flight. It checks
+again immediately before promotion. A scheduler can set
+`ARCHIE_UPDATE_RELEASE_CHANNEL` and `ARCHIE_UPDATE_PIN`; nothing schedules updates
+by default. All services stop through their ordinary graceful shutdown path.
+
+`release.json` supplies the service order and required config sections to both
+first-install and self-update. A missing unit or config section produces an
+ordered migration plan and refuses installation. Apply that plan before retrying.
+Automatic topology edits are intentionally unsupported.
+
+The watchdog switches staged executables by rename, restarts services, and
+requires the candidate daemon's existing readiness registry to remain healthy
+for 120 seconds. Agent images come from the release manifest by digest. The
+image switch updates the control-plane policy, preserving other settings;
+rollback restores the prior image policy with conflict detection. Source builds
+use the built image's immutable image ID.
+
+Transactions live in `${XDG_STATE_HOME:-~/.local/state}/archie/update`, outside
+the binary directory. `phase`, `environment`, `image.json` (when applicable),
+and `previous/` describe the transaction. A lock reports the owning process.
+On daemon boot, an interrupted transaction schedules independent recovery before
+normal startup. To recover manually, run `transaction/watchdog --recover` from
+that state directory. A failed recovery keeps the journal for another attempt.
+
+Database snapshots remain available for manual recovery. Schema migrations and
+PostgreSQL data are never automatically reversed.

@@ -16,34 +16,8 @@ BIN_DIR="${ARCHIE_BIN_DIR:-$HOME/.local/bin}"
 CONFIG_PATH="${ARCHIE_CONFIG_PATH:-${XDG_CONFIG_HOME:-$HOME/.config}/archie/config.toml}"
 export PATH="/usr/local/go/bin:$PATH"
 
-configured_agent_image() {
-  local image
-  image="$(awk '
-    /^\[containers\][[:space:]]*(#.*)?$/ { in_containers = 1; next }
-    /^\[/ { in_containers = 0 }
-    in_containers && /^[[:space:]]*image[[:space:]]*=/ {
-      value = $0
-      sub(/^[[:space:]]*image[[:space:]]*=[[:space:]]*/, "", value)
-      sub(/[[:space:]]*(#.*)?$/, "", value)
-      if (value ~ /^".*"$/) {
-        sub(/^"/, "", value)
-        sub(/"$/, "", value)
-        print value
-      } else if (length(value) >= 2 && substr(value, 1, 1) == sprintf("%c", 39) && substr(value, length(value), 1) == sprintf("%c", 39)) {
-        print substr(value, 2, length(value) - 2)
-      }
-      exit
-    }
-  ' "$CONFIG_PATH" 2>/dev/null || true)"
-  printf '%s' "$image"
-}
-
-AGENT_IMAGE="${ARCHIE_AGENT_IMAGE:-$(configured_agent_image)}"
-AGENT_IMAGE="${AGENT_IMAGE:-ghcr.io/samcharles93/archie-agent:latest}"
-AGENT_IMAGE_BACKUP="$BIN_DIR/archie-agent-image.prev.tar"
 # State for the managed image, independent of archied's daemon build stamp.
 AGENT_VERSION_FILE="${ARCHIE_AGENT_VERSION_FILE:-$BIN_DIR/archie-agent.version}"
-AGENT_VERSION_BACKUP="${ARCHIE_AGENT_VERSION_BACKUP:-$BIN_DIR/archie-agent.version.prev}"
 DB_SNAPSHOT="${ARCHIE_DB_SNAPSHOT:-$BIN_DIR/archie-db.pre-update.dump}"
 # The address the daemon dials for its state, so the watchdog can wait for it to
 # accept connections before it starts archied. Read with a narrow awk: the
@@ -67,8 +41,26 @@ configured_state_store_target() {
 
 STATE_STORE_TARGET="${ARCHIE_UPDATE_STATE_STORE_TARGET:-$(configured_state_store_target)}"
 
-GATEWAY_SERVICES="archie-state-store archie-gateway archied archie-ui archie-messaging"
+GATEWAY_SERVICES="archie-state-store archie-gateway archie-ui archie-messaging archied"
 GATEWAY_BINARIES="$GATEWAY_SERVICES"
+
+SOURCE_BUILD="${ARCHIE_UPDATE_SOURCE_BUILD:-0}"
+AUTO=0
+for arg in "$@"; do
+  case "$arg" in
+    --from-source) SOURCE_BUILD=1 ;;
+    --auto) AUTO=1 ;;
+    *) echo "unknown option: $arg" >&2; exit 1 ;;
+  esac
+done
+
+if [ "$AUTO" = 1 ] && [ -z "${ARCHIE_UPDATE_DAEMON_VERSION:-}${ARCHIE_UPDATE_AGENT_VERSION:-}" ]; then
+ snapshot="$("$(dirname "$0")/archie-update-check")"
+ export ARCHIE_UPDATE_DAEMON_PREVIOUS="$(jq -r '.Components[] | select(.ID == "daemon") | .Installed' <<< "$snapshot")"
+ export ARCHIE_UPDATE_DAEMON_VERSION="$(jq -r '.Components[] | select(.ID == "daemon") | .Available' <<< "$snapshot")"
+ export ARCHIE_UPDATE_AGENT_PREVIOUS="$(jq -r '.Components[] | select(.ID == "agent") | .Installed' <<< "$snapshot")"
+ export ARCHIE_UPDATE_AGENT_VERSION="$(jq -r '.Components[] | select(.ID == "agent") | .Available' <<< "$snapshot")"
+fi
 
 PREV_GW="${ARCHIE_UPDATE_DAEMON_PREVIOUS:-}"
 PREV_RT="${ARCHIE_UPDATE_AGENT_PREVIOUS:-}"
@@ -132,146 +124,138 @@ for target in "$GW_TARGET" "$RT_TARGET"; do
   fi
 done
 
+STATE_DIR="${ARCHIE_UPDATE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/archie/update}"
+mkdir -p "$STATE_DIR"
+chmod 700 "$STATE_DIR"
+exec 9>"$STATE_DIR/lock"
+if ! flock -n 9; then
+  echo "update locked by $(cat "$STATE_DIR/holder" 2>/dev/null); journal: $STATE_DIR/transaction" >&2
+  exit 1
+fi
+printf 'installer PID %s\n' "$$" > "$STATE_DIR/holder"
+if [ -d "$STATE_DIR/transaction" ]; then
+  echo "unfinished update: run $STATE_DIR/transaction/watchdog --recover before retrying" >&2
+  exit 1
+fi
+
 tmp="$(mktemp -d)"
-source_dir="$tmp/source"
 trap 'rm -rf "$tmp"' EXIT
-
-echo "==> fetching approved component releases"
-
-git clone --quiet --filter=blob:none --no-checkout "$SOURCE_URL" "$source_dir"
-git -C "$source_dir" fetch --quiet --tags origin
-
-gw_commit=""
-rt_commit=""
-if [[ ",$components," == *,daemon,* ]]; then
-  gw_commit="$(git -C "$source_dir" rev-parse --verify "refs/tags/archied/v$GW^{commit}")"
+source_dir="$tmp/source"
+release_dir="$tmp/release"
+mkdir -p "$release_dir"
+release_version="${GW_TARGET:-$RT_TARGET}"
+if [ -n "$GW_TARGET" ] && [ -n "$RT_TARGET" ] && [ "$GW_TARGET" != "$RT_TARGET" ]; then
+  echo "daemon and agent must name the same release" >&2; exit 1
 fi
+if [ "$SOURCE_BUILD" = 1 ]; then
+  tag="v$release_version"
+  git ls-remote --exit-code --tags "$SOURCE_URL" "refs/tags/$tag" >/dev/null || tag="archied/v$release_version"
+  git clone --quiet --depth=1 --branch "$tag" "$SOURCE_URL" "$source_dir"
+  cp "$source_dir/release.json" "$release_dir/"
+  GATEWAY_BINARIES="$(jq -er '.required_topology.units | join(" ")' "$release_dir/release.json")"
+  cp "$source_dir"/scripts/archie-update-* "$release_dir/"
+  if [[ ",$components," == *,daemon,* ]]; then
+    for cmd in $GATEWAY_BINARIES; do
+      [[ "$cmd" =~ ^archie[a-z0-9-]*$ ]] || { echo "invalid release unit: $cmd" >&2; exit 1; }
+      (cd "$source_dir" && go build -ldflags "-X github.com/samcharles93/archie-core/internal/installtype.buildType=binary -X github.com/samcharles93/archie-core/internal/buildinfo.Version=$GW -X github.com/samcharles93/archie-core/internal/buildinfo.Runtime=$RT" -o "$release_dir/$cmd" "./cmd/$cmd")
+    done
+  fi
+else
+  case "$(uname -s)/$(uname -m)" in
+    Linux/x86_64) platform=linux-amd64 ;;
+    *) echo "no published artifact for $(uname -s)/$(uname -m)" >&2; exit 1 ;;
+  esac
+  name="archie-core-archied-v$release_version-$platform"
+  base="${ARCHIE_RELEASE_BASE_URL:-https://github.com/samcharles93/archie-core/releases/download}/v$release_version"
+  if ! curl -fLSs --max-time 300 "$base/$name.zip" -o "$tmp/$name.zip"; then
+    base="${ARCHIE_RELEASE_BASE_URL:-https://github.com/samcharles93/archie-core/releases/download}/archied/v$release_version"
+    curl -fLSs --max-time 300 "$base/$name.zip" -o "$tmp/$name.zip"
+  fi
+  curl -fLSs --max-time 60 "$base/SHA256SUMS" -o "$tmp/SHA256SUMS"
+  expected="$(awk -v name="$name.zip" '$2 == name {print $1}' "$tmp/SHA256SUMS")"
+  [[ "$expected" =~ ^[a-fA-F0-9]{64}$ ]] || { echo "missing or ambiguous archive checksum" >&2; exit 1; }
+  printf '%s  %s\n' "$expected" "$tmp/$name.zip" | sha256sum --check --status || { echo "release checksum mismatch" >&2; exit 1; }
+  # Reject paths outside the single distribution directory before extracting.
+  while IFS= read -r entry; do
+    case "$entry" in "$name/"*) ;; *) echo "unsafe archive path: $entry" >&2; exit 1 ;; esac
+    case "/$entry/" in */../*|*/./*|*\\*) echo "unsafe archive path: $entry" >&2; exit 1 ;; esac
+  done < <(unzip -Z1 "$tmp/$name.zip")
+  if unzip -Z -l "$tmp/$name.zip" | awk '$1 ~ /^l/ {found=1} END {exit !found}'; then
+    echo "release contains symlinks" >&2; exit 1
+  fi
+  unzip -q "$tmp/$name.zip" -d "$tmp/unpacked"
+  if find "$tmp/unpacked" -type l | grep -q .; then echo "release contains symlinks" >&2; exit 1; fi
+  cp -a "$tmp/unpacked/$name/." "$release_dir/"
+fi
+
+# Observation and config parsing belong to the daemon, including on old hosts.
+observer="$release_dir/archied"
+[ -x "$observer" ] || observer="$BIN_DIR/archied"
+"$observer" update-topology -config "$CONFIG_PATH" -release "$release_dir/release.json"
+GATEWAY_SERVICES="$(jq -er '.required_topology.units | join(" ")' "$release_dir/release.json")"
+GATEWAY_BINARIES="$GATEWAY_SERVICES"
+
 if [[ ",$components," == *,agent,* ]]; then
-  rt_commit="$(git -C "$source_dir" rev-parse --verify "refs/tags/archied/v$RT^{commit}")"
-fi
-build_commit="$gw_commit"
-[ -n "$build_commit" ] || build_commit="$rt_commit"
-git -C "$source_dir" checkout --quiet --detach "$build_commit"
-cd "$source_dir"
-
-if [[ ",$components," == *,daemon,* ]]; then
-  missing_units=""
-  for svc in $GATEWAY_SERVICES; do
-    [ -d "$source_dir/cmd/$svc" ] || continue
-    if ! systemctl --user list-unit-files "$svc.service" --no-legend 2>/dev/null | grep -q .; then
-      missing_units="${missing_units:+$missing_units }$svc.service"
-    fi
-  done
-  if [ -n "$missing_units" ]; then
-    echo "refusing to install archied $GW: it runs as separate processes and this host has no unit for: $missing_units" >&2
-    echo "create them from deployments/systemd-user-service.md, then retry the update" >&2
-    exit 1
-  fi
-
-  unmanaged_units=""
-  for dir in "$source_dir"/cmd/*/; do
-    [ -d "$dir" ] || continue
-    svc="$(basename "$dir")"
-    case " $GATEWAY_SERVICES " in
-      *" $svc "*) continue ;;
-    esac
-    if systemctl --user list-unit-files "$svc.service" --no-legend 2>/dev/null | grep -q .; then
-      unmanaged_units="${unmanaged_units:+$unmanaged_units }$svc.service"
-    fi
-  done
-  if [ -n "$unmanaged_units" ]; then
-    echo "refusing to install archied $GW: this host runs units the update does not manage: $unmanaged_units" >&2
-    echo "a current install.sh writes units for: $GATEWAY_SERVICES. If the installed updater predates this release, replace $BIN_DIR/archie-update-install with scripts/archie-update-install from archied/v$GW; otherwise remove the extra unit, or add it to GATEWAY_SERVICES if this host is meant to run it." >&2
-    exit 1
+  if [ "$SOURCE_BUILD" = 1 ]; then
+    docker build --build-arg "RUNTIME_VERSION=$RT" --iidfile "$tmp/image-id" "$source_dir"
+    AGENT_IMAGE="$(cat "$tmp/image-id")"
+  else
+    AGENT_IMAGE="$(jq -er '.agent_image' "$release_dir/release.json")"
+    [[ "$AGENT_IMAGE" =~ @sha256:[a-f0-9]{64}$ ]] || { echo "refusing agent update: release has no digest-pinned image" >&2; exit 1; }
+    docker pull "$AGENT_IMAGE"
   fi
 fi
-
-if [[ ",$components," == *,daemon,* ]]; then
-  echo "==> snapshotting the database before the update migrates it"
-  mkdir -p "$(dirname "$DB_SNAPSHOT")"
-  if ! go run ./cmd/archie-state-store backup -config "$CONFIG_PATH" -out "$DB_SNAPSHOT"; then
-    echo "refusing to install $GW: could not snapshot the database named by $CONFIG_PATH, so a failed migration could not be recovered" >&2
-    exit 1
-  fi
+if [ "$AUTO" = 1 ]; then
+  status="$(curl -fsS --max-time 10 "${ARCHIE_HEALTH_URL:-http://127.0.0.1:8485}/health/detailed")"
+  [ "$(jq -r '.in_flight' <<< "$status")" = 0 ] || { echo "refusing auto-update: daemon has work in flight or cannot report it" >&2; exit 1; }
 fi
-
-install -m755 "$source_dir/scripts/archie-update-install" "$BIN_DIR/archie-update-install"
-install -m755 "$source_dir/scripts/archie-update-watchdog" "$BIN_DIR/archie-update-watchdog"
-install -m755 "$source_dir/scripts/archie-update-check" "$BIN_DIR/archie-update-check"
 
 built=""
 if [[ ",$components," == *,daemon,* ]]; then
-  ldflags="-X github.com/samcharles93/archie-core/internal/installtype.buildType=binary"
-  ldflags="$ldflags -X github.com/samcharles93/archie-core/internal/buildinfo.Version=$GW"
-  ldflags="$ldflags -X github.com/samcharles93/archie-core/internal/buildinfo.Runtime=$RT"
   for cmd in $GATEWAY_BINARIES; do
-    [ -d "./cmd/$cmd" ] || continue
-    echo "==> building $cmd $GW"
-    go build -ldflags "$ldflags" -o "$tmp/$cmd" "./cmd/$cmd"
-    built="${built:+$built }$cmd"
+    reported="$("$release_dir/$cmd" -version | awk -v cmd="$cmd" '$1 == cmd {print $2; exit}')"
+    [ "$reported" = "$GW" ] || { echo "candidate $cmd reports $reported, expected $GW" >&2; exit 1; }
   done
-
-  echo "==> backing up current binaries"
-  for cmd in $built; do
-    if [ -f "$BIN_DIR/$cmd" ]; then
-      cp -f "$BIN_DIR/$cmd" "$BIN_DIR/$cmd.prev"
-    else
-      rm -f "$BIN_DIR/$cmd.prev"
-    fi
-  done
-  echo "==> installing $built"
-  for cmd in $built; do
-    install -m755 "$tmp/$cmd" "$BIN_DIR/$cmd"
-  done
-
-  if ! verify_installed_versions "$GW"; then
-    exit 1
-  fi
+  mkdir -p "$(dirname "$DB_SNAPSHOT")"
+  "$BIN_DIR/archie-state-store" backup -config "$CONFIG_PATH" -out "$DB_SNAPSHOT"
+  built="$GATEWAY_BINARIES archie-update-install archie-update-watchdog archie-update-check"
 fi
+
+# Freeze recovery code and every prior file before publishing the intent.
+journal="$STATE_DIR/preparing"
+rm -rf "$journal"
+mkdir -p "$journal/previous"
+cp "$release_dir/archie-update-watchdog" "$journal/watchdog"
+cp "$observer" "$journal/helper"
 if [[ ",$components," == *,agent,* ]]; then
-  git checkout --quiet --detach "$rt_commit"
-  echo "==> saving managed worker image $AGENT_IMAGE for rollback"
-  docker image save --output "$AGENT_IMAGE_BACKUP" "$AGENT_IMAGE"
-  if [ -f "$AGENT_VERSION_FILE" ]; then
-    cp -f "$AGENT_VERSION_FILE" "$AGENT_VERSION_BACKUP"
-    AGENT_VERSION_PREVIOUS_EXISTS=1
-  else
-    rm -f "$AGENT_VERSION_BACKUP"
-    AGENT_VERSION_PREVIOUS_EXISTS=0
-  fi
-  echo "==> rebuilding managed worker image $AGENT_IMAGE for runtime $RT"
-  docker build --build-arg "RUNTIME_VERSION=$RT" --tag "$AGENT_IMAGE" .
-  version_tmp="$(mktemp "$AGENT_VERSION_FILE.tmp.XXXXXX")"
-  printf '%s\n' "$RT" > "$version_tmp"
-  chmod 600 "$version_tmp"
-  mv -f "$version_tmp" "$AGENT_VERSION_FILE"
+ "$journal/helper" update-image -config "$CONFIG_PATH" -journal "$journal" -prepare "$AGENT_IMAGE"
 fi
-
-echo "==> handing off to the update watchdog for restart and health verification"
+chmod 700 "$journal/watchdog"
+for cmd in $built; do
+  if [ -f "$BIN_DIR/$cmd" ]; then cp -p "$BIN_DIR/$cmd" "$journal/previous/$cmd"; fi
+  install -m755 "$release_dir/$cmd" "$BIN_DIR/.$cmd.new"
+done
+if [ -f "$AGENT_VERSION_FILE" ]; then cp -p "$AGENT_VERSION_FILE" "$journal/agent.version"; fi
+# No unit/config changes are made: topology migration is explicitly refused.
+export ARCHIE_UPDATE_AUTO="$AUTO"
+export ARCHIE_UPDATE_STATE_DIR="$STATE_DIR"
+export ARCHIE_BIN_DIR="$BIN_DIR" ARCHIE_CONFIG_PATH="$CONFIG_PATH"
+export ARCHIE_UPDATE_COMPONENTS="$components" ARCHIE_UPDATE_UNITS="$GATEWAY_SERVICES" ARCHIE_UPDATE_BINARIES="$built"
+export ARCHIE_UPDATE_PREVIOUS_GATEWAY="$PREV_GW" ARCHIE_UPDATE_PREVIOUS_RUNTIME="$PREV_RT"
+export ARCHIE_UPDATE_INSTALLED_GATEWAY="$GW" ARCHIE_UPDATE_INSTALLED_RUNTIME="$RT"
+export ARCHIE_AGENT_VERSION_FILE="$AGENT_VERSION_FILE" ARCHIE_DB_SNAPSHOT="$DB_SNAPSHOT"
+export ARCHIE_UPDATE_STATE_STORE_TARGET="$STATE_STORE_TARGET"
+# Bash's quoted declarations preserve spaces without interpreting journal values.
+while IFS= read -r var; do declare -p "$var"; done < <(compgen -e | grep -E '^ARCHIE_(UPDATE_|BIN_DIR$|CONFIG_PATH$|HEALTH_URL$|AGENT_VERSION_FILE$|DB_SNAPSHOT$)') > "$journal/environment"
+printf 'prepared\n' > "$journal/phase"
+sync -f "$BIN_DIR"
+sync -f "$journal"
+mv "$journal" "$STATE_DIR/transaction"
+sync -f "$STATE_DIR"
+journal="$STATE_DIR/transaction"
+# The independent watchdog holds the lock and owns promotion, restart and rollback.
 systemd-run --user --unit=archied-update-restart --collect --quiet \
-  --setenv=ARCHIE_BIN_DIR="$BIN_DIR" \
-  --setenv=ARCHIE_HEALTH_URL="${ARCHIE_HEALTH_URL:-}" \
-  --setenv=ARCHIE_UPDATE_REPORT_PATH="${ARCHIE_UPDATE_REPORT_PATH:-}" \
-  --setenv=ARCHIE_UPDATE_CHANNEL="${ARCHIE_UPDATE_CHANNEL:-}" \
-  --setenv=ARCHIE_UPDATE_CHAT_ID="${ARCHIE_UPDATE_CHAT_ID:-0}" \
-  --setenv=ARCHIE_UPDATE_THREAD_ID="${ARCHIE_UPDATE_THREAD_ID:-0}" \
-  --setenv=ARCHIE_UPDATE_COMPONENTS="$components" \
-  --setenv=ARCHIE_UPDATE_UNITS="$GATEWAY_SERVICES" \
-  --setenv=ARCHIE_UPDATE_BINARIES="$built" \
-  --setenv=ARCHIE_UPDATE_PREVIOUS_GATEWAY="$PREV_GW" \
-  --setenv=ARCHIE_UPDATE_PREVIOUS_RUNTIME="$PREV_RT" \
-  --setenv=ARCHIE_UPDATE_INSTALLED_GATEWAY="$GW" \
-  --setenv=ARCHIE_UPDATE_INSTALLED_RUNTIME="$RT" \
-  --setenv=ARCHIE_AGENT_IMAGE="$AGENT_IMAGE" \
-  --setenv=ARCHIE_AGENT_IMAGE_BACKUP="$AGENT_IMAGE_BACKUP" \
-  --setenv=ARCHIE_AGENT_VERSION_FILE="$AGENT_VERSION_FILE" \
-  --setenv=ARCHIE_AGENT_VERSION_BACKUP="$AGENT_VERSION_BACKUP" \
-  --setenv=ARCHIE_AGENT_VERSION_PREVIOUS_EXISTS="${AGENT_VERSION_PREVIOUS_EXISTS:-0}" \
-  --setenv=ARCHIE_DB_SNAPSHOT="$DB_SNAPSHOT" \
-  --setenv=ARCHIE_CONFIG_PATH="$CONFIG_PATH" \
-  --setenv=ARCHIE_UPDATE_STATE_STORE_TARGET="$STATE_STORE_TARGET" \
-  "$BIN_DIR/archie-update-watchdog"
-
+  --setenv=ARCHIE_UPDATE_STATE_DIR="$STATE_DIR" "$journal/watchdog"
 case "$components" in
   daemon)
     previous="{\"daemon\":\"$(json_escape "$PREV_GW")\"}"

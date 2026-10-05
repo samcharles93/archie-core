@@ -16,6 +16,15 @@ func main() {
 	if archied.IsSetupArgs(args) {
 		os.Exit(archied.RunSetup(args[1:], os.Stdin, os.Stdout, os.Stderr))
 	}
+	if len(args) > 0 && args[0] == "select-release" {
+		os.Exit(archied.RunReleaseChannel(args[1:], os.Stdin, os.Stdout, os.Stderr))
+	}
+	if len(args) > 0 && args[0] == "update-image" {
+		os.Exit(archied.RunUpdateImage(args[1:], os.Stderr))
+	}
+	if len(args) > 0 && args[0] == "update-topology" {
+		os.Exit(archied.RunUpdateTopology(args[1:], os.Stdout, os.Stderr))
+	}
 	if len(args) > 0 && args[0] == "status" {
 		os.Exit(archied.RunStatus(args[1:], os.Stdout, os.Stderr))
 	}

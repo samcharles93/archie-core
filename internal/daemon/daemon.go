@@ -944,7 +944,7 @@ type taskDispatcher struct {
 	active    int
 	slotsFree *sync.Cond
 	repoTail  map[string]chan struct{}
-	wg        sync.WaitGroup
+	pending   int
 }
 
 // SetMaxConcurrency accepts a new global limit without a restart. Running
@@ -1004,7 +1004,16 @@ func (d *taskDispatcher) Submit(
 		d.mu.Unlock()
 	}
 
-	d.wg.Go(func() {
+	d.mu.Lock()
+	d.pending++
+	d.mu.Unlock()
+	go func() {
+		defer func() {
+			d.mu.Lock()
+			d.pending--
+			d.mu.Unlock()
+			d.slotsFree.Broadcast()
+		}()
 		if previous != nil {
 			<-previous
 		}
@@ -1021,11 +1030,15 @@ func (d *taskDispatcher) Submit(
 			}()
 		}
 		process(ctx, task)
-	})
+	}()
 }
 
 func (d *taskDispatcher) Wait() {
-	d.wg.Wait()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for d.pending > 0 {
+		d.slotsFree.Wait()
+	}
 }
 
 func (d *Daemon) poll(ctx context.Context) {
@@ -2213,4 +2226,13 @@ func (d *Daemon) RemoveWorktree(owner, repo, identity string, issue int) error {
 		return nil
 	}
 	return trees.Cleanup(owner, repo, issue)
+}
+
+// InFlight counts the same submitted work that graceful shutdown waits for,
+// including tasks waiting for a repository or concurrency slot.
+func (d *Daemon) InFlight() int {
+	dispatcher := d.taskDispatcher()
+	dispatcher.mu.Lock()
+	defer dispatcher.mu.Unlock()
+	return dispatcher.pending
 }

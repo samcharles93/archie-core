@@ -112,7 +112,7 @@ if [ "$(uname -s)" != "Linux" ]; then
   exit 1
 fi
 
-for cmd in git go; do
+for cmd in git go jq; do
   if ! command -v "$cmd" &>/dev/null; then
     echo "Error: '$cmd' is required but not installed." >&2
     exit 1
@@ -159,6 +159,8 @@ else
   fi
 fi
 
+TOPOLOGY_UNITS="$(jq -er '.required_topology.units | join(" ")' "$SRC_DIR/release.json")"
+
 # 4. Build and install the native daemon. archie-agent is deployed only as
 # the managed task image; installing a host binary would imply an unsupported
 # host execution path.
@@ -193,10 +195,10 @@ echo "==> Building native archie binaries..."
   # webhook channels dead with no error anywhere. This list,
   # the zip's two lists and the two in scripts/archie-update-install must agree;
   # TestDistZipShipsEveryHostCommand fails when they do not.
-  for cmd in archied archie-gateway archie-state-store archie-ui archie-messaging; do
+  for cmd in $TOPOLOGY_UNITS; do
     go build -ldflags "${LDFLAGS}" -o "${ARCHIE_BIN_DIR}/${cmd}" "./cmd/${cmd}"
   done
-  install -m755 "${SRC_DIR}/scripts/archie-update-install" "${ARCHIE_BIN_DIR}/archie-update-install"
+  install -m755 "${SRC_DIR}"/scripts/archie-update-* "${ARCHIE_BIN_DIR}/"
 )
 echo "  Installed archied, archie-gateway, archie-state-store, archie-ui, archie-messaging and updater to ${ARCHIE_BIN_DIR}/"
 
@@ -520,7 +522,8 @@ EOF
 
   systemctl --user daemon-reload || true
   SERVICE_INSTALLED=true
-  for unit in archied archie-state-store archie-gateway archie-ui archie-messaging; do
+  for unit in $TOPOLOGY_UNITS; do
+    test -f "${SYSTEMD_USER_DIR}/${unit}.service" || { echo "missing required unit: $unit" >&2; exit 1; }
     echo "  Installed ${SYSTEMD_USER_DIR}/${unit}.service"
   done
 
@@ -546,7 +549,7 @@ EOF
   # not race a dial it depends on.
   if [ "${AUTO_START}" = true ]; then
     echo "==> Enabling and starting Archie services..."
-    systemctl --user enable --now archie-state-store archie-gateway archied archie-ui archie-messaging ||
+    systemctl --user enable --now $TOPOLOGY_UNITS ||
       echo "  Notice: Could not start every service automatically. Check: systemctl --user status archied archie-state-store archie-gateway archie-ui archie-messaging"
   fi
 fi

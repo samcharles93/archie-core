@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	"github.com/samcharles93/archie-core/internal/app/servicekit"
+	"github.com/samcharles93/archie-core/internal/buildinfo"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 )
 
@@ -24,6 +25,7 @@ import (
 type healthSurface struct {
 	serving  atomic.Bool
 	registry func() *health.Registry
+	inFlight func() int
 }
 
 // markServing tolerates a nil surface so a boot path that serves no health
@@ -70,7 +72,15 @@ func (h *healthSurface) handleDetailed(w http.ResponseWriter, r *http.Request) {
 	if report.Status != health.StatusOK {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}
-	_ = json.NewEncoder(w).Encode(report)
+	inFlight := -1
+	if h.serving.Load() && h.inFlight != nil {
+		inFlight = h.inFlight()
+	}
+	_ = json.NewEncoder(w).Encode(struct {
+		health.Report
+		Version  string `json:"version"`
+		InFlight int    `json:"in_flight"`
+	}{Report: report, Version: buildinfo.Version, InFlight: inFlight})
 }
 
 // startHealth binds the daemon's liveness surface on [health].listen. A
@@ -78,7 +88,15 @@ func (h *healthSurface) handleDetailed(w http.ResponseWriter, r *http.Request) {
 // updates verified, and the watchdog would roll back every release it
 // installs.
 func (b *boot) startHealth(ctx context.Context) error {
-	b.health = &healthSurface{registry: func() *health.Registry { return b.healthRegistry }}
+	b.health = &healthSurface{
+		registry: func() *health.Registry { return b.healthRegistry },
+		inFlight: func() int {
+			if b.d == nil {
+				return -1
+			}
+			return b.d.InFlight()
+		},
+	}
 	addr := b.cfg.Health.Listen
 	if err := b.serveHealth(ctx, addr, b.health.handler(), "daemon health"); err != nil {
 		b.log.Error("health listener failed", "addr", addr, "err", err)
