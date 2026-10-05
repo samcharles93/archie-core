@@ -60,11 +60,6 @@ type Gateway struct {
 	// verify update reports. Nil leaves claims unverified.
 	RunningVersions func() map[string]string
 
-	// Dangerous is the sandbox/process authority for /rollback and /stop.
-	// When nil, those commands return "not configured". The composition
-	// root supplies this; Telegram only renders approval UX.
-	Dangerous DangerousCommandAuthority
-
 	// showToolCalls controls whether new live replies render completed tool
 	// calls. Each reply snapshots it so reloads affect only later turns.
 	showToolCalls atomic.Bool
@@ -83,17 +78,14 @@ type Gateway struct {
 	updateActions     map[string]updateAction
 	updateReportMu    sync.Mutex
 
-	// dangerous command approval state
-	dangerousMu        sync.Mutex
-	dangerousActions   map[string]dangerousAction
-	permanentApprovals []permanentApproval
-
-	// tool approval state (gateway.ApprovalRequester). Kept separate from
-	// the dangerous-command state above: tool approvals deliver the human's
-	// decision on a channel to the blocked RequestApproval call rather than
-	// executing through an onApprove callback.
+	// tool approval state (gateway.ApprovalRequester): tool approvals
+	// deliver the human's decision on a channel to the blocked
+	// RequestApproval call.
 	approvalMu       sync.Mutex
 	pendingApprovals map[string]*pendingApproval
+	// permanentMu guards the 24-hour approvals a human granted per tool.
+	permanentMu        sync.Mutex
+	permanentApprovals []permanentApproval
 
 	// interactive state (gateway clarify/picker). A blocked clarify or
 	// picker waits on one entry here, keyed by the chat it was posed to, so
@@ -156,18 +148,16 @@ type ReleaseAnnouncer interface {
 // New returns an unstarted Gateway. Call Start to begin long-polling.
 func New(token string, allowedUserIDs []int64, log *slog.Logger) *Gateway {
 	g := &Gateway{
-		Token:              token,
-		AllowedUserIDs:     allowedUserIDs,
-		restartCh:          make(chan restartRequest, 1),
-		modelCallbacks:     make(map[string]string),
-		modelPages:         make(map[string]modelPage),
-		providerCallbacks:  make(map[string]string),
-		updateActions:      make(map[string]updateAction),
-		dangerousActions:   make(map[string]dangerousAction),
-		permanentApprovals: nil,
-		pendingApprovals:   make(map[string]*pendingApproval),
-		pendingReplies:     make(map[pendingReplyKey]*pendingReply),
-		log:                log.With("component", "gateway-telegram"),
+		Token:             token,
+		AllowedUserIDs:    allowedUserIDs,
+		restartCh:         make(chan restartRequest, 1),
+		modelCallbacks:    make(map[string]string),
+		modelPages:        make(map[string]modelPage),
+		providerCallbacks: make(map[string]string),
+		updateActions:     make(map[string]updateAction),
+		pendingApprovals:  make(map[string]*pendingApproval),
+		pendingReplies:    make(map[pendingReplyKey]*pendingReply),
+		log:               log.With("component", "gateway-telegram"),
 	}
 	g.newEphemeralSender = func() *channels.EphemeralSender {
 		return channels.NewEphemeralSender(g.log, nil)
@@ -267,10 +257,7 @@ var telegramTextHandlers = []telegramTextHandler{
 	{"/start", bot.MatchTypeExact, func(g *Gateway, _ messaging.ChatContract) bot.HandlerFunc { return g.startHandler() }},
 	{"/help", bot.MatchTypeExact, func(g *Gateway, _ messaging.ChatContract) bot.HandlerFunc { return g.helpHandler() }},
 	{"/restart", bot.MatchTypeExact, func(g *Gateway, _ messaging.ChatContract) bot.HandlerFunc { return g.restartHandler() }},
-	{"/rollback", bot.MatchTypePrefix, func(g *Gateway, _ messaging.ChatContract) bot.HandlerFunc { return g.rollbackHandler() }},
 	{"/stop", bot.MatchTypePrefix, func(g *Gateway, c messaging.ChatContract) bot.HandlerFunc { return g.stopHandler(c) }},
-	{"/approve", bot.MatchTypeExact, func(g *Gateway, _ messaging.ChatContract) bot.HandlerFunc { return g.approveHandler() }},
-	{"/deny", bot.MatchTypeExact, func(g *Gateway, _ messaging.ChatContract) bot.HandlerFunc { return g.denyHandler() }},
 }
 
 func (g *Gateway) registerCommandHandlers(b *bot.Bot, client messaging.ChatContract) {
@@ -565,8 +552,6 @@ func (g *Gateway) handleCallback(ctx context.Context, b *bot.Bot, update *models
 	switch {
 	case strings.HasPrefix(update.CallbackQuery.Data, approvalCallbackPrefix):
 		g.handleApprovalCallback(ctx, b, update)
-	case strings.HasPrefix(update.CallbackQuery.Data, dangerousCmdPrefix):
-		g.handleDangerousCallback(ctx, b, update)
 	case strings.HasPrefix(update.CallbackQuery.Data, providerCallbackPrefix):
 		g.handleProviderCallback(ctx, b, update, client)
 	case strings.HasPrefix(update.CallbackQuery.Data, modelCallbackPrefix):

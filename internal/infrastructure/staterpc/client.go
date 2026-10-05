@@ -78,12 +78,24 @@ func (c *Client) EnqueueIssue(ctx context.Context, owner, repo string, number in
 	return r.Inserted, nil
 }
 
-func (c *Client) EnqueueChatTask(ctx context.Context, owner, repo, title, body, wf, identity string, inputs map[string]any) (*task.Task, error) {
+func (c *Client) ActiveTasksByOrigin(ctx context.Context, origin string) ([]*task.Task, error) {
+	r, err := c.client.ActiveTasksByOrigin(ctx, &pb.ActiveTasksByOriginRequest{Origin: origin})
+	if err != nil {
+		return nil, unmapError(err)
+	}
+	out := make([]*task.Task, 0, len(r.Tasks))
+	for _, t := range r.Tasks {
+		out = append(out, taskValue(t))
+	}
+	return out, nil
+}
+
+func (c *Client) EnqueueChatTask(ctx context.Context, owner, repo, title, body, wf, identity, origin string, inputs map[string]any) (*task.Task, error) {
 	encoded, err := task.EncodeInputs(inputs)
 	if err != nil {
 		return nil, err
 	}
-	r, err := c.client.EnqueueChatTask(ctx, &pb.EnqueueChatTaskRequest{Owner: owner, Repo: repo, Title: title, Body: body, Workflow: wf, Identity: identity, InputsJson: encoded})
+	r, err := c.client.EnqueueChatTask(ctx, &pb.EnqueueChatTaskRequest{Owner: owner, Repo: repo, Title: title, Body: body, Workflow: wf, Identity: identity, InputsJson: encoded, Origin: origin})
 	if err != nil {
 		return nil, unmapError(err)
 	}

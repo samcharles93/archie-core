@@ -15,17 +15,17 @@ import (
 type Writer struct {
 	Enqueue func(
 		ctx context.Context,
-		owner, repo, title, body, workflow, identity string,
+		owner, repo, title, body, workflow, identity, origin string,
 		inputs map[string]any,
 	) (*workflow.Task, error)
 }
 
 func (a Writer) EnqueueChatTask(
 	ctx context.Context,
-	owner, repo, title, body, workflow, identity string,
+	owner, repo, title, body, workflow, identity, origin string,
 	inputs map[string]any,
 ) (int64, error) {
-	task, err := a.Enqueue(ctx, owner, repo, title, body, workflow, identity, inputs)
+	task, err := a.Enqueue(ctx, owner, repo, title, body, workflow, identity, origin, inputs)
 	if err != nil {
 		return 0, err
 	}

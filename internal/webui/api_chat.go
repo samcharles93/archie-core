@@ -22,7 +22,6 @@ import (
 type ChatService struct {
 	Contract         messaging.ChatContract
 	Updates          ChatUpdateService
-	Dangerous        *DangerousService
 	updateMu         sync.Mutex
 	updateInProgress bool
 }
@@ -126,14 +125,6 @@ type chatToolView struct {
 	Failed     bool   `json:"failed"`
 }
 
-type dangerousRequest struct {
-	Spec string `json:"spec"`
-}
-
-type dangerousDecisionRequest struct {
-	Decision string `json:"decision"`
-}
-
 func (s *Server) chatReady(w http.ResponseWriter) (*ChatService, bool) {
 	if s.Chat == nil || s.Chat.Contract == nil {
 		http.Error(w, "chat is not configured", http.StatusNotImplemented)
@@ -176,30 +167,21 @@ func (s *Server) handleChatSessions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, map[string]any{
-		"sessions":            out,
-		"models":              snapshot.Models,
-		"models_by_provider":  snapshot.ModelsByProvider,
-		"providers":           snapshot.Providers,
-		"active_model":        snapshot.ActiveModel,
-		"active_provider":     snapshot.ActiveProvider,
-		"personas":            snapshot.Personas,
-		"active_personas":     active,
-		"commands":            chatCommandSpecs(chat),
-		"restart_available":   snapshot.RestartAvailable,
-		"dangerous_available": chat.Dangerous != nil,
+		"sessions":           out,
+		"models":             snapshot.Models,
+		"models_by_provider": snapshot.ModelsByProvider,
+		"providers":          snapshot.Providers,
+		"active_model":       snapshot.ActiveModel,
+		"active_provider":    snapshot.ActiveProvider,
+		"personas":           snapshot.Personas,
+		"active_personas":    active,
+		"commands":           chatCommandSpecs(chat),
+		"restart_available":  snapshot.RestartAvailable,
 	})
 }
 
 func chatCommandSpecs(chat *ChatService) []messaging.CommandSpec {
 	specs := messaging.LocalCommandSpecs()
-	if chat.Dangerous != nil {
-		specs = append(
-			specs,
-			messaging.CommandSpec{Command: "/rollback", Description: "Request approval to restore a filesystem checkpoint", Usage: "/rollback [number]"},
-			messaging.CommandSpec{Command: "/stop", Description: "Request approval to terminate a background process", Usage: "/stop <process-name>"},
-			messaging.CommandSpec{Command: "/deny", Description: "Deny a pending dangerous action", Usage: "/deny <action-id>"},
-		)
-	}
 	return specs
 }
 
@@ -616,67 +598,6 @@ func (s *Server) handleChatUpdateInstall(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, map[string]any{"ok": true, "progress": progress, "result": result})
-}
-
-func (s *Server) handleChatDangerousState(w http.ResponseWriter, r *http.Request) {
-	chat, ok := s.chatReady(w)
-	if !ok {
-		return
-	}
-	if chat.Dangerous == nil {
-		http.Error(w, "dangerous sandbox actions are not configured", http.StatusNotImplemented)
-		return
-	}
-	checkpoints, err := chat.Dangerous.Checkpoints(r.Context())
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	writeJSON(w, map[string]any{"checkpoints": checkpoints, "pending": chat.Dangerous.Pending()})
-}
-
-func (s *Server) handleChatDangerousRequest(w http.ResponseWriter, r *http.Request) {
-	chat, ok := s.chatReady(w)
-	if !ok {
-		return
-	}
-	if chat.Dangerous == nil {
-		http.Error(w, "dangerous sandbox actions are not configured", http.StatusNotImplemented)
-		return
-	}
-	var req dangerousRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Spec) == "" {
-		http.Error(w, "spec is required", http.StatusBadRequest)
-		return
-	}
-	action, result, executed, err := chat.Dangerous.Request(r.Context(), r.PathValue("kind"), req.Spec)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	writeJSON(w, map[string]any{"action": action, "result": result, "executed": executed})
-}
-
-func (s *Server) handleChatDangerousDecision(w http.ResponseWriter, r *http.Request) {
-	chat, ok := s.chatReady(w)
-	if !ok {
-		return
-	}
-	if chat.Dangerous == nil {
-		http.Error(w, "dangerous sandbox actions are not configured", http.StatusNotImplemented)
-		return
-	}
-	var req dangerousDecisionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Decision) == "" {
-		http.Error(w, "decision is required", http.StatusBadRequest)
-		return
-	}
-	result, err := chat.Dangerous.Decide(r.Context(), r.PathValue("id"), req.Decision)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusConflict)
-		return
-	}
-	writeJSON(w, map[string]any{"ok": true, "result": result})
 }
 
 func newChatSourceID() string {

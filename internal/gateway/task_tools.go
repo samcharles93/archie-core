@@ -259,6 +259,7 @@ func taskSpawnTool(creator TaskCreator, identity string) tools.ToolEntry {
 				// The bound identity, never input["identity"]. CreateTask
 				// enforces the repository allow-list for it.
 				Identity: identity,
+				Origin:   originFrom(ctx),
 			})
 			if err != nil {
 				return nil, fmt.Errorf("task_spawn: %w", err)

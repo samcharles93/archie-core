@@ -28,9 +28,6 @@ var gatewayCommandSpecs = []commandSpec{
 	{Command: "spawn", Description: "Create a tracked task", Usage: "/spawn [identity=name] [repo=owner/name] [workflow=name] <title>"},
 	{Command: "settings", Description: "Inspect or change runtime settings", Usage: "/settings [list|get <kind>|set <kind> <field>=<value> ...]"},
 	{Command: "cancel", Description: "Cancel a queued or waiting task", Usage: "/cancel [identity=name] <task-id>"},
-	// On Telegram, /approve and /deny decide pending dangerous commands.
-	{Command: "approve", Description: "Show pending dangerous commands to approve", Usage: "/approve"},
-	{Command: "deny", Description: "Show pending dangerous commands to deny", Usage: "/deny"},
 	{Command: "start", Description: "Confirm that Archie is running", Usage: "/start"},
 	{Command: "new", Description: "Start a fresh session, clearing conversation history", Usage: "/new [title]"},
 	{Command: "reset", Description: "Alias for /new", Usage: "/reset [title]"},
@@ -48,8 +45,7 @@ var gatewayCommandSpecs = []commandSpec{
 	{Command: "resume", Description: "Switch to a session by id or unique prefix", Usage: "/resume <session-id>"},
 	{Command: "delete", Description: "Permanently delete a session and its history", Usage: "/delete <session-id>"},
 	{Command: "agents", Description: "List tasks currently being worked", Usage: "/agents"},
-	{Command: "rollback", Description: "Restore a filesystem checkpoint", Usage: "/rollback [number]"},
-	{Command: "stop", Description: "Terminate a background process", Usage: "/stop <process-name>"},
+	{Command: "stop", Description: "Stop the running reply, else this chat's tasks; or one task", Usage: "/stop [task-id]"},
 	{Command: "restart", Description: "Reload Archie and its configuration", Usage: "/restart"},
 	{Command: "help", Description: "See what Archie can do", Usage: "/help"},
 }

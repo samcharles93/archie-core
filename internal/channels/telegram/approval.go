@@ -2,6 +2,8 @@ package telegram
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -14,7 +16,7 @@ import (
 
 // approvalCallbackPrefix separates tool-approval callbacks from other
 // callback types handled in defaultHandler. It is deliberately distinct
-// from dangerousCmdPrefix so the two approval systems never collide.
+// from every other callback prefix.
 const approvalCallbackPrefix = "approval:"
 
 // telegramApprover implements gateway.ApprovalRequester with an inline-button
@@ -28,8 +30,7 @@ type telegramApprover struct {
 }
 
 // pendingApproval records a tool-approval request waiting on a human
-// decision. It is the tool-approval analogue of dangerousAction, kept
-// separate so the dangerous-command model (onApprove callbacks) and the
+// decision. It is kept separate so the
 // tool-approval model (result channels) cannot entangle.
 type pendingApproval struct {
 	token       string
@@ -84,7 +85,7 @@ func (a *telegramApprover) RequestApproval(ctx context.Context, action, descript
 		return messaging.ApprovalPermanentlyApproved, nil
 	}
 
-	token := makeDangerousToken()
+	token := makeCallbackToken()
 	resultCh := make(chan approvalResult, 1)
 	a.gw.registerPendingApproval(pendingApproval{
 		token:       token,
@@ -156,7 +157,7 @@ func (a *telegramApprover) applyApprovalDecision(action, description string, res
 
 // approvalKeyboard builds the three-button inline keyboard for a tool
 // approval: "Approve this time", "Approve Permanently", "Deny". It mirrors
-// dangerousKeyboard but carries the approval: callback prefix.
+// the approval: callback prefix.
 func (g *Gateway) approvalKeyboard(token string) *models.InlineKeyboardMarkup {
 	return &models.InlineKeyboardMarkup{
 		InlineKeyboard: [][]models.InlineKeyboardButton{
@@ -228,19 +229,19 @@ func (g *Gateway) handleApprovalCallback(ctx context.Context, b *bot.Bot, update
 	}
 	if !g.isSenderAllowed(query.From.ID) {
 		g.log.Warn("approval callback from unauthorized sender", "user_id", query.From.ID)
-		g.answerDangerousCallback(ctx, b, query.ID, "You are not authorised to use this bot.", true)
+		g.answerCallback(ctx, b, query.ID, "You are not authorised to use this bot.", true)
 		return
 	}
 
 	decision, token := parseApprovalCallback(query.Data)
 	if decision == "" {
-		g.answerDangerousCallback(ctx, b, query.ID, "That action is no longer valid.", true)
+		g.answerCallback(ctx, b, query.ID, "That action is no longer valid.", true)
 		return
 	}
 
 	pa, ok := g.consumePendingApproval(token, query.From.ID)
 	if !ok {
-		g.answerDangerousCallback(ctx, b, query.ID, "That action is no longer valid.", true)
+		g.answerCallback(ctx, b, query.ID, "That action is no longer valid.", true)
 		return
 	}
 
@@ -253,16 +254,16 @@ func (g *Gateway) handleApprovalCallback(ctx context.Context, b *bot.Bot, update
 	switch decision {
 	case "approve":
 		pa.resultCh <- approvalResult{decision: messaging.ApprovalApproved}
-		g.answerDangerousCallback(ctx, b, query.ID, "Approved and executed.", false)
-		g.editDangerousMessage(ctx, b, query, "✅ Approved: "+pa.description)
+		g.answerCallback(ctx, b, query.ID, "Approved and executed.", false)
+		g.editCallbackMessage(ctx, b, query, "✅ Approved: "+pa.description)
 	case "permanent":
 		pa.resultCh <- approvalResult{decision: messaging.ApprovalPermanentlyApproved}
-		g.answerDangerousCallback(ctx, b, query.ID, "Permanently approved (valid 24h).", false)
-		g.editDangerousMessage(ctx, b, query, "✅ Approved (permanent, 24h): "+pa.description)
+		g.answerCallback(ctx, b, query.ID, "Permanently approved (valid 24h).", false)
+		g.editCallbackMessage(ctx, b, query, "✅ Approved (permanent, 24h): "+pa.description)
 	case "deny":
 		pa.resultCh <- approvalResult{decision: messaging.ApprovalDenied, err: messaging.ErrApprovalDenied}
-		g.answerDangerousCallback(ctx, b, query.ID, "Action denied.", false)
-		g.editDangerousMessage(ctx, b, query, "❌ Denied: "+pa.description)
+		g.answerCallback(ctx, b, query.ID, "Action denied.", false)
+		g.editCallbackMessage(ctx, b, query, "❌ Denied: "+pa.description)
 	}
 }
 
@@ -289,4 +290,80 @@ func approvalPromptText(action, description string) string {
 			"This request expires in %d minutes.",
 		action, description, minutes,
 	)
+}
+
+// answerCallback is the common acknowledge/shake response.
+func (g *Gateway) answerCallback(ctx context.Context, b *bot.Bot, queryID, text string, alert bool) {
+	if _, err := b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+		CallbackQueryID: queryID,
+		Text:            text,
+		ShowAlert:       alert,
+	}); err != nil {
+		g.log.Warn("answer callback failed", "error", err)
+	}
+}
+
+func (g *Gateway) editCallbackMessage(ctx context.Context, b *bot.Bot, query *models.CallbackQuery, text string) {
+	if query.Message.Message == nil {
+		return
+	}
+	message := query.Message.Message
+	if _, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:    message.Chat.ID,
+		MessageID: message.ID,
+		Text:      text,
+	}); err != nil {
+		g.log.Warn("edit callback message failed", "error", err)
+	}
+}
+
+func makeCallbackToken() string {
+	bytes := make([]byte, 16)
+	if _, err := rand.Read(bytes); err != nil {
+		panic("crypto/rand: " + err.Error())
+	}
+	return hex.EncodeToString(bytes)
+}
+
+// permanentApproval records a human's decision to approve one tool for 24
+// hours. Scope and lifetime are explicit.
+type permanentApproval struct {
+	Pattern   string
+	Recipient int64
+	ExpiresAt time.Time
+}
+
+func (g *Gateway) recordPermanentApproval(recipient int64, pattern string) {
+	g.permanentMu.Lock()
+	defer g.permanentMu.Unlock()
+	g.permanentApprovals = append(g.livePermanentApprovals(), permanentApproval{
+		Pattern: pattern, Recipient: recipient, ExpiresAt: time.Now().Add(24 * time.Hour),
+	})
+	g.log.Info("tool permanently approved for 24h", "tool", pattern, "recipient", recipient)
+}
+
+// hasPermanentApprovalExact reports whether recipient approved pattern within
+// the last 24 hours.
+func (g *Gateway) hasPermanentApprovalExact(recipient int64, pattern string) bool {
+	g.permanentMu.Lock()
+	defer g.permanentMu.Unlock()
+	g.permanentApprovals = g.livePermanentApprovals()
+	for _, pa := range g.permanentApprovals {
+		if pa.Recipient == recipient && pa.Pattern == pattern {
+			return true
+		}
+	}
+	return false
+}
+
+// livePermanentApprovals drops expired approvals. permanentMu must be held.
+func (g *Gateway) livePermanentApprovals() []permanentApproval {
+	now := time.Now()
+	kept := g.permanentApprovals[:0]
+	for _, pa := range g.permanentApprovals {
+		if pa.ExpiresAt.After(now) {
+			kept = append(kept, pa)
+		}
+	}
+	return kept
 }

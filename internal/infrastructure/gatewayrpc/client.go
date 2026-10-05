@@ -82,6 +82,17 @@ func (c *Client) SetPersona(ctx context.Context, id, name string) (bool, error) 
 	return v.Found, nil
 }
 
+func (c *Client) StopTasks(ctx context.Context, origin string, taskID int64) ([]int64, error) {
+	v, err := c.client.StopTasks(ctx, &pb.StopTasksRequest{Origin: origin, TaskId: taskID})
+	if err != nil {
+		return nil, err
+	}
+	if v.Error != "" {
+		return v.Stopped, errors.New(v.Error)
+	}
+	return v.Stopped, nil
+}
+
 func (c *Client) ApplyTaskAction(ctx context.Context, identity string, taskID int64, action taskstate.Action, res taskactions.ActionPayload) (messaging.TaskActionResult, error) {
 	v, err := c.client.ApplyTaskAction(ctx, &pb.ApplyTaskActionRequest{
 		Identity: identity, TaskId: taskID, Action: string(action),

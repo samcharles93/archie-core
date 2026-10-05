@@ -34,7 +34,7 @@ func TestRetryTaskResume(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
 			db := pgstore.Open(t)
-			if _, err := db.EnqueueChatTask(ctx, "", "", "resume", "", "tdd", "", nil); err != nil {
+			if _, err := db.EnqueueChatTask(ctx, "", "", "resume", "", "tdd", "", "", nil); err != nil {
 				t.Fatal(err)
 			}
 			run, err := db.ClaimNext(ctx)

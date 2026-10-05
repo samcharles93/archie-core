@@ -153,8 +153,8 @@ func (s *Store) EnqueueIssue(ctx context.Context, owner, repo string, number int
 }
 
 // EnqueueChatTask inserts a queued chat task with a store-allocated synthetic
-// issue number.
-func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, wf, identity string, inputs map[string]any) (*workflow.Task, error) {
+// issue number. origin names the conversation that created it, if any.
+func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, wf, identity, origin string, inputs map[string]any) (*workflow.Task, error) {
 	encoded, err := task.EncodeInputs(inputs)
 	if err != nil {
 		return nil, err
@@ -162,6 +162,7 @@ func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, w
 	t, err := s.queries().InsertChatTask(ctx, postgresdb.InsertChatTaskParams{
 		Owner: owner, Repo: repo, Title: title, Body: body, Workflow: wf, Identity: identity,
 		Inputs:              encoded,
+		Origin:              origin,
 		FallbackIssueNumber: syntheticIssueNumberBase - 1,
 	})
 	if err != nil {
@@ -175,7 +176,7 @@ func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, w
 // inputs travel with the insert, so a failed stamp leaves a task whose inputs
 // are already right and whose provenance is absent, never the reverse.
 func (s *Store) EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity, bindingID string, bindingVersion int, inputs map[string]any) (*workflow.Task, error) {
-	t, err := s.EnqueueChatTask(ctx, owner, repo, title, body, wf, identity, inputs)
+	t, err := s.EnqueueChatTask(ctx, owner, repo, title, body, wf, identity, "", inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -854,4 +855,18 @@ func (s *Store) CallStatus(ctx context.Context, callerTaskID, callTaskID int64) 
 		return "", "", nil, err
 	}
 	return callee.Status, detail, outputs, nil
+}
+
+// ActiveTasksByOrigin returns the queued and running tasks the conversation
+// origin created.
+func (s *Store) ActiveTasksByOrigin(ctx context.Context, origin string) ([]*workflow.Task, error) {
+	rows, err := s.queries().ActiveTasksByOrigin(ctx, origin)
+	if err != nil {
+		return nil, fmt.Errorf("store: active tasks by origin: %w", err)
+	}
+	out := make([]*workflow.Task, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, taskFromRow(row))
+	}
+	return out, nil
 }

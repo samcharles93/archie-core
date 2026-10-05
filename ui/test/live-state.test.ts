@@ -20,7 +20,6 @@ const passiveRefreshSurfaces = [
   "../src/settings/SystemTasksPage.vue",
   "../src/settings/SystemModelsPage.vue",
   "../src/settings/SystemReposPage.vue",
-  "../src/settings/SystemAdvancedPage.vue",
   "../src/tasks/PanelError.vue",
   "../src/tasks/TaskLogs.vue",
 ];

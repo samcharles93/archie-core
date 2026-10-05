@@ -19,6 +19,10 @@ type ChatContract interface { //nolint:interfacebloat // wire contract intention
 	// Callers must drain the stream or cancel the context. Cancellation closes it.
 	Stream(context.Context, Inbound) (<-chan ChatEvent, error)
 	Cancel(context.Context, string) (ChatCancellation, error)
+	// StopTasks stops the chat identity's task taskID, or with taskID zero
+	// every queued or running task the conversation origin created. It
+	// returns the tasks it stopped.
+	StopTasks(ctx context.Context, origin string, taskID int64) ([]int64, error)
 	SetPersona(context.Context, string, string) (bool, error)
 	ChatTaskActionContract
 }

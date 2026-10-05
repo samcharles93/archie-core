@@ -377,17 +377,6 @@ export const api = {
       method: "POST",
       body: { session_id: sessionID, name },
     }),
-  chatDangerous: <T = unknown>() => request<T>("/api/chat/dangerous"),
-  chatDangerousRequest: <T = unknown>(kind: string, spec: unknown) =>
-    request<T>(`/api/chat/dangerous/${encodeURIComponent(kind)}`, {
-      method: "POST",
-      body: { spec },
-    }),
-  chatDangerousDecision: <T = unknown>(id: string, decision: string) =>
-    request<T>(`/api/chat/dangerous/${encodeURIComponent(id)}/decision`, {
-      method: "POST",
-      body: { decision },
-    }),
   // A server-sent event stream cannot be parsed as JSON and outlives a normal
   // request, so the caller owns the abort controller and the timeout, and
   // reads the body itself. Only the URL, headers, and failure shape are shared.

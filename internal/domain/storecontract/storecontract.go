@@ -37,7 +37,7 @@ type TaskStore interface {
 // poll, chat spawn, drain loop) do not acquire a binding-specific shape.
 type TaskLifecycle interface {
 	EnqueueIssue(ctx context.Context, owner, repo string, number int, title, body, labels, identity string) (bool, error)
-	EnqueueChatTask(ctx context.Context, owner, repo, title, body, wf, identity string, inputs map[string]any) (*task.Task, error)
+	EnqueueChatTask(ctx context.Context, owner, repo, title, body, wf, identity, origin string, inputs map[string]any) (*task.Task, error)
 	ClaimNext(ctx context.Context) (*task.Task, error)
 	ClaimByIssue(ctx context.Context, owner, repo string, number int) (*task.Task, error)
 	Transition(ctx context.Context, taskID int64, from, to, detail string) error
@@ -81,6 +81,7 @@ type HarnessSecretStore interface {
 // consumers that only run tasks do not acquire an operator-only capability.
 type TaskArchiver interface {
 	ArchiveTask(ctx context.Context, taskID int64, fromStatus string, audit events.Event) (eventID int64, err error)
+	ClearTerminalTasks(ctx context.Context) (int64, error)
 }
 
 // TaskRetryer atomically requeues recoverable work and accounts for the new
@@ -124,7 +125,9 @@ type TaskQueries interface {
 	OpenTaskByPR(ctx context.Context, owner, repo string, number int) (*task.Task, error)
 	TaskByID(ctx context.Context, taskID int64) (*task.Task, error)
 	OpenPRs(ctx context.Context) ([]task.Task, error)
-	ClearTerminalTasks(ctx context.Context) (int64, error)
+	// ActiveTasksByOrigin returns the queued and running tasks the
+	// conversation origin created, for its /stop.
+	ActiveTasksByOrigin(ctx context.Context, origin string) ([]*task.Task, error)
 	// Tasks returns the most recently updated tasks.
 	Tasks(ctx context.Context, limit int) ([]task.Task, error)
 	// TasksPage returns one page of tasks, most recently updated first.

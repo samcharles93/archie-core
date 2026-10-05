@@ -12,6 +12,7 @@ service ChatService {
   rpc Route(RouteRequest) returns (RouteResponse);
   rpc Stream(StreamRequest) returns (stream StreamResponse);
   rpc Cancel(CancelRequest) returns (CancelResponse);
+  rpc StopTasks(StopTasksRequest) returns (StopTasksResponse);
   rpc SetPersona(SetPersonaRequest) returns (SetPersonaResponse);
   rpc ApplyTaskAction(ApplyTaskActionRequest) returns (ApplyTaskActionResponse);
   rpc ApplyOperatorTaskAction(ApplyOperatorTaskActionRequest) returns (ApplyOperatorTaskActionResponse);
@@ -153,6 +154,11 @@ message StreamResponse {
 }
 message CancelRequest { string session_id = 1; }
 message CancelResponse { bool cancelled = 1; int64 dropped = 2; }
+// StopTasksRequest stops task_id, or with task_id zero every queued or running
+// task the conversation origin created.
+message StopTasksRequest { string origin = 1; int64 task_id = 2; }
+// error reports tasks that could not be stopped alongside those that were.
+message StopTasksResponse { repeated int64 stopped = 1; string error = 2; }
 message SetPersonaRequest { string session_id = 1; string name = 2; }
 message SetPersonaResponse { bool found = 1; }
 message ApplyTaskActionRequest { string identity = 1; int64 task_id = 2; string action = 3; string instructions = 4; repeated string findings = 5; }

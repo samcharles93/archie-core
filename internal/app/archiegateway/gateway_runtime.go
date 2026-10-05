@@ -255,6 +255,6 @@ func (b *server) setupGatewayChat(ctx context.Context, actor gateway.ChatTaskAct
 	router.Log = b.log
 	return &gateway.LocalChatAdapter{
 		Router: router, Sessions: b.chatSessionStore, Turns: gateway.NewTurns(b.log),
-		Models: b.chatModels, Personas: b.personas, TaskActor: actor,
+		Models: b.chatModels, Personas: b.personas, TaskActor: actor, Tasks: b.stateStore,
 	}, nil
 }

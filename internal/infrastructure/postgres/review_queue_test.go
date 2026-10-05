@@ -59,7 +59,7 @@ func TestSecondReviewDuringRemediationIsQueued(t *testing.T) {
 func openTaskAtPROpen(t *testing.T, db *pgstore.TaskDB) int64 {
 	t.Helper()
 	ctx := t.Context()
-	created, err := db.EnqueueChatTask(ctx, "acme", "widget", "a task", "", "tdd", "", nil)
+	created, err := db.EnqueueChatTask(ctx, "acme", "widget", "a task", "", "tdd", "", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

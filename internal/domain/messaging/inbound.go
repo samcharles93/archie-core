@@ -2,7 +2,6 @@ package messaging
 
 import (
 	"context"
-	"time"
 )
 
 // Inbound is a received message plus transport context that is not
@@ -36,27 +35,13 @@ type SpawnRequest struct {
 	Workflow string // empty = daemon's default workflow routing
 	Inputs   map[string]any
 	Identity string // the identity spawning this task; propagated from Router.Identity
+	// Origin names the conversation that spawned the task, so its /stop can
+	// find it; empty for a task no conversation started.
+	Origin string
 }
 
 // TaskCreator creates a chat task and returns its database ID. Nil makes
 // /spawn report "not configured".
 type TaskCreator interface {
 	CreateTask(ctx context.Context, req SpawnRequest) (taskID int64, err error)
-}
-
-// DangerousCommandAuthority is the sandbox-owned authority for operations
-// that can destroy process or filesystem state. Adapters only request and
-// present approval; they never implement these operations themselves.
-type DangerousCommandAuthority interface {
-	StopProcess(context.Context, string) error
-	Rollback(context.Context, int) (string, error)
-	ListCheckpoints(context.Context) ([]CheckpointInfo, error)
-}
-
-// CheckpointInfo describes a saved sandbox filesystem checkpoint.
-type CheckpointInfo struct {
-	Number    int
-	Timestamp time.Time
-	Label     string
-	Size      string
 }

@@ -360,9 +360,6 @@ func (s *Server) registerChatRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/chat/update", s.handleChatUpdate)
 	mux.HandleFunc("POST /api/chat/update/defer", s.handleChatUpdateDefer)
 	mux.HandleFunc("POST /api/chat/update/install", s.handleChatUpdateInstall)
-	mux.HandleFunc("GET /api/chat/dangerous", s.handleChatDangerousState)
-	mux.HandleFunc("POST /api/chat/dangerous/{kind}", s.handleChatDangerousRequest)
-	mux.HandleFunc("POST /api/chat/dangerous/{id}/decision", s.handleChatDangerousDecision)
 }
 
 func (s *Server) Handler() http.Handler {

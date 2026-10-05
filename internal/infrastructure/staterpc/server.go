@@ -184,12 +184,24 @@ func (s *server) EnqueueIssue(ctx context.Context, r *pb.EnqueueIssueRequest) (*
 	return &pb.EnqueueIssueResponse{Inserted: inserted}, nil
 }
 
+func (s *server) ActiveTasksByOrigin(ctx context.Context, r *pb.ActiveTasksByOriginRequest) (*pb.ActiveTasksByOriginResponse, error) {
+	tasks, err := s.deps.Tasks.ActiveTasksByOrigin(ctx, r.Origin)
+	if err != nil {
+		return nil, s.logErr("ActiveTasksByOrigin", err)
+	}
+	out := make([]*pb.Task, 0, len(tasks))
+	for _, t := range tasks {
+		out = append(out, taskProto(t))
+	}
+	return &pb.ActiveTasksByOriginResponse{Tasks: out}, nil
+}
+
 func (s *server) EnqueueChatTask(ctx context.Context, r *pb.EnqueueChatTaskRequest) (*pb.EnqueueChatTaskResponse, error) {
 	inputs, err := task.DecodeInputs(r.InputsJson)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	t, err := s.deps.Tasks.EnqueueChatTask(ctx, r.Owner, r.Repo, r.Title, r.Body, r.Workflow, r.Identity, inputs)
+	t, err := s.deps.Tasks.EnqueueChatTask(ctx, r.Owner, r.Repo, r.Title, r.Body, r.Workflow, r.Identity, r.Origin, inputs)
 	if err != nil {
 		return nil, s.logErr("EnqueueChatTask", err)
 	}

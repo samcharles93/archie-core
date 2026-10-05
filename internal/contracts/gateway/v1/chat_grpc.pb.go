@@ -26,6 +26,7 @@ const (
 	ChatService_Route_FullMethodName                   = "/gateway.v1.ChatService/Route"
 	ChatService_Stream_FullMethodName                  = "/gateway.v1.ChatService/Stream"
 	ChatService_Cancel_FullMethodName                  = "/gateway.v1.ChatService/Cancel"
+	ChatService_StopTasks_FullMethodName               = "/gateway.v1.ChatService/StopTasks"
 	ChatService_SetPersona_FullMethodName              = "/gateway.v1.ChatService/SetPersona"
 	ChatService_ApplyTaskAction_FullMethodName         = "/gateway.v1.ChatService/ApplyTaskAction"
 	ChatService_ApplyOperatorTaskAction_FullMethodName = "/gateway.v1.ChatService/ApplyOperatorTaskAction"
@@ -56,6 +57,7 @@ type ChatServiceClient interface {
 	Route(ctx context.Context, in *RouteRequest, opts ...grpc.CallOption) (*RouteResponse, error)
 	Stream(ctx context.Context, in *StreamRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamResponse], error)
 	Cancel(ctx context.Context, in *CancelRequest, opts ...grpc.CallOption) (*CancelResponse, error)
+	StopTasks(ctx context.Context, in *StopTasksRequest, opts ...grpc.CallOption) (*StopTasksResponse, error)
 	SetPersona(ctx context.Context, in *SetPersonaRequest, opts ...grpc.CallOption) (*SetPersonaResponse, error)
 	ApplyTaskAction(ctx context.Context, in *ApplyTaskActionRequest, opts ...grpc.CallOption) (*ApplyTaskActionResponse, error)
 	ApplyOperatorTaskAction(ctx context.Context, in *ApplyOperatorTaskActionRequest, opts ...grpc.CallOption) (*ApplyOperatorTaskActionResponse, error)
@@ -156,6 +158,16 @@ func (c *chatServiceClient) Cancel(ctx context.Context, in *CancelRequest, opts 
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CancelResponse)
 	err := c.cc.Invoke(ctx, ChatService_Cancel_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chatServiceClient) StopTasks(ctx context.Context, in *StopTasksRequest, opts ...grpc.CallOption) (*StopTasksResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StopTasksResponse)
+	err := c.cc.Invoke(ctx, ChatService_StopTasks_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -343,6 +355,7 @@ type ChatServiceServer interface {
 	Route(context.Context, *RouteRequest) (*RouteResponse, error)
 	Stream(*StreamRequest, grpc.ServerStreamingServer[StreamResponse]) error
 	Cancel(context.Context, *CancelRequest) (*CancelResponse, error)
+	StopTasks(context.Context, *StopTasksRequest) (*StopTasksResponse, error)
 	SetPersona(context.Context, *SetPersonaRequest) (*SetPersonaResponse, error)
 	ApplyTaskAction(context.Context, *ApplyTaskActionRequest) (*ApplyTaskActionResponse, error)
 	ApplyOperatorTaskAction(context.Context, *ApplyOperatorTaskActionRequest) (*ApplyOperatorTaskActionResponse, error)
@@ -390,6 +403,9 @@ func (UnimplementedChatServiceServer) Stream(*StreamRequest, grpc.ServerStreamin
 }
 func (UnimplementedChatServiceServer) Cancel(context.Context, *CancelRequest) (*CancelResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Cancel not implemented")
+}
+func (UnimplementedChatServiceServer) StopTasks(context.Context, *StopTasksRequest) (*StopTasksResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StopTasks not implemented")
 }
 func (UnimplementedChatServiceServer) SetPersona(context.Context, *SetPersonaRequest) (*SetPersonaResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetPersona not implemented")
@@ -578,6 +594,24 @@ func _ChatService_Cancel_Handler(srv interface{}, ctx context.Context, dec func(
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ChatServiceServer).Cancel(ctx, req.(*CancelRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ChatService_StopTasks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StopTasksRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatServiceServer).StopTasks(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatService_StopTasks_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatServiceServer).StopTasks(ctx, req.(*StopTasksRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -918,6 +952,10 @@ var ChatService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Cancel",
 			Handler:    _ChatService_Cancel_Handler,
+		},
+		{
+			MethodName: "StopTasks",
+			Handler:    _ChatService_StopTasks_Handler,
 		},
 		{
 			MethodName: "SetPersona",

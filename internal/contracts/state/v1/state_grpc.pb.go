@@ -41,6 +41,7 @@ const (
 	StateStoreService_RevokePersonalToken_FullMethodName        = "/state.v1.StateStoreService/RevokePersonalToken"
 	StateStoreService_EnqueueIssue_FullMethodName               = "/state.v1.StateStoreService/EnqueueIssue"
 	StateStoreService_EnqueueChatTask_FullMethodName            = "/state.v1.StateStoreService/EnqueueChatTask"
+	StateStoreService_ActiveTasksByOrigin_FullMethodName        = "/state.v1.StateStoreService/ActiveTasksByOrigin"
 	StateStoreService_ClaimNext_FullMethodName                  = "/state.v1.StateStoreService/ClaimNext"
 	StateStoreService_ClaimByIssue_FullMethodName               = "/state.v1.StateStoreService/ClaimByIssue"
 	StateStoreService_Transition_FullMethodName                 = "/state.v1.StateStoreService/Transition"
@@ -187,6 +188,7 @@ type StateStoreServiceClient interface {
 	// Lifecycle
 	EnqueueIssue(ctx context.Context, in *EnqueueIssueRequest, opts ...grpc.CallOption) (*EnqueueIssueResponse, error)
 	EnqueueChatTask(ctx context.Context, in *EnqueueChatTaskRequest, opts ...grpc.CallOption) (*EnqueueChatTaskResponse, error)
+	ActiveTasksByOrigin(ctx context.Context, in *ActiveTasksByOriginRequest, opts ...grpc.CallOption) (*ActiveTasksByOriginResponse, error)
 	ClaimNext(ctx context.Context, in *ClaimNextRequest, opts ...grpc.CallOption) (*ClaimNextResponse, error)
 	ClaimByIssue(ctx context.Context, in *ClaimByIssueRequest, opts ...grpc.CallOption) (*ClaimByIssueResponse, error)
 	Transition(ctx context.Context, in *TransitionRequest, opts ...grpc.CallOption) (*TransitionResponse, error)
@@ -592,6 +594,16 @@ func (c *stateStoreServiceClient) EnqueueChatTask(ctx context.Context, in *Enque
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(EnqueueChatTaskResponse)
 	err := c.cc.Invoke(ctx, StateStoreService_EnqueueChatTask_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ActiveTasksByOrigin(ctx context.Context, in *ActiveTasksByOriginRequest, opts ...grpc.CallOption) (*ActiveTasksByOriginResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ActiveTasksByOriginResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ActiveTasksByOrigin_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1651,6 +1663,7 @@ type StateStoreServiceServer interface {
 	// Lifecycle
 	EnqueueIssue(context.Context, *EnqueueIssueRequest) (*EnqueueIssueResponse, error)
 	EnqueueChatTask(context.Context, *EnqueueChatTaskRequest) (*EnqueueChatTaskResponse, error)
+	ActiveTasksByOrigin(context.Context, *ActiveTasksByOriginRequest) (*ActiveTasksByOriginResponse, error)
 	ClaimNext(context.Context, *ClaimNextRequest) (*ClaimNextResponse, error)
 	ClaimByIssue(context.Context, *ClaimByIssueRequest) (*ClaimByIssueResponse, error)
 	Transition(context.Context, *TransitionRequest) (*TransitionResponse, error)
@@ -1907,6 +1920,9 @@ func (UnimplementedStateStoreServiceServer) EnqueueIssue(context.Context, *Enque
 }
 func (UnimplementedStateStoreServiceServer) EnqueueChatTask(context.Context, *EnqueueChatTaskRequest) (*EnqueueChatTaskResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method EnqueueChatTask not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ActiveTasksByOrigin(context.Context, *ActiveTasksByOriginRequest) (*ActiveTasksByOriginResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ActiveTasksByOrigin not implemented")
 }
 func (UnimplementedStateStoreServiceServer) ClaimNext(context.Context, *ClaimNextRequest) (*ClaimNextResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ClaimNext not implemented")
@@ -2615,6 +2631,24 @@ func _StateStoreService_EnqueueChatTask_Handler(srv interface{}, ctx context.Con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StateStoreServiceServer).EnqueueChatTask(ctx, req.(*EnqueueChatTaskRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ActiveTasksByOrigin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ActiveTasksByOriginRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ActiveTasksByOrigin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ActiveTasksByOrigin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ActiveTasksByOrigin(ctx, req.(*ActiveTasksByOriginRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -4456,6 +4490,10 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "EnqueueChatTask",
 			Handler:    _StateStoreService_EnqueueChatTask_Handler,
+		},
+		{
+			MethodName: "ActiveTasksByOrigin",
+			Handler:    _StateStoreService_ActiveTasksByOrigin_Handler,
 		},
 		{
 			MethodName: "ClaimNext",

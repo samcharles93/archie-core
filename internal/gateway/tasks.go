@@ -39,7 +39,7 @@ type taskProfile struct {
 
 // chatTaskWriter creates a chat task and returns its database ID.
 type chatTaskWriter interface {
-	EnqueueChatTask(ctx context.Context, owner, repo, title, body, workflow, identity string, inputs map[string]any) (taskID int64, err error)
+	EnqueueChatTask(ctx context.Context, owner, repo, title, body, workflow, identity, origin string, inputs map[string]any) (taskID int64, err error)
 }
 
 // NewStoreTaskCreator returns a TaskCreator. repos lists the allowed
@@ -92,7 +92,7 @@ func (c *StoreTaskCreator) CreateTask(ctx context.Context, req SpawnRequest) (in
 	if owner == "" || repo == "" {
 		return 0, fmt.Errorf("no repo configured for chat-spawned tasks")
 	}
-	return c.store.EnqueueChatTask(ctx, owner, repo, req.Title, req.Body, req.Workflow, req.Identity, req.Inputs)
+	return c.store.EnqueueChatTask(ctx, owner, repo, req.Title, req.Body, req.Workflow, req.Identity, req.Origin, req.Inputs)
 }
 
 func splitOwnerRepo(s string) (owner, repo string, ok bool) {

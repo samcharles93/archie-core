@@ -49,10 +49,6 @@ type (
 	MessagePage = messaging.MessagePage
 	// CommandSpec describes a local command for adapter-provided discovery.
 	CommandSpec = messaging.CommandSpec
-	// DangerousCommandAuthority is the sandbox-owned authority for destructive operations.
-	DangerousCommandAuthority = messaging.DangerousCommandAuthority
-	// CheckpointInfo describes a saved sandbox filesystem checkpoint.
-	CheckpointInfo = messaging.CheckpointInfo
 	// TaskActionResult is what task_action returns.
 	TaskActionResult = messaging.TaskActionResult
 	// DashboardNavigateResult is what dashboard_navigate returns.

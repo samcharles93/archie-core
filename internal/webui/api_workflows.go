@@ -104,7 +104,7 @@ func (s *Server) handleWorkRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), status)
 		return
 	}
-	created, err := s.Store.EnqueueChatTask(r.Context(), owner, repo, request.Title, request.Instructions, request.Workflow, request.Identity, request.Inputs)
+	created, err := s.Store.EnqueueChatTask(r.Context(), owner, repo, request.Title, request.Instructions, request.Workflow, request.Identity, "", request.Inputs)
 	if err != nil {
 		s.logf("work request enqueue failed", "err", err)
 		http.Error(w, "work request rejected", http.StatusBadRequest)

@@ -60,7 +60,7 @@ SELECT status, count(*)::int AS count FROM tasks GROUP BY status;
 -- inputs is the chat task's own workflow inputs; a binding dispatch passes
 -- its inputs here too, so this insert is the single writer of the column and
 -- StampTaskBinding adds only the provenance.
-INSERT INTO tasks (owner, repo, issue_number, title, body, labels, workflow, source, identity, org_id, inputs)
+INSERT INTO tasks (owner, repo, issue_number, title, body, labels, workflow, source, identity, org_id, inputs, origin)
 VALUES (
     sqlc.arg(owner), sqlc.arg(repo),
     COALESCE((
@@ -76,9 +76,16 @@ VALUES (
          ORDER BY m.created_at, m.org_id, m.workspace_id NULLS LAST LIMIT 1),
         'org-sys'
     ),
-    sqlc.arg(inputs)
+    sqlc.arg(inputs),
+    sqlc.arg(origin)
 )
 RETURNING *;
+
+-- name: ActiveTasksByOrigin :many
+-- The queued and running tasks one conversation created, for its /stop.
+SELECT * FROM tasks
+WHERE origin = sqlc.arg(origin) AND origin <> '' AND status IN ('queued', 'running')
+ORDER BY id;
 
 -- name: StampTaskBinding :exec
 UPDATE tasks SET binding_id = $2, binding_version = $3 WHERE id = $1;

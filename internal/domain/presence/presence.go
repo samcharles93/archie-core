@@ -131,7 +131,7 @@ func Mesh(records []storecontract.Presence, now time.Time) []Service {
 func Unreachable() []Service {
 	services := make([]Service, 0, len(Services()))
 	for _, name := range Services() {
-		service := Service{Presence: storecontract.Presence{Service: name}, State: StateUnknown}
+		service := Service{Service: name, State: StateUnknown}
 		if name == StateStore {
 			service.State, service.Detail = StateDown, "unreachable"
 		}

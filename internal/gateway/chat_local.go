@@ -3,11 +3,13 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
@@ -21,6 +23,14 @@ type LocalChatAdapter struct {
 	Models    ModelManager
 	Personas  *PersonaRegistry
 	TaskActor ChatTaskActor
+	// Tasks reads the tasks /stop acts on.
+	Tasks TaskReader
+}
+
+// TaskReader is the task reads /stop needs.
+type TaskReader interface {
+	TaskByID(ctx context.Context, taskID int64) (*task.Task, error)
+	ActiveTasksByOrigin(ctx context.Context, origin string) ([]*task.Task, error)
 }
 
 var _ ChatContract = (*LocalChatAdapter)(nil)
@@ -106,6 +116,58 @@ func (a *LocalChatAdapter) Cancel(ctx context.Context, id string) (ChatCancellat
 	}
 	cancelled, dropped := a.Turns.Stop(id)
 	return ChatCancellation{Cancelled: cancelled, Dropped: dropped}, nil
+}
+
+func (a *LocalChatAdapter) StopTasks(ctx context.Context, origin string, taskID int64) ([]int64, error) {
+	if a.TaskActor == nil || a.Tasks == nil {
+		return nil, ErrChatCapabilityUnavailable
+	}
+	var targets []*task.Task
+	if taskID != 0 {
+		t, err := a.Tasks.TaskByID(ctx, taskID)
+		if err != nil {
+			return nil, err
+		}
+		if t == nil {
+			return nil, fmt.Errorf("task %d not found", taskID)
+		}
+		targets = []*task.Task{t}
+	} else {
+		active, err := a.Tasks.ActiveTasksByOrigin(ctx, origin)
+		if err != nil {
+			return nil, err
+		}
+		targets = active
+	}
+	identity := a.Router.Identity
+	var stopped []int64
+	var errs []error
+	for _, t := range targets {
+		action, ok := haltAction(t.Status)
+		if !ok {
+			errs = append(errs, fmt.Errorf("task %d is %s, not running or queued", t.ID, t.Status))
+			continue
+		}
+		if _, err := a.TaskActor.ApplyChatTaskAction(ctx, &identity, taskactions.ActorFromScope(identity), t.ID, action, taskactions.ActionPayload{}); err != nil {
+			errs = append(errs, fmt.Errorf("task %d: %w", t.ID, err))
+			continue
+		}
+		stopped = append(stopped, t.ID)
+	}
+	return stopped, errors.Join(errs...)
+}
+
+// haltAction is how /stop ends a task: a running one is stopped, keeping its
+// recoverable work parked; a queued one is cancelled before it starts.
+func haltAction(status string) (taskstate.Action, bool) {
+	switch status {
+	case taskstate.Running:
+		return taskstate.ActionStop, true
+	case taskstate.Queued:
+		return taskstate.ActionCancel, true
+	default:
+		return "", false
+	}
 }
 
 func (a *LocalChatAdapter) SetPersona(ctx context.Context, id, name string) (bool, error) {

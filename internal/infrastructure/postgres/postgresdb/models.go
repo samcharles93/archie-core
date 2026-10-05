@@ -428,6 +428,7 @@ type Task struct {
 	ResumeFrom                string
 	ResumeResults             []byte
 	PendingReviews            []byte
+	Origin                    string
 }
 
 type ToolCall struct {

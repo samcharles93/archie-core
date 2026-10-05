@@ -290,6 +290,7 @@ func (r *Router) CollectTurn(ctx context.Context, in Inbound) (Inbound, bool, er
 // local-command fallthrough and the streamed adapter's degraded-to-non-
 // streaming path do, to avoid charging one message twice).
 func (r *Router) route(ctx context.Context, in Inbound) (string, error) {
+	ctx = r.turnContext(ctx, in)
 	text := strings.TrimSpace(in.Message.Text)
 	cmd, _ := parseCmd(text, r.gatewayName)
 
@@ -454,6 +455,7 @@ func (r *Router) dispatchSessionCommand(ctx context.Context, msg messaging.Messa
 // streamTurn dispatches one streamed turn whose gates and batching already
 // ran in the adapter's prelude.
 func (r *Router) streamTurn(ctx context.Context, in Inbound, stream TurnStream) (string, error) {
+	ctx = r.turnContext(ctx, in)
 	if r.LLMStream == nil || stream == nil {
 		return r.route(ctx, in)
 	}
@@ -541,7 +543,7 @@ func (r *Router) handleSpawn(ctx context.Context, rest string) (string, error) {
 	if r.Tasks == nil {
 		return "Task creation is not configured.", nil
 	}
-	req := SpawnRequest{Identity: r.Identity}
+	req := SpawnRequest{Identity: r.Identity, Origin: originFrom(ctx)}
 	fields := strings.Fields(rest)
 	i := 0
 	for i < len(fields) {

@@ -92,6 +92,18 @@ func (s *server) SetPersona(ctx context.Context, r *pb.SetPersonaRequest) (*pb.S
 	return &pb.SetPersonaResponse{Found: v}, nil
 }
 
+func (s *server) StopTasks(ctx context.Context, r *pb.StopTasksRequest) (*pb.StopTasksResponse, error) {
+	stopped, err := s.chat.StopTasks(ctx, r.Origin, r.TaskId)
+	if err != nil && len(stopped) == 0 {
+		return nil, err
+	}
+	out := &pb.StopTasksResponse{Stopped: stopped}
+	if err != nil {
+		out.Error = err.Error()
+	}
+	return out, nil
+}
+
 func (s *server) ApplyTaskAction(ctx context.Context, r *pb.ApplyTaskActionRequest) (*pb.ApplyTaskActionResponse, error) {
 	v, err := s.chat.ApplyTaskAction(ctx, r.Identity, r.TaskId, taskstate.Action(r.Action), taskactions.ActionPayload{
 		Instructions: r.Instructions,

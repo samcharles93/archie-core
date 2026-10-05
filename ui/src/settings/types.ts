@@ -95,23 +95,3 @@ export interface ConfigView {
   schema?: ConfigSection[];
 }
 
-/** A rollback point a dangerous action can target. Number and Label arrive in
- * either case depending on the source, so both are carried. */
-export interface DangerCheckpoint {
-  Number?: number;
-  number?: number;
-  Label?: string;
-  label?: string;
-}
-
-export interface DangerousAction {
-  id: string;
-  description?: string;
-}
-
-export interface DangerousActions {
-  pending?: DangerousAction[];
-  checkpoints?: DangerCheckpoint[];
-  /** Set when the read failed rather than being unwired. */
-  error?: string;
-}

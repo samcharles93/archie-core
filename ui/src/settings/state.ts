@@ -1,7 +1,7 @@
 import { computed, ref } from "vue";
 
-import { ApiError, api } from "@/lib/api";
-import type { ConfigView, DangerousActions } from "./types";
+import { api } from "@/lib/api";
+import type { ConfigView } from "./types";
 
 /**
  * The System pages' shared state.
@@ -16,12 +16,6 @@ import type { ConfigView, DangerousActions } from "./types";
  * body, surfaced by lib/api as the Error's message. */
 export function errorText(err: unknown): string {
   return String((err as Error).message || err);
-}
-
-function isMissing(err: unknown): boolean {
-  // 501 is a deployment that did not wire the capability, which is a
-  // legitimate state and a different thing from a broken one.
-  return err instanceof ApiError && err.status === 501;
 }
 
 // ── The configuration projection ────────────────────────────────────────────
@@ -45,30 +39,3 @@ export async function loadConfig(): Promise<void> {
   }
 }
 
-// ── Dangerous actions ───────────────────────────────────────────────────────
-
-export const dangerous = ref<DangerousActions | null>(null);
-
-export async function loadDangerous(): Promise<void> {
-  try {
-    dangerous.value = await api.chatDangerous<DangerousActions>();
-  } catch (err) {
-    dangerous.value = isMissing(err) ? null : { error: errorText(err) };
-  }
-}
-
-export async function requestDangerous(
-  kind: string,
-  spec: unknown,
-): Promise<void> {
-  await api.chatDangerousRequest(kind, spec);
-  await loadDangerous();
-}
-
-export async function decideDangerous(
-  id: string,
-  decision: string,
-): Promise<void> {
-  await api.chatDangerousDecision(id, decision);
-  await loadDangerous();
-}

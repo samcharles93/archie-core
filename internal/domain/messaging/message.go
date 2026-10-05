@@ -19,6 +19,12 @@ func (c ConversationID) String() string {
 	return c.ChannelID + "/" + c.ThreadID
 }
 
+// Origin names a conversation across platforms: the key a task records for
+// the chat that created it.
+func Origin(platform string, c ConversationID) string {
+	return platform + ":" + c.String()
+}
+
 // MessageID is the canonical, immutable identifier for a Message. Once
 // assigned it never changes, including across branch and fork operations —
 // a forked transcript references the original MessageID it branched from

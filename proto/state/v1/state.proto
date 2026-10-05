@@ -46,6 +46,7 @@ service StateStoreService {
   // Lifecycle
   rpc EnqueueIssue(EnqueueIssueRequest) returns (EnqueueIssueResponse);
   rpc EnqueueChatTask(EnqueueChatTaskRequest) returns (EnqueueChatTaskResponse);
+  rpc ActiveTasksByOrigin(ActiveTasksByOriginRequest) returns (ActiveTasksByOriginResponse);
   rpc ClaimNext(ClaimNextRequest) returns (ClaimNextResponse);
   rpc ClaimByIssue(ClaimByIssueRequest) returns (ClaimByIssueResponse);
   rpc Transition(TransitionRequest) returns (TransitionResponse);
@@ -607,6 +608,9 @@ message EnqueueIssueRequest {
 }
 message EnqueueIssueResponse { bool inserted = 1; }
 
+message ActiveTasksByOriginRequest { string origin = 1; }
+message ActiveTasksByOriginResponse { repeated Task tasks = 1; }
+
 message EnqueueChatTaskRequest {
   string owner = 1;
   string repo = 2;
@@ -618,6 +622,8 @@ message EnqueueChatTaskRequest {
   // EnqueueBindingTaskRequest carries. A chat task sets them at insert
   // time: it has no binding provenance to stamp afterwards.
   string inputs_json = 7;
+  // origin names the conversation that created the task; empty for none.
+  string origin = 8;
 }
 message EnqueueChatTaskResponse { Task task = 1; }
 
