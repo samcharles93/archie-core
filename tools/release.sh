@@ -210,7 +210,7 @@ git tag -a "v$VERSION" -m "v$VERSION"
 
 echo
 echo "tagged. push with:"
-echo "    git push origin main --follow-tags"
+echo "    git push --atomic origin main v$VERSION"
 echo
-echo "The deploy workflow reads the tags pointing at HEAD, so pushing the"
-echo "commit without its tag builds images stamped 'dev'."
+echo "The deploy workflow reads the tags pointing at HEAD, so the commit and"
+echo "its tag must land together; --atomic pushes both or neither."

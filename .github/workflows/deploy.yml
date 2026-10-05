@@ -15,11 +15,11 @@ on:
 # last one's images matter (each job pushes its image tags), so cancel a
 # superseded run rather than let it fight for resources it can't use.
 #
-# Keyed on the commit, not github.ref: `git push --follow-tags` pushes
-# main plus both archied/v* and archie/v* tags in one go, and all three
-# refs point at the same commit -- on.push matches branches and tags
-# both, so a single release push otherwise fires three redundant builds
-# of identical content that a ref-keyed group can't see as the same work.
+# Keyed on the commit, not github.ref: a release push lands main and its
+# tag in one go, both pointing at the same commit -- on.push matches
+# branches and tags both, so a single release push otherwise fires
+# redundant builds of identical content that a ref-keyed group can't see
+# as the same work.
 concurrency:
   group: deploy-${{ github.sha }}
   cancel-in-progress: true
@@ -372,8 +372,8 @@ jobs:
       # zip was produced and then stranded -- the only Release on this repo
       # (archied/v1.22.0) was created by hand and carries no asset at all.
       #
-      # Attached to the *archied* tag because the zip is named and versioned
-      # for archied, and `--follow-tags` pushes both tags at one commit.
+      # Attached to the release's v* tag, or the archied tag for a release
+      # cut before the single release stream.
       # --generate-notes is deliberately not used: the changelog section is
       # the release's own reviewed prose, and the tag/changelog gate above
       # already guarantees it describes this version.

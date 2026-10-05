@@ -57,7 +57,7 @@ task release:preview VERSION=1.3.0     # preview what would land
 task release:prepare VERSION=1.3.0     # write the section into CHANGELOG.md, uncommitted
 # edit CHANGELOG.md -- generated notes are a starting point, not the release
 task release VERSION=1.3.0             # commit + annotated tag
-git push origin main --follow-tags     # CI stamps images with real versions
+git push --atomic origin main v1.3.0  # both refs or neither
 ```
 
 `release:prepare` emits bare commit subjects; they are a starting point. Rewrite
@@ -66,7 +66,8 @@ them to say what a reader gets, per "What the notes are for" above.
 Pushing is a separate, explicit step — never push without confirming first (see
 the repo's general "check before doing anything hard to reverse" rule). The
 deploy workflow reads tags pointing at `HEAD`; pushing the commit without its
-tag gets images stamped `dev`.
+tag gets images stamped `dev`, which is why the push names the tag and is
+`--atomic`.
 
 ### After a release, `main` and the working branch have diverged
 
