@@ -266,28 +266,51 @@ func callSucceeded(status string) bool {
 func validateWorkflowCalls(parsed map[string]YAMLDefinition) error {
 	calls := make(map[string][]string, len(parsed))
 	for id, d := range parsed {
-		for i, step := range d.Steps {
+		err := walkSteps(d.Steps, fmt.Sprintf("workflow %q", id), func(where string, step StepRecord) error {
 			if step.Type != WorkflowCallStepName {
-				continue
+				return nil
 			}
 			s, err := decodeCallSettings(step)
 			if err != nil {
-				return fmt.Errorf("workflow %q step %d: %w", id, i+1, err)
+				return fmt.Errorf("%s: %w", where, err)
 			}
 			callee, ok := parsed[s.Workflow]
 			if !ok {
-				return fmt.Errorf("workflow %q step %d calls %q, which is not defined", id, i+1, s.Workflow)
+				return fmt.Errorf("%s calls %q, which is not defined", where, s.Workflow)
 			}
-			if err := checkCallInputs(id, i, d.WorkflowInterface, callee, s.Inputs); err != nil {
+			if err := checkCallInputs(where, d.WorkflowInterface, callee, s.Inputs); err != nil {
 				return err
 			}
-			if err := checkCallOutputs(id, i, d.WorkflowInterface, callee, s.Outputs); err != nil {
+			if err := checkCallOutputs(where, d.WorkflowInterface, callee, s.Outputs); err != nil {
 				return err
 			}
 			calls[id] = append(calls[id], s.Workflow)
+			return nil
+		})
+		if err != nil {
+			return err
 		}
 	}
 	return refuseCallCycles(calls)
+}
+
+// walkSteps visits each step a definition carries in order, descending into
+// parallel branches. A call inside a branch is a call like any other, so
+// validation must see it and name it by its branch. where locates the step in
+// an error message.
+func walkSteps(steps []StepRecord, where string, visit func(where string, step StepRecord) error) error {
+	for i, step := range steps {
+		at := fmt.Sprintf("%s step %d", where, i+1)
+		if err := visit(at, step); err != nil {
+			return err
+		}
+		for _, name := range slices.Sorted(maps.Keys(step.Parallel)) {
+			if err := walkSteps(step.Parallel[name], fmt.Sprintf("%s branch %q", at, name), visit); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func decodeCallSettings(step StepRecord) (workflowCallSettings, error) {
@@ -301,15 +324,15 @@ func decodeCallSettings(step StepRecord) (workflowCallSettings, error) {
 // checkCallInputs validates one call's saved inputs against the callee's
 // declared inputs, resolving references against the calling workflow's own
 // declared input types. Values are not known at save time -- types are.
-func checkCallInputs(callerID string, index int, caller task.WorkflowInterface, callee YAMLDefinition, inputs map[string]any) error {
+func checkCallInputs(where string, caller task.WorkflowInterface, callee YAMLDefinition, inputs map[string]any) error {
 	for name, value := range inputs {
 		spec, ok := callee.Inputs[name]
 		if !ok {
-			return fmt.Errorf("workflow %q step %d: input %q is not declared by %q", callerID, index+1, name, callee.ID)
+			return fmt.Errorf("%s: input %q is not declared by %q", where, name, callee.ID)
 		}
 		resolved, err := callInputType(caller, name, value)
 		if err != nil {
-			return fmt.Errorf("workflow %q step %d: %w", callerID, index+1, err)
+			return fmt.Errorf("%s: %w", where, err)
 		}
 		if resolved == "" {
 			// A null literal satisfies the type check vacuously; the
@@ -317,12 +340,12 @@ func checkCallInputs(callerID string, index int, caller task.WorkflowInterface, 
 			continue
 		}
 		if !task.TypeAccepts(spec.Type, resolved) {
-			return fmt.Errorf("workflow %q step %d: input %q is %s, want %s", callerID, index+1, name, resolved, spec.Type)
+			return fmt.Errorf("%s: input %q is %s, want %s", where, name, resolved, spec.Type)
 		}
 	}
 	for name, spec := range callee.Inputs {
 		if _, assigned := inputs[name]; !assigned && spec.Required {
-			return fmt.Errorf("workflow %q step %d: input %q is required by %q", callerID, index+1, name, callee.ID)
+			return fmt.Errorf("%s: input %q is required by %q", where, name, callee.ID)
 		}
 	}
 	return nil
@@ -330,19 +353,19 @@ func checkCallInputs(callerID string, index int, caller task.WorkflowInterface, 
 
 // checkCallOutputs validates a call's outputs assignment against the callee's
 // and caller's declarations.
-func checkCallOutputs(callerID string, index int, caller task.WorkflowInterface, callee YAMLDefinition, outputs map[string]string) error {
+func checkCallOutputs(where string, caller task.WorkflowInterface, callee YAMLDefinition, outputs map[string]string) error {
 	for calleeName, ref := range outputs {
 		calleeSpec, ok := callee.Outputs[calleeName]
 		if !ok {
-			return fmt.Errorf("workflow %q step %d: output %q is not declared by %q", callerID, index+1, calleeName, callee.ID)
+			return fmt.Errorf("%s: output %q is not declared by %q", where, calleeName, callee.ID)
 		}
 		callerName := strings.TrimPrefix(ref, outputReference)
 		callerSpec, ok := caller.Outputs[callerName]
 		if !ok {
-			return fmt.Errorf("workflow %q step %d: output %q references %q, which the calling workflow does not declare", callerID, index+1, calleeName, ref)
+			return fmt.Errorf("%s: output %q references %q, which the calling workflow does not declare", where, calleeName, ref)
 		}
 		if !task.TypeAccepts(callerSpec.Type, calleeSpec.Type) {
-			return fmt.Errorf("workflow %q step %d: output %q is %s, want %s", callerID, index+1, calleeName, calleeSpec.Type, callerSpec.Type)
+			return fmt.Errorf("%s: output %q is %s, want %s", where, calleeName, calleeSpec.Type, callerSpec.Type)
 		}
 	}
 	return nil
