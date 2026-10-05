@@ -93,7 +93,7 @@ func (s *Server) putExtensionSettings(ctx context.Context, doc controlplanerpc.E
 	if err != nil {
 		return err
 	}
-	audit, err := webAudit()
+	audit, err := webAudit(ctx)
 	if err != nil {
 		return err
 	}

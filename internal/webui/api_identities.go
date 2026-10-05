@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 )
 
@@ -44,7 +46,7 @@ func (s *Server) handleIdentityCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "cannot create identity ID", http.StatusInternalServerError)
 		return
 	}
-	audit, err := webAudit()
+	audit, err := webAudit(r.Context())
 	if err != nil {
 		http.Error(w, "cannot create request ID", http.StatusInternalServerError)
 		return
@@ -67,7 +69,7 @@ func (s *Server) handleIdentityCommand(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	audit, err := webAudit()
+	audit, err := webAudit(r.Context())
 	if err != nil {
 		http.Error(w, "cannot create request ID", http.StatusInternalServerError)
 		return
@@ -81,16 +83,20 @@ func (s *Server) handleIdentityCommand(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, value)
 }
 
-// webAudit attributes a dashboard write. The dashboard authenticates with one
-// shared token and carries no per-user session, so the actor is the System
-// identity: a real identity the repository resolves, never a name the request
-// could claim for itself.
-func webAudit() (identity.Audit, error) {
+// webAudit attributes a dashboard write to the request's own principal: the
+// person the dashboard acts as. Only a request with no principal at all falls
+// back to the System identity, which is a real identity the repository
+// resolves, never a name the request could claim for itself.
+func webAudit(ctx context.Context) (identity.Audit, error) {
 	id, err := newControlPlaneRequestID()
 	if err != nil {
 		return identity.Audit{}, err
 	}
-	return identity.Audit{ActorID: identity.SystemID, Source: "archie-ui", RequestID: id}, nil
+	actor := identity.SystemID
+	if p, ok := access.PrincipalFromContext(ctx); ok && p.IdentityID != "" {
+		actor = p.IdentityID
+	}
+	return identity.Audit{ActorID: actor, Source: "archie-ui", RequestID: id}, nil
 }
 
 func randomIdentityID() (identity.IdentityID, error) {

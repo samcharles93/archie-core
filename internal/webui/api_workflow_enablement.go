@@ -72,7 +72,7 @@ func (s *Server) handleWorkflowEnabled(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "encode workflow enablement", http.StatusInternalServerError)
 		return
 	}
-	audit, err := webAudit()
+	audit, err := webAudit(r.Context())
 	if err != nil {
 		http.Error(w, "cannot create request ID", http.StatusInternalServerError)
 		return

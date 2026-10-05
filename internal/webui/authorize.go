@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/domain/access"
+	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/org"
 )
 
@@ -53,14 +54,22 @@ func (s *Server) authorize(h http.Handler) http.Handler {
 }
 
 // requestPrincipal assembles the principal a request acts as. With no acting
-// identity (the shared token), it is the token owner; with one, it is the
-// identity's org and memberships, read over the wire.
+// identity (the shared token), it is the org-sys owner person when the upgrade
+// created one; with an acting identity, it is the identity's org and
+// memberships, read over the wire. The system owner remains the fallback for an
+// install that has not run the operator phase.
 func (s *Server) requestPrincipal(ctx context.Context) (access.Principal, error) {
 	if acting, ok := ActingIdentity(ctx); ok {
 		if s.Principals == nil {
 			return access.Principal{}, errPrincipalsUnavailable
 		}
 		return s.Principals.PrincipalFor(ctx, acting.ID)
+	}
+	if s.Principals != nil {
+		if operator, err := s.Principals.PrincipalFor(ctx, identity.OperatorID()); err == nil &&
+			operator.Org == org.DefaultOrgID && operator.Role("") == org.RoleOwner {
+			return operator, nil
+		}
 	}
 	return access.SharedTokenOwner(), nil
 }

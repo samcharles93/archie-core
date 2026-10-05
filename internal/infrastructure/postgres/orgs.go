@@ -221,6 +221,11 @@ func (s *Store) UpgradeDefaultOrg(ctx context.Context) error {
 			func(ctx context.Context, q *postgresdb.Queries) (int64, error) { return q.StampEdastoreEventTypes(ctx) },
 			func(ctx context.Context, q *postgresdb.Queries) (int64, error) { return q.StampEdastoreToolCalls(ctx) },
 		}},
+		// The operator phase runs last: it needs the org the state_store phase
+		// creates, and gives the dashboard a person to act as where none exists.
+		{name: "operator", stamps: []func(context.Context, *postgresdb.Queries) (int64, error){
+			ensureOrgOperator,
+		}},
 	}
 	for _, p := range phases {
 		if _, err := s.queries().GetOrgUpgradePhase(ctx, p.name); err == nil {
@@ -233,6 +238,21 @@ func (s *Store) UpgradeDefaultOrg(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// ensureOrgOperator creates the dashboard's operator person as org-sys's owner
+// when no person owns it yet. Both writes re-check that condition, so a
+// re-run leaves an existing person owner alone and never adds a second.
+func ensureOrgOperator(ctx context.Context, q *postgresdb.Queries) (int64, error) {
+	params := postgresdb.EnsureOrgOperatorIdentityParams{
+		ID: string(identity.OperatorID()), OrgID: string(org.DefaultOrgID),
+	}
+	if _, err := q.EnsureOrgOperatorIdentity(ctx, params); err != nil {
+		return 0, err
+	}
+	return q.EnsureOrgOperatorMembership(ctx, postgresdb.EnsureOrgOperatorMembershipParams{
+		IdentityID: params.ID, OrgID: params.OrgID,
+	})
 }
 
 // runUpgradePhase stamps one phase's tables and records its ledger row in one

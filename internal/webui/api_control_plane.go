@@ -106,7 +106,7 @@ func (s *Server) handleControlPlaneCommand(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	audit, err := webAudit()
+	audit, err := webAudit(r.Context())
 	if err != nil {
 		http.Error(w, "cannot create request ID", http.StatusInternalServerError)
 		return

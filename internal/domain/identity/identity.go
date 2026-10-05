@@ -87,6 +87,11 @@ func StableID(legacyName string) IdentityID {
 	return IdentityID(fmt.Sprintf("%08x-%04x-5%03x-%04x-%012x", sum[:4], sum[4:6], sum[6:8], uint16(sum[8])<<8|uint16(sum[9])&0x3fff|0x8000, sum[10:16]))
 }
 
+// OperatorID is the person identity the dashboard acts as when no provider
+// signs anyone in. Deriving it from a name lets the upgrade that creates it
+// and the request path that resolves it agree without a lookup.
+func OperatorID() IdentityID { return StableID("operator") }
+
 func New(id IdentityID, kind Kind, displayName string) (Identity, error) {
 	value := Identity{ID: id, Kind: kind, DisplayName: strings.TrimSpace(displayName), Lifecycle: LifecycleActive, Version: 1}
 	if err := value.Validate(); err != nil {

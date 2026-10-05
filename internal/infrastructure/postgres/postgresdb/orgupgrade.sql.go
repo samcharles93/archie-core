@@ -42,6 +42,59 @@ func (q *Queries) EnsureDefaultWorkspace(ctx context.Context) error {
 	return err
 }
 
+const ensureOrgOperatorIdentity = `-- name: EnsureOrgOperatorIdentity :execrows
+
+INSERT INTO identities (id, kind, display_name, lifecycle, version, created_at, updated_at)
+SELECT $1, 'user', 'Operator', 'active', 1, now(), now()
+WHERE NOT EXISTS (
+	SELECT 1 FROM memberships m
+	JOIN identities i ON i.id = m.identity_id
+	WHERE m.org_id = $2 AND m.workspace_id IS NULL AND m.role = 'owner' AND i.kind = 'user'
+)
+ON CONFLICT (id) DO NOTHING
+`
+
+type EnsureOrgOperatorIdentityParams struct {
+	ID    string
+	OrgID string
+}
+
+// The operator phase: if org-sys has no person member with the owner role,
+// create the dashboard's operator person and make it that owner. Both writes
+// re-check the condition, so a re-run on an install that already has a person
+// owner (or already has the operator) changes nothing.
+func (q *Queries) EnsureOrgOperatorIdentity(ctx context.Context, arg EnsureOrgOperatorIdentityParams) (int64, error) {
+	result, err := q.db.Exec(ctx, ensureOrgOperatorIdentity, arg.ID, arg.OrgID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const ensureOrgOperatorMembership = `-- name: EnsureOrgOperatorMembership :execrows
+INSERT INTO memberships (identity_id, org_id, workspace_id, role)
+SELECT $1, $2, NULL, 'owner'
+WHERE NOT EXISTS (
+	SELECT 1 FROM memberships m
+	JOIN identities i ON i.id = m.identity_id
+	WHERE m.org_id = $2 AND m.workspace_id IS NULL AND m.role = 'owner' AND i.kind = 'user'
+)
+ON CONFLICT DO NOTHING
+`
+
+type EnsureOrgOperatorMembershipParams struct {
+	IdentityID string
+	OrgID      string
+}
+
+func (q *Queries) EnsureOrgOperatorMembership(ctx context.Context, arg EnsureOrgOperatorMembershipParams) (int64, error) {
+	result, err := q.db.Exec(ctx, ensureOrgOperatorMembership, arg.IdentityID, arg.OrgID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getOrgUpgradePhase = `-- name: GetOrgUpgradePhase :one
 
 SELECT completed_at FROM org_upgrades WHERE phase = $1

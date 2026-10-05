@@ -59,3 +59,28 @@ UPDATE event_types SET org_id = 'org-sys', workspace_id = 'default' WHERE org_id
 
 -- name: StampEdastoreToolCalls :execrows
 UPDATE tool_calls SET org_id = 'org-sys', workspace_id = 'default' WHERE org_id = '';
+
+-- The operator phase: if org-sys has no person member with the owner role,
+-- create the dashboard's operator person and make it that owner. Both writes
+-- re-check the condition, so a re-run on an install that already has a person
+-- owner (or already has the operator) changes nothing.
+
+-- name: EnsureOrgOperatorIdentity :execrows
+INSERT INTO identities (id, kind, display_name, lifecycle, version, created_at, updated_at)
+SELECT $1, 'user', 'Operator', 'active', 1, now(), now()
+WHERE NOT EXISTS (
+	SELECT 1 FROM memberships m
+	JOIN identities i ON i.id = m.identity_id
+	WHERE m.org_id = $2 AND m.workspace_id IS NULL AND m.role = 'owner' AND i.kind = 'user'
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- name: EnsureOrgOperatorMembership :execrows
+INSERT INTO memberships (identity_id, org_id, workspace_id, role)
+SELECT $1, $2, NULL, 'owner'
+WHERE NOT EXISTS (
+	SELECT 1 FROM memberships m
+	JOIN identities i ON i.id = m.identity_id
+	WHERE m.org_id = $2 AND m.workspace_id IS NULL AND m.role = 'owner' AND i.kind = 'user'
+)
+ON CONFLICT DO NOTHING;

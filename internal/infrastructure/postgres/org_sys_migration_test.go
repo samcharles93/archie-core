@@ -11,7 +11,9 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 
+	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
+	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgtest"
 )
 
@@ -99,6 +101,63 @@ func TestOrgSysMigrationMovesExistingDefaultRows(t *testing.T) {
 		t.Fatalf("default org name = %q, want Default", name)
 	}
 	assertNoOrg(t, pool, "org-sys")
+}
+
+// TestOrgOperatorUpgrade pins the operator phase: a fresh install and an
+// existing one each end with exactly one person owner of org-sys, and running
+// the upgrade again adds no second.
+func TestOrgOperatorUpgrade(t *testing.T) {
+	ctx := t.Context()
+	db := pgstore.Open(t)
+
+	if err := db.UpgradeDefaultOrg(ctx); err != nil {
+		t.Fatalf("fresh upgrade: %v", err)
+	}
+	assertOneOperator(t, db.Pool)
+	if err := db.UpgradeDefaultOrg(ctx); err != nil {
+		t.Fatalf("second upgrade: %v", err)
+	}
+	assertOneOperator(t, db.Pool)
+
+	// An existing install that ran the first two phases but never the operator
+	// phase: drop the phase's ledger row and what it wrote, then upgrade again.
+	if _, err := db.Pool.Exec(ctx, `DELETE FROM org_upgrades WHERE phase = 'operator'`); err != nil {
+		t.Fatalf("reset operator phase: %v", err)
+	}
+	for _, sql := range []string{
+		`DELETE FROM memberships WHERE identity_id = $1`,
+		`DELETE FROM identities WHERE id = $1`,
+	} {
+		if _, err := db.Pool.Exec(ctx, sql, string(identity.OperatorID())); err != nil {
+			t.Fatalf("reset operator phase: %v", err)
+		}
+	}
+	if err := db.UpgradeDefaultOrg(ctx); err != nil {
+		t.Fatalf("upgrade on an existing install: %v", err)
+	}
+	assertOneOperator(t, db.Pool)
+}
+
+func assertOneOperator(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	var owners int
+	if err := pool.QueryRow(t.Context(), `
+		SELECT count(*) FROM memberships m
+		JOIN identities i ON i.id = m.identity_id
+		WHERE m.org_id = 'org-sys' AND m.workspace_id IS NULL AND m.role = 'owner' AND i.kind = 'user'
+	`).Scan(&owners); err != nil {
+		t.Fatal(err)
+	}
+	if owners != 1 {
+		t.Fatalf("person owners of org-sys = %d, want 1", owners)
+	}
+	var kind string
+	if err := pool.QueryRow(t.Context(), `SELECT kind FROM identities WHERE id = $1`, string(identity.OperatorID())).Scan(&kind); err != nil {
+		t.Fatalf("operator identity: %v", err)
+	}
+	if kind != string(identity.KindUser) {
+		t.Fatalf("operator kind = %q, want %q", kind, identity.KindUser)
+	}
 }
 
 func seedDefaultOrg(t *testing.T, pool *pgxpool.Pool) {
