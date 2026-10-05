@@ -5,8 +5,7 @@
  * no projection, no prettifying beyond indentation.
  */
 import { computed, ref, watch } from "vue";
-import { Check, Copy } from "@lucide/vue";
-import { Button } from "@/components/ui/button";
+import { Check, Copy, TriangleAlert } from "@lucide/vue";
 import HighlightedJson from "@/base/HighlightedJson.vue";
 
 const props = defineProps<{ value: unknown }>();
@@ -27,15 +26,21 @@ async function copy(): Promise<void> {
 </script>
 
 <template>
-  <div class="mb-2 flex items-center justify-end gap-2">
-    <p v-if="copyError" role="alert" class="text-xs text-danger">Could not copy output.</p>
-    <Button type="button" variant="outline" size="sm" @click="copy"><Check v-if="copied" /><Copy v-else />{{ copied ? "Copied" : "Copy output" }}</Button>
+  <div class="group/json relative">
+    <button
+      type="button"
+      class="absolute right-2 top-2 z-10 flex size-7 items-center justify-center rounded-md bg-muted text-muted-foreground opacity-0 transition-opacity hover:bg-secondary hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring group-hover/json:opacity-100 group-focus-within/json:opacity-100"
+      :aria-label="copyError ? 'Copy failed. Retry copying output' : copied ? 'Copied output' : 'Copy output'"
+      :title="copyError ? 'Could not copy output. Click to retry.' : copied ? 'Copied' : 'Copy output'"
+      @click="copy"
+    >
+      <TriangleAlert v-if="copyError" class="size-4 text-danger" />
+      <Check v-else-if="copied" class="size-4" />
+      <Copy v-else class="size-4" />
+    </button>
+    <span class="sr-only" role="status">{{ copyError ? 'Could not copy output.' : copied ? 'Output copied.' : '' }}</span>
+    <pre
+      class="max-h-[60vh] overflow-auto rounded-sm border border-border bg-muted p-3 font-mono text-xs leading-normal whitespace-pre-wrap break-words"
+    ><HighlightedJson :text="text" /></pre>
   </div>
-  <!--
-    pre-wrap keeps the indentation the JSON is printed with while letting a
-    long value wrap instead of forcing the panel to scroll sideways.
-  -->
-  <pre
-    class="max-h-[60vh] overflow-auto rounded-sm border border-border bg-muted p-3 font-mono text-xs leading-normal whitespace-pre-wrap break-words"
-  ><HighlightedJson :text="text" /></pre>
 </template>
