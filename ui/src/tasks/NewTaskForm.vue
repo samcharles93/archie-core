@@ -70,6 +70,11 @@ const selected = computed(() => definitions.value.find((d) => d.id === workflow.
 const declared = computed(() => declaredInputs(selected.value));
 const missing = computed(() => missingRequiredInputs(declared.value, inputText.value));
 
+// The chosen workflow's repository mode decides the field: none hides it,
+// optional relaxes it, and anything else (required, or undeclared) needs it.
+const repoMode = computed(() => selected.value?.repository ?? "required");
+const repoRequired = computed(() => repoMode.value !== "optional" && repoMode.value !== "none");
+
 const statFor = (id: string) => stats.value.find((s) => s.workflow === id);
 const identityName = computed(() => actors.value.find((a) => a.id === identity.value)?.display_name ?? "nobody");
 
@@ -77,7 +82,7 @@ const submitting = ref(false);
 const error = ref("");
 const ready = computed(
   () =>
-    !!(repository.value.trim() && workflow.value && title.value.trim() && instructions.value.trim() && identity.value) &&
+    !!((repository.value.trim() || !repoRequired.value) && workflow.value && title.value.trim() && instructions.value.trim() && identity.value) &&
     missing.value.length === 0,
 );
 async function submit() {
@@ -87,7 +92,7 @@ async function submit() {
   try {
     const result = await api.workRequest<{ task_id: number }>({
       identity: identity.value,
-      repository: repository.value.trim(),
+      repository: repoMode.value === "none" ? "" : repository.value.trim(),
       workflow: workflow.value,
       title: title.value.trim(),
       instructions: instructions.value,
@@ -106,9 +111,11 @@ async function submit() {
   <form class="grid gap-5" @submit.prevent="submit" @keydown.meta.enter.prevent="submit" @keydown.ctrl.enter.prevent="submit">
     <p v-if="loadError" class="text-sm text-danger" role="alert">{{ loadError }}</p>
 
-    <div class="grid gap-1.5">
-      <label :for="`${uid}-repo`" class="text-[13px] font-medium">Repository</label>
-      <Input :id="`${uid}-repo`" v-model="repository" class="font-mono" placeholder="owner/repository" :list="`${uid}-repos`" required />
+    <div v-if="repoMode !== 'none'" class="grid gap-1.5">
+      <label :for="`${uid}-repo`" class="text-[13px] font-medium">
+        Repository<span v-if="!repoRequired" class="font-normal text-fg-subtle"> (optional)</span>
+      </label>
+      <Input :id="`${uid}-repo`" v-model="repository" class="font-mono" placeholder="owner/repository" :list="`${uid}-repos`" :required="repoRequired" />
       <datalist :id="`${uid}-repos`">
         <option v-for="r in recentRepos" :key="r" :value="r" />
       </datalist>

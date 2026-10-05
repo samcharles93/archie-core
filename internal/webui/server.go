@@ -15,7 +15,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
-	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/storepkg"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -37,9 +36,6 @@ type Server struct {
 	// from the configuration it holds (LocalConfigView).
 	ConfigSource ConfigViewSource
 
-	// WorkRequests admits dashboard requests through the same task-creation
-	// boundary used by chat; it never invokes a workflow runner directly.
-	WorkRequests messaging.TaskCreator
 	// LogFeed is the daemon diagnostic stream. It is separate from Events,
 	// which contains persisted task lifecycle activity only.
 	LogFeed *logging.Feed

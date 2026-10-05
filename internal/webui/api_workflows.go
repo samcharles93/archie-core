@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
 	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
-	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -61,10 +61,6 @@ func (s *Server) handleWorkRequest(w http.ResponseWriter, r *http.Request) {
 	if !s.authorizeTaskMutation(w, r) {
 		return
 	}
-	if s.WorkRequests == nil {
-		http.Error(w, "work intake unavailable", http.StatusServiceUnavailable)
-		return
-	}
 	r.Body = http.MaxBytesReader(w, r.Body, 32<<10)
 	var request workRequest
 	decoder := json.NewDecoder(r.Body)
@@ -86,8 +82,8 @@ func (s *Server) handleWorkRequest(w http.ResponseWriter, r *http.Request) {
 	request.Workflow = strings.TrimSpace(request.Workflow)
 	request.Title = strings.TrimSpace(request.Title)
 	request.Instructions = strings.TrimSpace(request.Instructions)
-	if request.Identity == "" || request.Repository == "" || request.Workflow == "" || request.Title == "" || request.Instructions == "" {
-		http.Error(w, "identity, repository, workflow, title, and instructions are required", http.StatusBadRequest)
+	if request.Identity == "" || request.Workflow == "" || request.Title == "" || request.Instructions == "" {
+		http.Error(w, "identity, workflow, title, and instructions are required", http.StatusBadRequest)
 		return
 	}
 	iface, enabled, err := s.enabledWorkflowInterface(r.Context(), request.Workflow)
@@ -103,17 +99,65 @@ func (s *Server) handleWorkRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	taskID, err := s.WorkRequests.CreateTask(r.Context(), messaging.SpawnRequest{
-		Identity: request.Identity, Repo: request.Repository, Workflow: request.Workflow,
-		Title: request.Title, Body: request.Instructions, Inputs: request.Inputs,
-	})
+	owner, repo, status, err := s.workRequestRepository(r.Context(), iface.RepositoryMode(), request.Repository)
 	if err != nil {
+		http.Error(w, err.Error(), status)
+		return
+	}
+	created, err := s.Store.EnqueueChatTask(r.Context(), owner, repo, request.Title, request.Instructions, request.Workflow, request.Identity, request.Inputs)
+	if err != nil {
+		s.logf("work request enqueue failed", "err", err)
 		http.Error(w, "work request rejected", http.StatusBadRequest)
 		return
 	}
-	s.emit(r.Context(), events.Event{Kind: events.KindWorkRequestSubmitted, TaskID: taskID, Repo: request.Repository, Workflow: request.Workflow, Detail: request.Title})
+	s.emit(r.Context(), events.Event{Kind: events.KindWorkRequestSubmitted, TaskID: created.ID, Repo: request.Repository, Workflow: request.Workflow, Detail: request.Title})
 	w.WriteHeader(http.StatusCreated)
-	writeJSON(w, map[string]any{"ok": true, "task_id": taskID})
+	writeJSON(w, map[string]any{"ok": true, "task_id": created.ID})
+}
+
+// workRequestRepository checks a requested "owner/name" against the
+// workflow's repository mode and the configured repositories, and returns it
+// split. A workflow that takes none refuses one; one that requires it refuses
+// its absence.
+func (s *Server) workRequestRepository(ctx context.Context, mode task.RepositoryMode, requested string) (owner, repo string, status int, err error) {
+	switch {
+	case requested == "" && mode == task.RepositoryRequired:
+		return "", "", http.StatusBadRequest, errors.New("this workflow needs a repository")
+	case requested == "":
+		return "", "", 0, nil
+	case mode == task.RepositoryNone:
+		return "", "", http.StatusBadRequest, errors.New("this workflow takes no repository")
+	}
+	owner, repo, ok := strings.Cut(requested, "/")
+	if !ok || owner == "" || repo == "" || strings.Contains(repo, "/") {
+		return "", "", http.StatusBadRequest, errors.New("repository must be owner/name")
+	}
+	view, found, err := s.configSource()(ctx)
+	if err != nil || !found {
+		return "", "", http.StatusServiceUnavailable, errors.New("configured repositories unavailable")
+	}
+	if !viewHasRepo(view, owner, repo) {
+		return "", "", http.StatusBadRequest, fmt.Errorf("repository %s/%s is not configured", owner, repo)
+	}
+	return owner, repo, 0, nil
+}
+
+// viewHasRepo reports whether the default identity or any named identity
+// manages owner/repo.
+func viewHasRepo(view ConfigView, owner, repo string) bool {
+	for _, r := range view.Repositories {
+		if strings.EqualFold(r.Owner, owner) && strings.EqualFold(r.Name, repo) {
+			return true
+		}
+	}
+	for _, identity := range view.Identities {
+		for _, r := range identity.Repos {
+			if strings.EqualFold(r.Owner, owner) && strings.EqualFold(r.Name, repo) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // enabledWorkflowInterface returns a workflow's declared interface and whether
