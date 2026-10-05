@@ -13,6 +13,7 @@ const STATE_CLASSES: Record<string, string> = {
   failed: "border-danger/80",
   interrupted: "border-warn/70",
   running: "border-info step-running",
+  skipped: "border-dashed border-muted-foreground/60",
 };
 
 const stateClass = computed(() => {
@@ -27,6 +28,7 @@ const STATE_LABELS: Record<string, string> = {
   failed: "Failed",
   interrupted: "Interrupted",
   running: "Running",
+  skipped: "Skipped",
 };
 
 function duration(ms?: number): string {
@@ -77,7 +79,7 @@ function duration(ms?: number): string {
     <div
       v-if="data.run"
       class="mt-1 flex items-center gap-1.5 text-[11px]"
-      :class="{ 'text-ok': data.run.status === 'ok', 'text-danger': data.run.status === 'failed', 'text-info': data.run.status === 'running', 'text-warn': data.run.status === 'interrupted' }"
+      :class="{ 'text-ok': data.run.status === 'ok', 'text-danger': data.run.status === 'failed', 'text-info': data.run.status === 'running', 'text-warn': data.run.status === 'interrupted', 'text-fg-subtle': data.run.status === 'skipped' }"
       :title="data.run.error || undefined"
     >
       <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />

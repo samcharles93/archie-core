@@ -24,6 +24,7 @@ const STAGE_STATUS: Record<string, StageStatusMeta> = {
   failed: { label: "failed", kind: "danger" },
   interrupted: { label: "interrupted", kind: "warn" },
   running: { label: "running", kind: "info" },
+  skipped: { label: "skipped", kind: "idle" },
   unknown: { label: "unknown", kind: "idle" },
 };
 

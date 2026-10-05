@@ -69,10 +69,12 @@ export function describeTimelineEvent(ev: TaskEvent = {}): TimelineLine {
     return {
       title: data.interrupted
         ? `Stage interrupted: ${stage}`
-        : data.error
-          ? `Stage failed: ${stage}`
-          : `Finished stage: ${stage}`,
-      detail: [context, text(data.error)].filter(Boolean).join(" — "),
+        : data.skipped
+          ? `Skipped stage: ${stage}`
+          : data.error
+            ? `Stage failed: ${stage}`
+            : `Finished stage: ${stage}`,
+      detail: [context, text(data.error), text(data.when)].filter(Boolean).join(" — "),
     };
   }
   if (ev.kind === "task_retried") {

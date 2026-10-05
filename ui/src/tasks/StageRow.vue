@@ -44,7 +44,9 @@ const nodeClass = computed(() =>
           ? "border-warn"
           : props.stage.status === "running"
             ? "border-info"
-            : "border-border-strong",
+            : props.stage.status === "skipped"
+              ? "border-dashed border-muted-foreground/60"
+              : "border-border-strong",
   ),
 );
 </script>

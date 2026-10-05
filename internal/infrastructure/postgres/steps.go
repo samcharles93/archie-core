@@ -233,6 +233,10 @@ func stepEventData(to taskstate.StepStatus, durationMS int64, detail string) map
 		data["error"] = detail
 	case taskstate.StepInterrupted:
 		data["interrupted"] = true
+	case taskstate.StepSkipped:
+		// The detail is the when condition that skipped the step.
+		data["skipped"] = true
+		data["when"] = detail
 	}
 	return data
 }

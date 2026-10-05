@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
@@ -60,11 +61,17 @@ func TestRunBranchRecordsChildSteps(t *testing.T) {
 			wantStatus: taskstate.StepFailed,
 			wantDetail: "boom",
 		},
+		{
+			name:       "a branch step whose when was false",
+			stage:      wrapStep(StepRecord{ID: "agent.run", When: "task.title"}, func(context.Context, *TaskContext) error { return nil }),
+			wantStatus: taskstate.StepSkipped,
+			wantDetail: "task.title",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &fakeStepStore{}
-			tc := &TaskContext{Task: &task.Task{ID: 1, Attempt: 1}, Store: store, StepID: 7, workflowBranch: "docs"}
+			tc := &TaskContext{Task: &task.Task{ID: 1, Attempt: 1}, Store: store, StepID: 7, workflowBranch: "docs", Log: slog.Default()}
 			err := runBranch(context.Background(), tc, []Stage{tt.stage})
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)

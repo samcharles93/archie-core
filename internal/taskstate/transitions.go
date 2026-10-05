@@ -16,6 +16,9 @@ const (
 	StepFailed      StepStatus = "failed"
 	StepCancelled   StepStatus = "cancelled"
 	StepInterrupted StepStatus = "interrupted"
+	// StepSkipped is a step whose when condition was false: it never ran, but
+	// it is still a step of the attempt and is recorded as one.
+	StepSkipped StepStatus = "skipped"
 )
 
 // executionTransitions lists every legal execution status move. Terminal
@@ -38,12 +41,13 @@ var executionTransitions = map[string][]string{
 // vocabulary.
 var stepTransitions = map[StepStatus][]StepStatus{
 	StepPending: {StepRunning, StepCancelled},
-	StepRunning: {StepSucceeded, StepFailed, StepCancelled, StepInterrupted},
+	StepRunning: {StepSucceeded, StepFailed, StepCancelled, StepInterrupted, StepSkipped},
 
 	StepSucceeded:   nil,
 	StepFailed:      nil,
 	StepCancelled:   nil,
 	StepInterrupted: nil,
+	StepSkipped:     nil,
 }
 
 // CanTransition reports whether a WorkflowExecution may move from one status to
@@ -63,7 +67,7 @@ func CanStepTransition(from, to StepStatus) bool {
 // only moves again as a fresh step in a new attempt.
 func StepTerminal(status StepStatus) bool {
 	switch status {
-	case StepSucceeded, StepFailed, StepCancelled, StepInterrupted:
+	case StepSucceeded, StepFailed, StepCancelled, StepInterrupted, StepSkipped:
 		return true
 	default:
 		return false

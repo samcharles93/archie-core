@@ -81,6 +81,11 @@ type TaskContext struct {
 	// stepResults holds each finished step's, by step id.
 	stepResult  StepResult
 	stepResults map[string]StepResult
+	// skippedWhen is the when condition that skipped the stage whose body just
+	// ran; empty when the stage ran. wrapStep sets it and the engine reads it
+	// to record the step as skipped. It is per-attempt scratch state, reset by
+	// wrapStep before every step.
+	skippedWhen string
 
 	Task  *Task
 	Repo  config.Repo
@@ -355,12 +360,7 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 			return
 		}
 
-		finishTo := taskstate.StepSucceeded
-		finishDetail := ""
-		if err != nil {
-			finishTo = taskstate.StepFailed
-			finishDetail = err.Error()
-		}
+		finishTo, finishDetail := stageOutcome(tc.skippedWhen, err)
 		// The outcome event is the store's own stage_finish row, written in the
 		// FinishStep transaction -- not a second copy emitted beside it. A
 		// failed recording write parks the execution, like a failed start.
@@ -382,6 +382,21 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 	// Running out of steps is success: the last step's summary says what was done.
 	tc.Outcome = Outcome{Status: StatusCompleted, Detail: tc.stepResult.Summary}
 	finish(ctx, tc, log)
+}
+
+// stageOutcome is how a stage that ran to its end records: a stage whose when
+// was false is skipped, with the condition as its detail; an error fails it;
+// anything else succeeds. Interruption is the caller's call, because it owns
+// the detached context the record needs.
+func stageOutcome(skippedWhen string, err error) (taskstate.StepStatus, string) {
+	switch {
+	case skippedWhen != "":
+		return taskstate.StepSkipped, skippedWhen
+	case err != nil:
+		return taskstate.StepFailed, err.Error()
+	default:
+		return taskstate.StepSucceeded, ""
+	}
 }
 
 // resultsAfter is what a stage records for a later attempt resumed after it:

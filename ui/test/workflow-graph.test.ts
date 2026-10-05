@@ -14,6 +14,8 @@ steps:
         - {id: test, type: command.run, settings: {run: go test}}
       docs:
         - {id: write, type: agent.run, settings: {mission: m, read_only: true}}
+      lint:
+        - {id: vet, type: command.run, when: "task.title", settings: {run: go vet}}
 `;
 
 test("withRuns maps every branch node to its own recorded row", () => {
@@ -24,12 +26,14 @@ test("withRuns maps every branch node to its own recorded row", () => {
     { name: "build/compile", status: "ok" },
     { name: "build/test", status: "failed", error: "boom" },
     { name: "docs/write", status: "ok" },
+    { name: "lint/vet", status: "skipped" },
   ];
   const run = withRuns(graph, stages);
   const cases: Array<[(string | number)[], string, string]> = [
     [["steps", 0, "parallel", "build", 0], "build/compile", "ok"],
     [["steps", 0, "parallel", "build", 1], "build/test", "failed"],
     [["steps", 0, "parallel", "docs", 0], "docs/write", "ok"],
+    [["steps", 0, "parallel", "lint", 0], "lint/vet", "skipped"],
   ];
   for (const [path, name, status] of cases) {
     const node = run.nodes.find(

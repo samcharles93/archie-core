@@ -53,7 +53,7 @@ export interface StageRun {
   finished_at?: string;
   agents?: AgentRun[];
   name: string;
-  status: "ok" | "failed" | "interrupted" | "running" | "unknown" | string;
+  status: "ok" | "failed" | "interrupted" | "running" | "skipped" | "unknown" | string;
   duration_ms?: number;
   error?: string;
 }

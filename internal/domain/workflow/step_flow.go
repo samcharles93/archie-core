@@ -207,8 +207,10 @@ func wrapStep(step StepRecord, body func(context.Context, *TaskContext) error) S
 	}
 	return Stage{Name: name, ContinueOnFailure: step.OnFailure == onFailureContinue, Run: func(ctx context.Context, tc *TaskContext) error {
 		tc.stepResult = StepResult{}
+		tc.skippedWhen = ""
 		if step.When != "" && !when.holds(tc) {
 			tc.Log.Info("step skipped", "step", name, "when", step.When)
+			tc.skippedWhen = step.When
 			return nil
 		}
 		err := runAttempts(ctx, tc, name, attempts, backoff, body)
@@ -281,13 +283,9 @@ func runBranch(ctx context.Context, tc *TaskContext, stages []Stage) error {
 		tc.StepID = stepID
 		runErr := stage.Run(ctx, tc)
 		tc.StepID = parentID
-		to, detail := taskstate.StepSucceeded, ""
-		switch {
-		case runErr == nil:
-		case ctx.Err() != nil:
+		to, detail := stageOutcome(tc.skippedWhen, runErr)
+		if runErr != nil && ctx.Err() != nil {
 			to, detail = taskstate.StepInterrupted, runErr.Error()
-		default:
-			to, detail = taskstate.StepFailed, runErr.Error()
 		}
 		if err := tc.finishChildStep(ctx, stepID, to, detail, 0); err != nil {
 			return err

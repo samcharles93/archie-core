@@ -21,6 +21,7 @@ const (
 	attemptStatusFailed      = "failed"
 	attemptStatusInterrupted = "interrupted"
 	attemptStatusRunning     = "running"
+	attemptStatusSkipped     = "skipped"
 	attemptStatusUnknown     = "unknown"
 )
 
@@ -284,6 +285,8 @@ func mapStepStatus(status taskstate.StepStatus, inFlight bool) string {
 		return attemptStatusFailed
 	case taskstate.StepCancelled, taskstate.StepInterrupted:
 		return attemptStatusInterrupted
+	case taskstate.StepSkipped:
+		return attemptStatusSkipped
 	case taskstate.StepRunning:
 		if inFlight {
 			return attemptStatusRunning
