@@ -121,6 +121,13 @@ export function describeTimelineEvent(ev: TaskEvent = {}): TimelineLine {
   // Condition (d): the two provenance kinds render as one human line. The
   // captured payload is rendered by its own panel, never dumped into the
   // timeline, so these cases name what was recorded and nothing more.
+  if (ev.kind === "step_retried") {
+    return {
+      title: `Attempt ${text(data.attempt)} of ${text(data.of)} failed: ${ev.stage || "step"}`,
+      detail: text(data.error),
+      tone: "warn",
+    };
+  }
   if (ev.kind === "config_captured") {
     return {
       title: "Configuration captured",

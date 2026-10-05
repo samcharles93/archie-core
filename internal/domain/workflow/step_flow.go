@@ -12,6 +12,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 	"github.com/samcharles93/archie-core/internal/domain/stableid"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
+	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
@@ -231,6 +232,11 @@ func runAttempts(ctx context.Context, tc *TaskContext, name string, attempts int
 			return err
 		}
 		tc.Log.Warn("step failed; retrying", "step", name, "attempt", attempt, "of", attempts, "err", err)
+		if emitErr := tc.EmitDurable(ctx, events.KindStepRetried, name,
+			fmt.Sprintf("attempt %d of %d failed: %v", attempt, attempts, err),
+			map[string]any{"attempt": attempt, "of": attempts, "error": err.Error()}); emitErr != nil {
+			tc.Log.Warn("step retry not recorded", "step", name, "err", emitErr)
+		}
 		select {
 		case <-ctx.Done():
 			return err

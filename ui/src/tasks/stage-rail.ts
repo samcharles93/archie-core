@@ -48,7 +48,7 @@ export function agentReports(
     .filter(
       (ev) =>
         ev &&
-        ev.kind === "agent_finish" &&
+        (ev.kind === "agent_finish" || ev.kind === "step_retried") &&
         Number(ev.attempt) === Number(attemptNumber) &&
         (ev.stage || "") === (stage || ""),
     )

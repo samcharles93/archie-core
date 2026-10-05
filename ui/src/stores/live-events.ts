@@ -24,6 +24,7 @@ const taskKinds = new Set([
   "pr_rejected",
   "pr_closed",
   "binding_started",
+  "step_retried",
   "human_approved",
   "human_rejected",
   "human_rereviewed",

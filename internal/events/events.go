@@ -49,13 +49,16 @@ const (
 	// KindTaskRetried records what the retry was escaping from. RetryTask
 	// clears stage and park_reason in the same statement that increments the
 	// count, so this event is the only place that context survives.
-	KindTaskRetried          = "task_retried" // data: retry_count, previous_stage, previous_reason
-	KindTaskCancelled        = "task_cancelled"
-	KindTaskStopped          = "task_stopped"
-	KindTaskAbandoned        = "task_abandoned"
+	KindTaskRetried   = "task_retried" // data: retry_count, previous_stage, previous_reason
+	KindTaskCancelled = "task_cancelled"
+	KindTaskStopped   = "task_stopped"
+	KindTaskAbandoned = "task_abandoned"
+	// KindStepRetried records one failed attempt of a step that is retried.
+	// data: attempt, of, error.
+	KindStepRetried = "step_retried"
 	// KindTaskWithdrawn records work declined because its issue was closed,
 	// unlabelled or unassigned. data: reason.
-	KindTaskWithdrawn = "task_withdrawn"
+	KindTaskWithdrawn        = "task_withdrawn"
 	KindTaskArchiveRequested = "task_archive_requested"
 	KindWorkRequestSubmitted = "work_request_submitted"
 	KindLog                  = "log" // data: level, msg
