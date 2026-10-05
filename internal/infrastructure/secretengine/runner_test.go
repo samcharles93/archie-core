@@ -7,10 +7,16 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"log/slog"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/go-hclog"
 	goplugin "github.com/hashicorp/go-plugin"
@@ -37,14 +43,51 @@ func (e *echoEngine) Configure(_ context.Context, r *secretenginev1.ConfigureReq
 	return &secretenginev1.ConfigureResponse{}, nil
 }
 
-func (e *echoEngine) Resolve(_ context.Context, r *secretenginev1.ResolveRequest) (*secretenginev1.ResolveResponse, error) {
+func (e *echoEngine) Resolve(ctx context.Context, r *secretenginev1.ResolveRequest) (*secretenginev1.ResolveResponse, error) {
 	if name, ok := strings.CutPrefix(r.GetKey(), "ENV:"); ok {
 		return &secretenginev1.ResolveResponse{Value: os.Getenv(name)}, nil
+	}
+	if url, ok := strings.CutPrefix(r.GetKey(), "GET:"); ok {
+		return &secretenginev1.ResolveResponse{Value: fetch(url)}, nil
+	}
+	if addr, ok := strings.CutPrefix(r.GetKey(), "DIAL:"); ok {
+		return &secretenginev1.ResolveResponse{Value: dial(ctx, addr)}, nil
 	}
 	if v, ok := e.settings[r.GetKey()]; ok {
 		return &secretenginev1.ResolveResponse{Value: v}, nil
 	}
 	return nil, status.Error(codes.NotFound, "no such key")
+}
+
+// dial reports whether a raw TCP connection to addr succeeds.
+func dial(ctx context.Context, addr string) string {
+	conn, err := (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return "dial failed"
+	}
+	_ = conn.Close()
+	return "connected"
+}
+
+// fetch GETs target through the proxy HTTP_PROXY names, reporting the body or
+// the failing status. The proxy is set explicitly because the environment
+// lookup never proxies loopback, which is where the test servers listen.
+func fetch(target string) string {
+	proxy, err := url.Parse(os.Getenv("HTTP_PROXY"))
+	if err != nil || proxy.Host == "" {
+		return "no proxy"
+	}
+	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxy)}, Timeout: 5 * time.Second}
+	resp, err := client.Get(target) //nolint:noctx // test plugin
+	if err != nil {
+		return "error: " + err.Error()
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return resp.Status
+	}
+	body, _ := io.ReadAll(resp.Body)
+	return string(body)
 }
 
 func TestMain(m *testing.M) {
@@ -69,10 +112,45 @@ func selfDigest(t *testing.T) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// lanAddress is a non-loopback IPv4 address of this machine. Without one the
+// egress cases cannot run, and they fail rather than skip.
+func lanAddress(t *testing.T) string {
+	t.Helper()
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range addrs {
+		if ip, ok := a.(*net.IPNet); ok && ip.IP.To4() != nil && !ip.IP.IsLoopback() {
+			return ip.IP.String()
+		}
+	}
+	t.Fatal("no non-loopback IPv4 address to stand in for an egress host")
+	return ""
+}
+
 func TestHostLaunch(t *testing.T) {
 	t.Setenv("ARCHIE_TEST_SECRET", "host-only")
 	t.Setenv("ARCHIE_TEST_PASSED", "granted")
 	good := selfDigest(t)
+	// The egress gate refuses loopback, so the servers listen on this
+	// machine's network address, standing in for a private-network host.
+	lan := lanAddress(t)
+	serve := func() string {
+		ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", net.JoinHostPort(lan, "0"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "reached") }))
+		srv.Listener = ln
+		srv.Start()
+		t.Cleanup(srv.Close)
+		return ln.Addr().String()
+	}
+	accepted, other := serve(), serve()
+	loopbackServer := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(loopbackServer.Close)
+	loopback := loopbackServer.Listener.Addr().String()
 
 	tests := []struct {
 		name    string
@@ -81,6 +159,10 @@ func TestHostLaunch(t *testing.T) {
 		want    string
 		wantErr string
 	}{
+		{name: "an accepted egress host is reachable through the proxy", sha: good, key: "GET:http://" + accepted, want: "reached"},
+		{name: "a host that was not accepted is refused", sha: good, key: "GET:http://" + other, want: "403 Forbidden"},
+		{name: "a direct connection bypassing the proxy fails", sha: good, key: "DIAL:" + accepted, want: "dial failed"},
+		{name: "loopback is refused even when accepted", sha: good, key: "GET:http://" + loopback, want: "502 Bad Gateway"},
 		{name: "settings reach the engine", sha: good, key: "color", want: "blue"},
 		{name: "an unknown key is not found", sha: good, key: "missing", wantErr: "not found"},
 		{name: "an env var outside the allowlist is invisible", sha: good, key: "ENV:ARCHIE_TEST_SECRET", want: ""},
@@ -91,7 +173,7 @@ func TestHostLaunch(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			host := extension.NewHost(hclog.NewNullLogger())
 			t.Cleanup(host.Close)
-			spec := extension.Spec{Name: "echo", Path: os.Args[0], SHA256: tt.sha, Env: []string{"ARCHIE_TEST_PASSED"}}
+			spec := extension.Spec{Name: "echo", Path: os.Args[0], SHA256: tt.sha, Env: []string{"ARCHIE_TEST_PASSED"}, Egress: []string{accepted, loopback}}
 			engine, err := Start(context.Background(), host, spec, map[string]string{"color": "blue"})
 			if tt.sha != good {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {

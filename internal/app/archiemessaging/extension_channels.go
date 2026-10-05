@@ -93,6 +93,6 @@ func buildExtensionChannel(ctx context.Context, host *extension.Host, source ext
 		}
 		resolved[name] = secretValue
 	}
-	spec := extension.Spec{Name: "channel/" + pkg.Name, Path: binary, SHA256: sum, Env: slices.Clone(pkg.AcceptedAuthority.Env)}
+	spec := extension.Spec{Name: "channel/" + pkg.Name, Path: binary, SHA256: sum, Env: slices.Clone(pkg.AcceptedAuthority.Env), Egress: slices.Clone(pkg.AcceptedAuthority.EgressHosts)}
 	return channelext.New(host, pkg.Name, spec, plain, resolved), nil
 }

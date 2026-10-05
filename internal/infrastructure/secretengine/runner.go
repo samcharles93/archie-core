@@ -149,7 +149,7 @@ func (r *Runner) ensure(ctx context.Context, pkg storepkg.Installed, setting con
 	if err != nil {
 		return err
 	}
-	spec := extension.Spec{Name: pkg.Name, Path: binary, SHA256: sum, Env: slices.Clone(pkg.AcceptedAuthority.Env)}
+	spec := extension.Spec{Name: pkg.Name, Path: binary, SHA256: sum, Env: slices.Clone(pkg.AcceptedAuthority.Env), Egress: slices.Clone(pkg.AcceptedAuthority.EgressHosts)}
 	engine, err := Start(ctx, r.host, spec, setting.Settings)
 	if err != nil {
 		return err

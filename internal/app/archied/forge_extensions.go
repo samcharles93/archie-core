@@ -85,7 +85,7 @@ func (e *forgeExtensions) start(ctx context.Context, pkg storepkg.Installed, fil
 	if err != nil {
 		return nil, err
 	}
-	spec := extension.Spec{Name: "forge/" + instance, Path: binary, SHA256: sum, Env: slices.Clone(pkg.AcceptedAuthority.Env)}
+	spec := extension.Spec{Name: "forge/" + instance, Path: binary, SHA256: sum, Env: slices.Clone(pkg.AcceptedAuthority.Env), Egress: slices.Clone(pkg.AcceptedAuthority.EgressHosts)}
 	return forgeext.Open(ctx, e.host, forgeext.Instance{Spec: spec, Host: host, Token: token, Settings: settings}, e.log)
 }
 

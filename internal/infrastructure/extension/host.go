@@ -3,12 +3,14 @@
 package extension
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
 	"os"
-	"os/exec"
 	"sync"
 
 	"github.com/hashicorp/go-hclog"
@@ -34,6 +36,10 @@ type Spec struct {
 	// Env names the host environment variables the extension may see. PATH and
 	// HOME are always passed so a plugin can find the CLI it wraps.
 	Env []string
+	// Egress is the accepted egress host list. The extension runs in its own
+	// network namespace and reaches only these hosts, through a proxy; an
+	// empty list reaches nothing.
+	Egress []string
 }
 
 // Host owns the running extension processes, keyed by Spec.Name.
@@ -41,12 +47,23 @@ type Host struct {
 	log hclog.Logger
 
 	mu    sync.Mutex
-	procs map[string]*goplugin.Client
+	procs map[string]*proc
+}
+
+// proc is one running extension and the egress gate it alone can reach.
+type proc struct {
+	client *goplugin.Client
+	gate   *gate
+}
+
+func (p *proc) kill() {
+	p.client.Kill()
+	p.gate.close()
 }
 
 // NewHost returns a Host that reports plugin lifecycle problems to log.
 func NewHost(log hclog.Logger) *Host {
-	return &Host{log: log, procs: make(map[string]*goplugin.Client)}
+	return &Host{log: log, procs: make(map[string]*proc)}
 }
 
 // Start launches spec serving surface and returns the dispensed client. An
@@ -57,33 +74,47 @@ func (h *Host) Start(ctx context.Context, spec Spec, surface string, impl goplug
 	if err != nil || len(sum) != sha256.Size {
 		return nil, fmt.Errorf("extension %q: sha256 must be a hex digest", spec.Name)
 	}
-	cmd := exec.CommandContext(ctx, spec.Path)
+	// The verified file is what runs: the confined launcher execs this open
+	// descriptor, so swapping the path after the check changes nothing.
+	binary, err := openVerified(spec.Path, sum)
+	if err != nil {
+		return nil, fmt.Errorf("extension %q: %w", spec.Name, err)
+	}
+	defer func() { _ = binary.Close() }()
+	g, err := openGate(ctx, spec.Egress)
+	if err != nil {
+		return nil, fmt.Errorf("extension %q: egress: %w", spec.Name, err)
+	}
+	cmd, err := confinedCommand(ctx, binary, g.socket)
+	if err != nil {
+		g.close()
+		return nil, fmt.Errorf("extension %q: %w", spec.Name, err)
+	}
 	cmd.Env = passEnv(spec.Env)
-	client := goplugin.NewClient(&goplugin.ClientConfig{
+	p := &proc{gate: g, client: goplugin.NewClient(&goplugin.ClientConfig{
 		HandshakeConfig:  Handshake,
 		Plugins:          goplugin.PluginSet{surface: impl},
 		Cmd:              cmd,
 		AllowedProtocols: []goplugin.Protocol{goplugin.ProtocolGRPC},
-		SecureConfig:     &goplugin.SecureConfig{Checksum: sum, Hash: sha256.New()},
 		SkipHostEnv:      true,
 		Logger:           h.log.Named(spec.Name),
-	})
-	rpc, err := client.Client()
+	})}
+	rpc, err := p.client.Client()
 	if err != nil {
-		client.Kill()
+		p.kill()
 		return nil, fmt.Errorf("extension %q: connect: %w", spec.Name, err)
 	}
 	raw, err := rpc.Dispense(surface)
 	if err != nil {
-		client.Kill()
+		p.kill()
 		return nil, fmt.Errorf("extension %q: dispense %s: %w", spec.Name, surface, err)
 	}
 	h.mu.Lock()
 	old := h.procs[spec.Name]
-	h.procs[spec.Name] = client
+	h.procs[spec.Name] = p
 	h.mu.Unlock()
 	if old != nil {
-		old.Kill()
+		old.kill()
 	}
 	return raw, nil
 }
@@ -92,11 +123,11 @@ func (h *Host) Start(ctx context.Context, spec Spec, surface string, impl goplug
 // error.
 func (h *Host) Stop(name string) {
 	h.mu.Lock()
-	client := h.procs[name]
+	p := h.procs[name]
 	delete(h.procs, name)
 	h.mu.Unlock()
-	if client != nil {
-		client.Kill()
+	if p != nil {
+		p.kill()
 	}
 }
 
@@ -104,19 +135,37 @@ func (h *Host) Stop(name string) {
 func (h *Host) Alive(name string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	client := h.procs[name]
-	return client != nil && !client.Exited()
+	p := h.procs[name]
+	return p != nil && !p.client.Exited()
 }
 
 // Close stops every extension.
 func (h *Host) Close() {
 	h.mu.Lock()
 	procs := h.procs
-	h.procs = make(map[string]*goplugin.Client)
+	h.procs = make(map[string]*proc)
 	h.mu.Unlock()
-	for _, client := range procs {
-		client.Kill()
+	for _, p := range procs {
+		p.kill()
 	}
+}
+
+// openVerified opens the extension binary and checks it against sum.
+func openVerified(path string, sum []byte) (*os.File, error) {
+	f, err := os.Open(path) //nolint:gosec // the path is the installed package's binary
+	if err != nil {
+		return nil, err
+	}
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	if !bytes.Equal(h.Sum(nil), sum) {
+		_ = f.Close()
+		return nil, errors.New("binary does not match its checksum")
+	}
+	return f, nil
 }
 
 func passEnv(names []string) []string {
