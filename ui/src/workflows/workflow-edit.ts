@@ -118,3 +118,18 @@ function prune(value: unknown): unknown {
   }
   return out;
 }
+
+/** A top-level workflow field (repository, inputs, profile, ...) as plain data. */
+export function workflowField(source: string, key: string): unknown {
+  const value = parseDocument(source).get(key, true);
+  return value && typeof value === "object" && "toJSON" in value ? (value as { toJSON(): unknown }).toJSON() : parseDocument(source).get(key);
+}
+
+/** Sets a top-level workflow field, or removes it when the value is empty. */
+export function setWorkflowField(source: string, key: string, value: unknown): string {
+  const document = parseDocument(source);
+  const pruned = (prune({ [key]: value }) as Record<string, unknown>)[key];
+  if (pruned === undefined) document.delete(key);
+  else document.set(key, document.createNode(pruned));
+  return document.toString();
+}

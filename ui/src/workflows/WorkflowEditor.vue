@@ -14,6 +14,9 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import StepEditor from "./StepEditor.vue";
+import WorkflowSettings from "./WorkflowSettings.vue";
+import RunWorkflowButton from "./RunWorkflowButton.vue";
+import TaskRowActions from "@/tasks/TaskRowActions.vue";
 import WorkflowCanvas from "./WorkflowCanvas.vue";
 import { deleteStep, duplicateStep, insertStep, moveStep, type StepPath } from "./workflow-edit";
 import { useWorkflowRuns } from "./workflow-runs";
@@ -48,9 +51,14 @@ defineProps<{ runsCount?: number }>();
 const id = ref("");
 const yaml = ref("");
 const selectedStep = ref<StepPath | null>(null);
+// The slide-in panel shows one thing: a step's editor, or the workflow's settings.
+const settingsOpen = ref(false);
+watch(selectedStep, (path) => {
+  if (path) settingsOpen.value = false;
+});
 const localError = ref("");
 
-const { runs, watched, stages, pick } = useWorkflowRuns(selected);
+const { runs, watched, watchedRun, stages, pick, follow, refresh } = useWorkflowRuns(selected);
 const triggers = useWorkflowTriggers(selected);
 
 // Canvas edits are edits to the YAML; a newly placed step opens for editing.
@@ -159,18 +167,18 @@ function syncScroll(event: Event): void {
 <template>
   <form class="space-y-4" @submit.prevent="saveDraft">
     <Tabs v-model="view" class="space-y-1.5">
-      <div class="flex flex-wrap items-center gap-2">
+      <div class="flex items-center gap-2">
         <TabsList>
           <TabsTrigger value="canvas">Canvas</TabsTrigger>
           <TabsTrigger value="yaml">YAML</TabsTrigger>
           <TabsTrigger v-if="$slots.performance" value="performance">Performance</TabsTrigger>
           <TabsTrigger v-if="$slots.runs" value="runs">Runs <span class="ml-1 font-mono text-xs text-fg-subtle">{{ runsCount ?? 0 }}</span></TabsTrigger>
         </TabsList>
+        <div v-if="runs.length && view === 'canvas'" class="flex h-8 min-w-0 items-center gap-1 rounded-md border border-input pr-1">
         <select
-          v-if="runs.length && view === 'canvas'"
           :value="watched"
           aria-label="Run shown on the canvas"
-          class="h-8 max-w-72 rounded-md border border-input bg-background px-2 text-[13px]"
+          class="h-full min-w-0 max-w-64 truncate rounded-md bg-transparent px-2 text-[13px] outline-none"
           @change="pick(($event.target as HTMLSelectElement).value)"
         >
           <option value="">Definition only</option>
@@ -178,6 +186,11 @@ function syncScroll(event: Event): void {
             Run #{{ run.id }} {{ run.title || "" }}{{ run.status ? ` · ${run.status}` : "" }}
           </option>
         </select>
+        <template v-if="watchedRun">
+          <RouterLink :to="`/tasks/${watchedRun.id}`" class="shrink-0 px-1 text-xs text-muted-foreground hover:text-foreground hover:underline">Open</RouterLink>
+          <TaskRowActions :task="watchedRun" class="shrink-0" @done="refresh" />
+        </template>
+        </div>
         <template v-if="view === 'canvas' || view === 'yaml'">
         <span v-if="!parsed.ok" class="ml-auto max-w-md truncate text-xs text-danger" role="status" :title="validationLabel(parsed)">
           {{ validationLabel(parsed) }}
@@ -195,13 +208,16 @@ function syncScroll(event: Event): void {
             <DropdownMenuItem variant="destructive" @select="remove"><Trash2 /> Delete workflow</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <RunWorkflowButton v-if="stored !== undefined" :workflow="selected" :disabled="dirty" @started="(id) => { view = 'canvas'; void follow(id); }" />
         <Button type="submit" size="sm" :disabled="state.saving || !parsed.ok || !dirty">
           <Spinner v-if="state.saving" data-icon="inline-start" /> Save
         </Button>
         </template>
       </div>
       <TabsContent value="canvas" class="space-y-2">
-        <div class="relative">
+        <!-- The canvas takes the height the viewport has left, so the page
+             itself does not scroll; the canvas pans. -->
+        <div class="relative h-[calc(100dvh-20.5rem)] min-h-[26rem]">
           <WorkflowCanvas
             :yaml="yaml"
             :stages="stages"
@@ -209,11 +225,22 @@ function syncScroll(event: Event): void {
             :triggers="triggers"
             :types="stepTypeNames"
             @edit="selectedStep = $event"
+            @settings="selectedStep = null; settingsOpen = true"
             @insert="insertAt"
             @duplicate="duplicateAt"
             @move="moveAt"
             @remove="removeAt"
           />
+          <Transition
+            enter-from-class="translate-x-full opacity-0"
+            leave-to-class="translate-x-full opacity-0"
+            enter-active-class="transition duration-200"
+            leave-active-class="transition duration-150"
+          >
+            <div v-if="settingsOpen" class="absolute inset-y-0 right-0 overflow-hidden rounded-r-lg">
+              <WorkflowSettings v-model:yaml="yaml" :triggers="triggers" @close="settingsOpen = false" />
+            </div>
+          </Transition>
           <Transition
             enter-from-class="translate-x-full opacity-0"
             leave-to-class="translate-x-full opacity-0"

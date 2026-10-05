@@ -1,15 +1,12 @@
-import { ref, watch, type Ref } from "vue";
+import { computed, ref, watch, type Ref } from "vue";
 
 import { api } from "@/lib/api";
 import { useLiveResource } from "@/stores/live-updates";
 import type { StageRun } from "./workflow-graph";
 
-export interface WorkflowRun {
-  id: number | string;
-  title?: string;
-  status?: string;
-  workflow?: string;
-}
+import type { Task } from "@/tasks/TaskRow.vue";
+
+export type WorkflowRun = Task & { workflow?: string };
 
 interface AttemptsView {
   attempts?: { attempt: number; stages?: StageRun[] }[];
@@ -34,7 +31,7 @@ export function useWorkflowRuns(workflow: Ref<string>) {
       .filter((task) => task.workflow === workflow.value)
       .sort((a, b) => Number(b.id) - Number(a.id))
       .slice(0, RECENT_RUNS);
-    if (!picked || !runs.value.some((run) => String(run.id) === watched.value))
+    if (!picked || (watched.value && !runs.value.some((run) => String(run.id) === watched.value)))
       watched.value = runs.value[0] ? String(runs.value[0].id) : "";
   }
 
@@ -48,8 +45,9 @@ export function useWorkflowRuns(workflow: Ref<string>) {
     stages.value = latest?.stages ?? [];
   }
 
+  // "Definition only" is a choice too, and a refresh must not undo it.
   function pick(id: string): void {
-    picked = id !== "";
+    picked = true;
     watched.value = id;
   }
 
@@ -65,5 +63,14 @@ export function useWorkflowRuns(workflow: Ref<string>) {
   watch(watched, () => void loadStages());
   useLiveResource("tasks", () => void refresh(), 300);
 
-  return { runs, watched, stages, pick };
+  const watchedRun = computed(() => runs.value.find((run) => String(run.id) === watched.value));
+
+  /** Watches a run that just started, once the task list has it. */
+  async function follow(id: number | string): Promise<void> {
+    picked = true;
+    watched.value = String(id);
+    await refresh();
+  }
+
+  return { runs, watched, watchedRun, stages, pick, follow, refresh };
 }

@@ -40,7 +40,7 @@ function duration(ms?: number): string {
 <template>
   <div
     class="w-60 rounded-lg border bg-card px-3 py-2 text-left shadow-sm"
-    :class="[stateClass, data.selected && 'ring-2 ring-ring', data.kind === 'step' && 'cursor-pointer transition-colors hover:border-muted-foreground']"
+    :class="[stateClass, data.selected && 'ring-2 ring-ring', 'cursor-pointer transition-colors hover:border-muted-foreground']"
   >
     <Handle v-if="data.kind !== 'start'" type="target" :position="Position.Top" />
     <Handle id="data-in" type="target" :position="Position.Right" class="!opacity-0" />

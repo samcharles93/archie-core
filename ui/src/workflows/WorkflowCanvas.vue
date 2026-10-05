@@ -36,6 +36,7 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{
   edit: [StepPath];
+  settings: [];
   insert: [after: number, type: string];
   duplicate: [StepPath];
   move: [StepPath, -1 | 1];
@@ -93,8 +94,10 @@ function place(store?: VueFlowStore): void {
   if (!flow) return;
   const width = container.value?.clientWidth ?? 800;
   const height = container.value?.clientHeight ?? 560;
+  // Scroll only when the furthest step reached would be out of view.
   const reached = graph.value.nodes.filter((node) => node.data.run).at(-1);
-  const y = reached ? Math.min(24, height / 3 - reached.position.y * ZOOM) : 24;
+  const below = reached && 24 + (reached.position.y + 180) * ZOOM > height;
+  const y = below ? height / 3 - reached.position.y * ZOOM : 24;
   void flow.setViewport({ x: width / 2 - NODE_WIDTH / 2, y, zoom: ZOOM }, { duration: animate ? 300 : 0 });
 }
 
@@ -114,6 +117,7 @@ function onNodeMenu({ event, node }: NodeMouseEvent): void {
   openMenu(event as MouseEvent, node.data as StepNodeData);
 }
 function onNodeClick({ node }: NodeMouseEvent): void {
+  if ((node.data as StepNodeData).kind === "start" && editable.value) return emit("settings");
   const path = (node.data as StepNodeData).path;
   if (editable.value && path) emit("edit", path);
 }
@@ -122,7 +126,7 @@ const topIndex = computed(() => (menuPath.value?.length === 2 ? Number(menuPath.
 </script>
 
 <template>
-  <div ref="container" class="workflow-canvas relative h-[620px] overflow-hidden rounded-lg border border-border bg-background">
+  <div ref="container" class="workflow-canvas relative h-full overflow-hidden rounded-lg border border-border bg-background">
     <VueFlow
       class="h-full"
       :nodes="nodes"

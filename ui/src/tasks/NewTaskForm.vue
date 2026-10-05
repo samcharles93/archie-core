@@ -27,6 +27,7 @@ import {
 } from "@/workflows/work-request";
 
 /** Starting work enters Archie's normal admitted task queue, not a side door. */
+const props = defineProps<{ /** Starts this workflow, with no chooser. */ workflow?: string }>();
 const emit = defineEmits<{ started: [taskId: number]; cancel: [] }>();
 const uid = useId();
 
@@ -53,7 +54,7 @@ identities.watch();
 const actors = computed(() => identities.identities.filter((i) => i.kind !== "system" && i.lifecycle === "active"));
 
 const repository = ref("");
-const workflow = ref("");
+const workflow = ref(props.workflow ?? "");
 const title = ref("");
 const instructions = ref("");
 const identity = ref("");
@@ -123,7 +124,7 @@ async function submit() {
       </p>
     </div>
 
-    <div class="grid gap-1.5">
+    <div v-if="!props.workflow" class="grid gap-1.5">
       <span :id="`${uid}-wf`" class="text-[13px] font-medium">Workflow</span>
       <RadioGroupRoot v-model="workflow" :aria-labelledby="`${uid}-wf`" class="grid grid-cols-1 gap-2 sm:grid-cols-3" loop>
         <RadioGroupItem
