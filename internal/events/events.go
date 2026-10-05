@@ -53,6 +53,9 @@ const (
 	KindTaskCancelled        = "task_cancelled"
 	KindTaskStopped          = "task_stopped"
 	KindTaskAbandoned        = "task_abandoned"
+	// KindTaskWithdrawn records work declined because its issue was closed,
+	// unlabelled or unassigned. data: reason.
+	KindTaskWithdrawn = "task_withdrawn"
 	KindTaskArchiveRequested = "task_archive_requested"
 	KindWorkRequestSubmitted = "work_request_submitted"
 	KindLog                  = "log" // data: level, msg

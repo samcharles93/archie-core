@@ -27,6 +27,15 @@ func (b *boot) taskActions() taskactions.Service {
 	)
 }
 
+// withdrawIssue declines the task an issue queued, if it has one.
+func (b *boot) withdrawIssue(ctx context.Context, owner, repo string, number int, reason string) error {
+	task, err := b.stateStore.TaskByIssue(ctx, owner, repo, number)
+	if err != nil || task == nil {
+		return err
+	}
+	return b.taskActions().Withdraw(ctx, task.ID, reason)
+}
+
 func (b *boot) cancelTask(id int64) bool {
 	if b.d == nil {
 		return false

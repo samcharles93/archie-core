@@ -198,6 +198,10 @@ type Daemon struct {
 	WorkflowDefinitions interface {
 		WorkflowDefinitions(context.Context) (workflow.WorkflowDefinitionCollection, int64, error)
 	}
+	// WithdrawTask declines a task whose issue a complete poll no longer
+	// returns. Nil leaves withdrawn issues' work running.
+	WithdrawTask func(ctx context.Context, taskID int64, reason string) error
+
 	// WorkflowEnablement supplies which workflows each org has disabled. A
 	// binding targeting a workflow its org disabled does not dispatch. Nil
 	// means every workflow is enabled.
@@ -432,7 +436,10 @@ func (d *Daemon) pollForIdentity(ctx context.Context, id *IdentityRunner) {
 	d.markPoll()
 	cfg := configForIdentity(d.Cfg.Get(), id.Cfg)
 	for _, repo := range id.Repos {
-		issues := d.pollIssuesWithConfig(ctx, id.Forge, cfg, repo)
+		issues, complete := d.pollIssuesWithConfig(ctx, id.Forge, cfg, repo)
+		if complete {
+			d.withdrawUnpolled(ctx, repo, string(id.ID), issues)
+		}
 		for _, is := range issues {
 			labels := strings.Join(is.Labels, ",")
 			if d.Tasks != nil {
@@ -457,71 +464,61 @@ func (d *Daemon) maintainAndDrain(ctx context.Context) {
 	}
 }
 
-// pollIssuesWithConfig discovers work for one repo using the given forge
-// client and dispatch config. Single-identity mode passes d.Forge/d.Cfg;
-// identity poll loops pass the identity's own forge and configForIdentity,
-// so each identity polls with its own bot user, label, and trigger.
-func (d *Daemon) pollIssuesWithConfig(ctx context.Context, fg forge.Forge, cfg config.Config, repo config.Repo) []forge.Issue {
+// pollIssuesWithConfig returns the repo's issues the dispatch rule makes
+// work, using the given forge client and dispatch config: single-identity
+// mode passes d.Forge/d.Cfg, identity poll loops their own forge and
+// configForIdentity, so each identity polls with its own bot user, label and
+// trigger. complete is false when any part of the poll failed or was skipped, so
+// the result must not be read as the whole eligible set.
+func (d *Daemon) pollIssuesWithConfig(ctx context.Context, fg forge.Forge, cfg config.Config, repo config.Repo) (issues []forge.Issue, complete bool) {
 	// Webhook intake hears about issues as they change; polling as well would
 	// spend forge API quota to find the same work. The receiver runs from the
 	// root forge settings, so their mode decides for every identity.
 	if d.Cfg.Get().Forge.Intake == config.ForgeIntakeWebhook {
-		return nil
+		return nil, false
 	}
-	switch cfg.Dispatch.Trigger {
-	case "label":
+	labelled := func() ([]forge.Issue, bool) {
 		// Empty-label rule shared with workintake.MatchesDispatch: a label
 		// trigger needs a non-empty label or it would match every open issue.
-		if workintake.RequiresLabel(cfg.Dispatch.Trigger) && cfg.Label == "" {
+		if cfg.Label == "" {
 			d.Log.Error("label trigger configured with an empty label; refusing to poll (an empty label matches every open issue)", "repo", repo.FullName())
-			return nil
+			return nil, false
 		}
 		issues, err := fg.IssuesWithLabel(ctx, repo.Owner, repo.Name, cfg.Label)
 		if err != nil {
 			d.Log.Error("label poll failed", "repo", repo.FullName(), "err", err)
-			return nil
+			return nil, false
 		}
-		return issues
-	case "either":
-		return d.pollEitherWithConfig(ctx, fg, cfg, repo)
-	default: // "assignee" (default)
+		return issues, true
+	}
+	assigned := func() ([]forge.Issue, bool) {
 		issues, err := fg.AssignedIssues(ctx, repo.Owner, repo.Name, cfg.BotUser)
 		if err != nil {
-			d.Log.Error("poll failed", "repo", repo.FullName(), "err", err)
-			return nil
+			d.Log.Error("assigned poll failed", "repo", repo.FullName(), "err", err)
+			return nil, false
 		}
-		return issues
+		return issues, true
 	}
-}
-
-func (d *Daemon) pollEitherWithConfig(ctx context.Context, fg forge.Forge, cfg config.Config, repo config.Repo) []forge.Issue {
-	seen := map[int]bool{}
-	var out []forge.Issue
-
-	assigned, err := fg.AssignedIssues(ctx, repo.Owner, repo.Name, cfg.BotUser)
-	if err != nil {
-		d.Log.Error("assigned poll failed", "repo", repo.FullName(), "err", err)
-	} else {
-		for _, is := range assigned {
+	switch cfg.Dispatch.Trigger {
+	case "label":
+		return labelled()
+	case "either":
+		byAssignee, assignedOK := assigned()
+		byLabel, labelledOK := labelled()
+		seen := map[int]bool{}
+		for _, is := range byAssignee {
 			seen[is.Number] = true
-			out = append(out, is)
 		}
-	}
-	if workintake.RequiresLabel(cfg.Dispatch.Trigger) && cfg.Label == "" {
-		d.Log.Error("either trigger configured with an empty label; skipping the label poll (an empty label matches every open issue)", "repo", repo.FullName())
-		return out
-	}
-	labelled, err := fg.IssuesWithLabel(ctx, repo.Owner, repo.Name, cfg.Label)
-	if err != nil {
-		d.Log.Error("label poll failed", "repo", repo.FullName(), "err", err)
-	} else {
-		for _, is := range labelled {
+		issues = byAssignee
+		for _, is := range byLabel {
 			if !seen[is.Number] {
-				out = append(out, is)
+				issues = append(issues, is)
 			}
 		}
+		return issues, assignedOK && labelledOK
+	default: // "assignee" (default)
+		return assigned()
 	}
-	return out
 }
 
 // Cycle is one poll-and-drain pass: enqueue newly assigned issues,
@@ -1065,12 +1062,44 @@ func (d *Daemon) poll(ctx context.Context) {
 	}
 	d.markPoll()
 	for _, repo := range d.Cfg.Get().Repos {
-		issues := d.pollIssues(ctx, repo)
+		issues, complete := d.pollIssues(ctx, repo)
+		if complete {
+			d.withdrawUnpolled(ctx, repo, "", issues)
+		}
 		for _, is := range issues {
 			labels := strings.Join(is.Labels, ",")
 			if d.Tasks != nil {
 				d.pollNATS(ctx, d.Forge, d.Cfg.Get(), repo, is, labels, "")
 			}
+		}
+	}
+}
+
+// withdrawUnpolled declines the queued or running work of an identity's
+// issues in repo that a complete poll no longer returns: the issue was
+// closed, unlabelled or unassigned.
+func (d *Daemon) withdrawUnpolled(ctx context.Context, repo config.Repo, identity string, polled []forge.Issue) {
+	if d.WithdrawTask == nil {
+		return
+	}
+	eligible := make(map[int]bool, len(polled))
+	for _, is := range polled {
+		eligible[is.Number] = true
+	}
+	active, err := d.Store.TasksPage(ctx, storecontract.TaskPage{
+		Statuses: []string{taskstate.Queued, taskstate.Running}, Limit: 500,
+	})
+	if err != nil {
+		d.Log.Warn("withdrawal check: active tasks unavailable", "repo", repo.FullName(), "err", err)
+		return
+	}
+	for _, t := range active {
+		if t.Owner != repo.Owner || t.Repo != repo.Name || t.Identity != identity ||
+			!t.IsForgeBacked() || t.PRNumber > 0 || eligible[t.IssueNumber] {
+			continue
+		}
+		if err := d.WithdrawTask(ctx, t.ID, "the issue is no longer assigned, labelled or open"); err != nil {
+			d.Log.Warn("withdraw task", "task", t.ID, "err", err)
 		}
 	}
 }
@@ -1257,7 +1286,7 @@ func (d *Daemon) processNATSTask(ctx context.Context, msg eventbus.Message) {
 // pollIssues discovers work for one repo according to the root dispatch
 // config, using the root forge client. Identity poll loops use
 // pollIssuesWithConfig with their own forge and config instead.
-func (d *Daemon) pollIssues(ctx context.Context, repo config.Repo) []forge.Issue {
+func (d *Daemon) pollIssues(ctx context.Context, repo config.Repo) ([]forge.Issue, bool) {
 	return d.pollIssuesWithConfig(ctx, d.Forge, d.Cfg.Get(), repo)
 }
 

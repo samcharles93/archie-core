@@ -28,6 +28,9 @@ const maxBodyBytes = 1 << 20 // 1 MiB
 // (*daemon.Daemon).PublishTask, the same enqueue path the poller uses.
 type PublishFunc func(ctx context.Context, task workintake.TaskEnvelope) error
 
+// WithdrawFunc declines the work an issue no longer asks for.
+type WithdrawFunc func(ctx context.Context, owner, repo string, number int, reason string) error
+
 // ReactionPublishFunc publishes one review reaction.
 type ReactionPublishFunc func(ctx context.Context, reaction workintake.ReviewCommentEnvelope) error
 
@@ -52,6 +55,7 @@ type Receiver struct {
 	botUser         string
 	publish         PublishFunc
 	reactionPublish ReactionPublishFunc
+	withdraw        WithdrawFunc
 	log             *slog.Logger
 
 	mu                sync.Mutex
@@ -71,7 +75,7 @@ type reactionWindow struct {
 }
 
 // New returns an unstarted Receiver.
-func New(secret string, parser forge.WebhookParser, trigger, label, botUser string, publish PublishFunc, reactionPublish ReactionPublishFunc, log *slog.Logger) *Receiver {
+func New(secret string, parser forge.WebhookParser, trigger, label, botUser string, publish PublishFunc, reactionPublish ReactionPublishFunc, withdraw WithdrawFunc, log *slog.Logger) *Receiver {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
@@ -83,6 +87,7 @@ func New(secret string, parser forge.WebhookParser, trigger, label, botUser stri
 		botUser:         botUser,
 		publish:         publish,
 		reactionPublish: reactionPublish,
+		withdraw:        withdraw,
 		reactionLimiter: map[string]*reactionWindow{},
 		log:             log.With("component", "forge-webhook"),
 		startedAt:       time.Now(),
@@ -211,7 +216,15 @@ func (r *Receiver) serveIssueEvent(w http.ResponseWriter, req *http.Request, iss
 	task, ok := r.taskFromEvent(issueEvent)
 	if !ok {
 		// Delivered but not eligible work (PR, closed, unrelated action,
-		// dispatch mismatch). Acknowledge without publishing.
+		// dispatch mismatch). A withdrawal declines the work it queued;
+		// anything else is acknowledged without publishing.
+		if reason, withdrawn := r.withdrawal(issueEvent); withdrawn && r.withdraw != nil {
+			if err := r.withdraw(req.Context(), issueEvent.Owner, issueEvent.Repo, issueEvent.Number, reason); err != nil {
+				r.log.Error("withdraw task", "repo", issueEvent.Owner+"/"+issueEvent.Repo, "issue", issueEvent.Number, "err", err)
+				http.Error(w, "withdraw failed", http.StatusInternalServerError)
+				return
+			}
+		}
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
@@ -319,6 +332,23 @@ func (r *Receiver) allowReactionDelivery(remote string) bool {
 	}
 	w.count++
 	return w.count <= reactionRateLimit
+}
+
+// withdrawal reports whether an issues event takes an issue out of dispatch:
+// it was closed, or lost the label or assignee that made it work.
+func (r *Receiver) withdrawal(event *forge.IssueEvent) (string, bool) {
+	if event.PullRequest || event.Owner == "" || event.Repo == "" {
+		return "", false
+	}
+	switch event.Action {
+	case "closed":
+		return "the issue was closed", true
+	case "unlabeled", "unassigned":
+		if !workintake.MatchesDispatch(r.trigger, r.label, r.botUser, event.Labels, event.Assignees) {
+			return "the issue was " + event.Action, true
+		}
+	}
+	return "", false
 }
 
 // taskFromEvent reports the task an issues event makes eligible, or

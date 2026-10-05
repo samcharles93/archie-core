@@ -652,6 +652,7 @@ func (b *boot) buildDaemon() {
 	if btc, ok := b.stateStore.(storecontract.BindingTaskCreator); ok {
 		b.d.BindingTaskCreator = btc
 	}
+	b.d.WithdrawTask = b.taskActions().Withdraw
 
 	b.d.Access = b.accessChain
 	if b.accessChain != nil {
@@ -691,7 +692,7 @@ func (b *boot) setupForgeWebhook() {
 		return
 	}
 
-	receiver := forgewebhook.New(secretValue, parser, cfg.Dispatch.Trigger, cfg.Label, cfg.BotUser, b.d.PublishTask, b.d.PublishReaction, log)
+	receiver := forgewebhook.New(secretValue, parser, cfg.Dispatch.Trigger, cfg.Label, cfg.BotUser, b.d.PublishTask, b.d.PublishReaction, b.withdrawIssue, log)
 	host, port := parseListenAddr(cfg.Forge.WebhookAddr, "0.0.0.0", 8645)
 	addr := fmt.Sprintf("%s:%d", host, port)
 	srv := &http.Server{Addr: addr, Handler: receiver, ReadHeaderTimeout: 5 * time.Second}

@@ -239,6 +239,30 @@ func (s Service) Apply(ctx context.Context, scope *string, actor Actor, id int64
 	return nil
 }
 
+// Withdraw declines a queued or running task whose issue was withdrawn on
+// the forge -- closed, unlabelled or unassigned -- cancelling its run. The
+// issue is left as the person who withdrew it left it. A task in any other
+// state, or one with a pull request open, is not withdrawn: its work is
+// already in review or finished.
+func (s Service) Withdraw(ctx context.Context, id int64, reason string) error {
+	task, err := s.Store.TaskByID(ctx, id)
+	if err != nil || task == nil {
+		return err
+	}
+	if (task.Status != taskstate.Queued && task.Status != taskstate.Running) || task.PRNumber > 0 {
+		return nil
+	}
+	event := s.attributed(task, Actor{})
+	event.Kind, event.Detail = events.KindTaskWithdrawn, "issue withdrawn: "+reason
+	event.Data = map[string]any{"reason": reason}
+	if _, err := s.Store.CancelExecution(ctx, task.ID, event.Detail, declined); err != nil {
+		return err
+	}
+	s.deliver(task.ID)
+	s.emit(ctx, event)
+	return nil
+}
+
 // The statuses the cancel path records, taken from the lifecycle's action table
 // so the service cannot drift from the transitions it offers.
 var (
