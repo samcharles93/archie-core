@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.47.2",
+    "date": "2026-10-06",
+    "body": "### archied\n\n- **Events → Inspector** now lists your capture sources with their real URLs and a **New source** button, replacing the `/webhooks/capture/<source>` placeholder. Sources no longer sit on the Bindings tab."
+  },
+  {
     "version": "1.47.1",
     "date": "2026-10-06",
     "body": "### archied\n\n- The bundled PostgreSQL has no network and publishes no port: the services reach it through its Unix socket under `~/.local/share/archie/postgres`, so it no longer collides with another PostgreSQL on 5432. Leaving the database question blank in `archied setup` selects it.\n- The installer does not start the services when the bundled PostgreSQL fails to start; it names the command to read its logs.\n- On hosts that restrict unprivileged user namespaces (Ubuntu 23.10+), the installer prints an AppArmor profile allowing them for the Archie binaries only."

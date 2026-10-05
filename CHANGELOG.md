@@ -5,6 +5,12 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.47.2] - 2026-10-06
+
+### archied
+
+- **Events → Inspector** now lists your capture sources with their real URLs and a **New source** button, replacing the `/webhooks/capture/<source>` placeholder. Sources no longer sit on the Bindings tab.
+
 ## [1.47.1] - 2026-10-06
 
 ### archied
