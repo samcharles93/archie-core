@@ -50,17 +50,3 @@ export function initialTaskFilter(
 export function boardStatus(query: string, catalog: StatusMeta[]): string {
   return initialTaskFilter(query, catalog);
 }
-
-/** taskMatchesStatus reports whether a task survives the status filter. */
-export function taskMatchesStatus(
-  task: { status?: string },
-  status: string,
-  catalog: StatusMeta[],
-): boolean {
-  if (!status) return true;
-  if (status === "needs_you")
-    return catalog.some(
-      (entry) => entry.needs_you && entry.id === (task.status ?? ""),
-    );
-  return task.status === status;
-}

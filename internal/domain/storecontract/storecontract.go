@@ -124,7 +124,10 @@ type TaskQueries interface {
 	TaskByID(ctx context.Context, taskID int64) (*task.Task, error)
 	OpenPRs(ctx context.Context) ([]task.Task, error)
 	ClearTerminalTasks(ctx context.Context) (int64, error)
+	// Tasks returns the most recently updated tasks.
 	Tasks(ctx context.Context, limit int) ([]task.Task, error)
+	// TasksPage returns one page of tasks, most recently updated first.
+	TasksPage(ctx context.Context, page TaskPage) ([]task.Task, error)
 	StatusCounts(ctx context.Context) (map[string]int, error)
 }
 
@@ -244,6 +247,21 @@ type SourceStore interface {
 	ListSources(ctx context.Context) ([]source.Source, error)
 	SetSourceSigning(ctx context.Context, path string, from, to source.Signing) error
 	SetSourceSecret(ctx context.Context, path, secret string) error
+}
+
+// TaskPage selects one page of the task list. Empty Statuses matches every
+// status. A zero After starts at the newest task; otherwise the page begins
+// after the task it names, in (updated_at, id) descending order.
+type TaskPage struct {
+	Statuses []string
+	After    TaskCursor
+	Limit    int
+}
+
+// TaskCursor is the position of the last task a page returned.
+type TaskCursor struct {
+	UpdatedAt time.Time
+	ID        int64
 }
 
 // Dispatch is one binding/capture ledger row: the task it started, or the

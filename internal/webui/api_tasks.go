@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
@@ -41,17 +42,45 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	needsYou := 0
+	for _, id := range needsYouStatuses() {
+		needsYou += statuses[id]
+	}
 	writeJSON(w, map[string]any{
-		"statuses": statuses, "workflows": workflows,
+		"statuses": statuses, "needs_you": needsYou, "workflows": workflows,
 		"stages": stages, "tokens_by_day": days,
 	})
 }
 
+// needsYouStatuses are the statuses the "needs you" filter and count group.
+func needsYouStatuses() []string {
+	var ids []string
+	for _, meta := range taskstate.Statuses() {
+		if meta.NeedsYou {
+			ids = append(ids, meta.ID)
+		}
+	}
+	return ids
+}
+
+// handleTasks serves one page of tasks, most recently updated first. ?status
+// narrows it (needs_you is the grouped filter), ?limit sizes it, and ?cursor
+// resumes after the previous page; a full page answers the next cursor in the
+// X-Next-Cursor header.
 func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
-	tasks, err := s.Store.Tasks(r.Context(), 100)
+	page, err := taskPageFrom(r.URL.Query())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	tasks, err := s.Store.TasksPage(r.Context(), page)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if len(tasks) == page.Limit {
+		last := tasks[len(tasks)-1]
+		w.Header().Set("X-Next-Cursor", fmt.Sprintf("%d.%d", last.UpdatedAt.UnixNano(), last.ID))
 	}
 	forge := s.resolveForge(r.Context())
 	views := make([]taskView, len(tasks))
@@ -60,6 +89,37 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 		views[i] = taskView{Task: tasks[i], Actions: taskstate.Actions(tasks[i].Status), RepoURL: repoURL, IssueURL: issueURL, PRURL: prURL}
 	}
 	writeJSON(w, views)
+}
+
+const defaultTaskPage = 100
+
+// taskPageFrom reads the task list's query parameters.
+func taskPageFrom(q url.Values) (storecontract.TaskPage, error) {
+	page := storecontract.TaskPage{Limit: defaultTaskPage}
+	switch status := q.Get("status"); status {
+	case "":
+	case "needs_you":
+		page.Statuses = needsYouStatuses()
+	default:
+		page.Statuses = []string{status}
+	}
+	if raw := q.Get("limit"); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 1 || limit > 500 {
+			return page, fmt.Errorf("limit must be 1 to 500")
+		}
+		page.Limit = limit
+	}
+	if raw := q.Get("cursor"); raw != "" {
+		nanos, id, ok := strings.Cut(raw, ".")
+		n, nerr := strconv.ParseInt(nanos, 10, 64)
+		i, ierr := strconv.ParseInt(id, 10, 64)
+		if !ok || nerr != nil || ierr != nil || i <= 0 {
+			return page, fmt.Errorf("invalid cursor")
+		}
+		page.After = storecontract.TaskCursor{UpdatedAt: time.Unix(0, n), ID: i}
+	}
+	return page, nil
 }
 
 type taskView struct {

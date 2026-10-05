@@ -147,6 +147,18 @@ export const api = {
     request<void>("/api/access/policies", { method: "DELETE", body: policy, parse: false }),
   summary: <T = unknown>() => request<T>("/api/summary"),
   tasks: <T = unknown>() => request<T>("/api/tasks"),
+  // taskPage reads one page of the board; next is the cursor for the page
+  // after it, or null when this page was the last.
+  taskPage: async <T = unknown>(params: QueryParams) => {
+    const res = await send("/api/tasks" + qs(params), {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+    });
+    return {
+      tasks: (await res.json()) as T[],
+      next: res.headers.get("X-Next-Cursor"),
+    };
+  },
   taskMeta: <T = unknown>() => request<T>("/api/task-meta"),
   task: <T = unknown>(id: string) =>
     request<T>(`/api/tasks/${encodeURIComponent(id)}`),

@@ -7,7 +7,6 @@ import { computed, ref } from "vue";
 import {
   boardStatus,
   initialTaskFilter,
-  taskMatchesStatus,
   taskStatuses,
 } from "../src/tasks/task-filter.ts";
 
@@ -37,30 +36,6 @@ test("only a status the served catalog knows becomes a filter", () => {
       initialTaskFilter(requested, catalog),
       expected,
       JSON.stringify(requested),
-    );
-  }
-});
-
-test("needs_you groups exactly the statuses the catalog marks for a human", () => {
-  const catalog = [QUEUED, WAITING, TRIAGING];
-  assert.deepEqual(
-    [...taskStatuses(catalog)],
-    ["needs_you", "queued", "waiting_human", "triaging"],
-  );
-
-  const cases: Array<[{ status?: string }, string, boolean]> = [
-    [{ status: "waiting_human" }, "needs_you", true],
-    [{ status: "triaging" }, "needs_you", false],
-    [{ status: "queued" }, "", true],
-    [{ status: "triaging" }, "triaging", true],
-    [{ status: "queued" }, "triaging", false],
-    [{}, "queued", false],
-  ];
-  for (const [task, status, expected] of cases) {
-    assert.equal(
-      taskMatchesStatus(task, status, catalog),
-      expected,
-      `${task.status} against ${status}`,
     );
   }
 });

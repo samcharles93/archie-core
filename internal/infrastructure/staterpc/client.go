@@ -288,8 +288,17 @@ func (c *Client) ClearTerminalTasks(ctx context.Context) (int64, error) {
 	return r.Count, nil
 }
 
+// Tasks returns the most recently updated tasks.
 func (c *Client) Tasks(ctx context.Context, limit int) ([]task.Task, error) {
-	r, err := c.client.Tasks(ctx, &pb.TasksRequest{Limit: int64(limit)})
+	return c.TasksPage(ctx, storecontract.TaskPage{Limit: limit})
+}
+
+// TasksPage returns one page of tasks, most recently updated first.
+func (c *Client) TasksPage(ctx context.Context, page storecontract.TaskPage) ([]task.Task, error) {
+	r, err := c.client.Tasks(ctx, &pb.TasksRequest{
+		Limit: int64(page.Limit), Statuses: page.Statuses,
+		AfterUpdatedAt: timestamp(page.After.UpdatedAt), AfterId: page.After.ID,
+	})
 	if err != nil {
 		return nil, unmapError(err)
 	}

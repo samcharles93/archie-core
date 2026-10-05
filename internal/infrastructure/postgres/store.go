@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/samcharles93/archie-core/internal/domain/org"
@@ -627,9 +628,22 @@ func (s *Store) ClearTerminalTasks(ctx context.Context) (int64, error) {
 	return s.queries().ClearTerminalTasks(ctx)
 }
 
-// Tasks returns all tasks, newest first (dashboard listing).
+// Tasks returns the most recently updated tasks.
 func (s *Store) Tasks(ctx context.Context, limit int) ([]workflow.Task, error) {
-	rows, err := s.queries().ListTaskSummaries(ctx, int32(limit))
+	return s.TasksPage(ctx, storecontract.TaskPage{Limit: limit})
+}
+
+// TasksPage returns one page of tasks, most recently updated first.
+func (s *Store) TasksPage(ctx context.Context, page storecontract.TaskPage) ([]workflow.Task, error) {
+	params := postgresdb.ListTaskSummariesParams{
+		Statuses:  append([]string{}, page.Statuses...),
+		PageLimit: int32(min(max(page.Limit, 1), 500)), //nolint:gosec // clamped
+	}
+	if page.After.ID != 0 {
+		params.BeforeUpdated = pgtype.Timestamptz{Time: page.After.UpdatedAt, Valid: true}
+		params.BeforeID = page.After.ID
+	}
+	rows, err := s.queries().ListTaskSummaries(ctx, params)
 	if err != nil {
 		return nil, err
 	}

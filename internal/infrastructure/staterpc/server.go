@@ -416,7 +416,10 @@ func (s *server) ClearTerminalTasks(ctx context.Context, _ *pb.ClearTerminalTask
 }
 
 func (s *server) Tasks(ctx context.Context, r *pb.TasksRequest) (*pb.TasksResponse, error) {
-	tasks, err := s.deps.Tasks.Tasks(ctx, int(r.Limit))
+	tasks, err := s.deps.Tasks.TasksPage(ctx, storecontract.TaskPage{
+		Statuses: r.Statuses, Limit: int(r.Limit),
+		After: storecontract.TaskCursor{UpdatedAt: timeValue(r.AfterUpdatedAt), ID: r.AfterId},
+	})
 	if err != nil {
 		return nil, s.logErr("Tasks", err)
 	}

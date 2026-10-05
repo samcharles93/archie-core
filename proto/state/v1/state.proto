@@ -833,7 +833,14 @@ message OpenPRsResponse { repeated Task tasks = 1; }
 message ClearTerminalTasksRequest {}
 message ClearTerminalTasksResponse { int64 count = 1; }
 
-message TasksRequest { int64 limit = 1; }
+// TasksRequest selects one page of tasks, most recently updated first. Empty
+// statuses matches every status; after_id 0 starts at the newest task.
+message TasksRequest {
+  int64 limit = 1;
+  repeated string statuses = 2;
+  google.protobuf.Timestamp after_updated_at = 3;
+  int64 after_id = 4;
+}
 message TasksResponse { repeated Task tasks = 1; }
 
 message StatusCountsRequest {}

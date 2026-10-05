@@ -8,6 +8,8 @@ package postgresdb
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const appendPendingReview = `-- name: AppendPendingReview :execrows
@@ -480,8 +482,20 @@ SELECT id, owner, repo, issue_number, title, status, workflow,
        pr_number, tokens_used, iterations, attempt, park_reason, retry_count,
        created_at, updated_at, plan, source, identity, binding_id, binding_version,
        outputs, review_gate, rereview_rounds
-FROM tasks ORDER BY updated_at DESC LIMIT $1
+FROM tasks
+WHERE (cardinality($1::text[]) = 0 OR status = ANY($1::text[]))
+  AND ($2::timestamptz IS NULL
+       OR (updated_at, id) < ($2::timestamptz, $3::bigint))
+ORDER BY updated_at DESC, id DESC
+LIMIT $4
 `
+
+type ListTaskSummariesParams struct {
+	Statuses      []string
+	BeforeUpdated pgtype.Timestamptz
+	BeforeID      int64
+	PageLimit     int32
+}
 
 type ListTaskSummariesRow struct {
 	ID             int64
@@ -518,8 +532,13 @@ type ListTaskSummariesRow struct {
 // wrote is what the operator reads before answering it
 // (docs/prds/pr-review-operator-response.md, "The review the operator
 // answers"), and the round count is the cap's visible half.
-func (q *Queries) ListTaskSummaries(ctx context.Context, limit int32) ([]ListTaskSummariesRow, error) {
-	rows, err := q.db.Query(ctx, listTaskSummaries, limit)
+func (q *Queries) ListTaskSummaries(ctx context.Context, arg ListTaskSummariesParams) ([]ListTaskSummariesRow, error) {
+	rows, err := q.db.Query(ctx, listTaskSummaries,
+		arg.Statuses,
+		arg.BeforeUpdated,
+		arg.BeforeID,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}

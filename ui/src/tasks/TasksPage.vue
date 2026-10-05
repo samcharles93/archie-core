@@ -27,15 +27,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { statusList } from "@/lib/task-meta";
 import { useLiveResource } from "@/stores/live-updates";
 import TaskFilters from "./TaskFilters.vue";
-import {
-  boardStatus,
-  initialTaskFilter,
-  taskMatchesStatus,
-} from "./task-filter";
+import { boardStatus, initialTaskFilter } from "./task-filter";
 import type { Task } from "./TaskRow.vue";
 import TaskTable from "./TaskTable.vue";
 import TasksState from "./TasksState.vue";
@@ -53,6 +50,9 @@ const router = useRouter();
 // null means loading: an empty list and a list that has not arrived are
 // different states, and only one of them is worth a spinner.
 const tasks = ref<Task[] | null>(null);
+const next = ref<string | null>(null);
+const loadingMore = ref(false);
+const summary = ref<{ statuses?: Record<string, number>; needs_you?: number } | null>(null);
 const error = ref<string | null>(null);
 const search = ref("");
 
@@ -73,9 +73,9 @@ const requestedTaskId = computed(() => {
 // serves.
 const status = computed(() => boardStatus(statusQuery.value, statusList()));
 
+// The server filters by status; search narrows the rows already loaded.
 const visible = computed(() =>
   (tasks.value ?? []).filter((task) => {
-    if (!taskMatchesStatus(task, status.value, statusList())) return false;
     const needle = search.value.trim().toLowerCase();
     if (!needle) return true;
     return `${task.title ?? ""} ${task.repo ?? ""}`
@@ -99,18 +99,51 @@ const state = computed<"loading" | "error" | "empty" | "no-match">(() => {
   return "no-match";
 });
 
+const PAGE = 100;
+
+// load re-reads the board from the top, as many rows as are showing, so a live
+// update or a row action does not collapse pages the operator loaded.
 async function load() {
   error.value = null;
+  const limit = Math.min(Math.max(tasks.value?.length ?? 0, PAGE), 500);
   try {
-    tasks.value = await api.tasks<Task[]>();
+    const [page, counts] = await Promise.all([
+      api.taskPage<Task>({ status: status.value || undefined, limit }),
+      api.summary<{ statuses?: Record<string, number>; needs_you?: number }>(),
+    ]);
+    tasks.value = page.tasks;
+    next.value = page.next;
+    summary.value = counts;
   } catch (err) {
     error.value = String((err as Error).message || err);
     tasks.value = null;
   }
 }
 
+async function loadMore() {
+  if (!next.value || loadingMore.value) return;
+  loadingMore.value = true;
+  try {
+    const page = await api.taskPage<Task>({
+      status: status.value || undefined,
+      limit: PAGE,
+      cursor: next.value,
+    });
+    tasks.value = [...(tasks.value ?? []), ...page.tasks];
+    next.value = page.next;
+  } catch (err) {
+    error.value = String((err as Error).message || err);
+  } finally {
+    loadingMore.value = false;
+  }
+}
+
 useLiveResource("tasks", () => void load(), 500);
 onMounted(load);
+watch(status, () => {
+  tasks.value = null;
+  void load();
+});
 
 // A filter change is a query-only route change, so it must not remount the
 // list: the table keeps its identity and only its rows move. The query is the
@@ -171,7 +204,7 @@ async function reveal(id: number) {
     </Card>
 
     <template v-else>
-      <TasksSummary v-if="tasks" :tasks="tasks" />
+      <TasksSummary v-if="summary" :summary="summary" />
 
       <Card>
         <CardHeader>
@@ -196,6 +229,14 @@ async function reveal(id: number) {
               <TasksState :kind="state" @clear="clearFilters" />
             </template>
           </TaskTable>
+          <Button
+            v-if="next"
+            variant="outline"
+            class="self-center"
+            :disabled="loadingMore"
+            @click="loadMore"
+            >Load more</Button
+          >
         </CardContent>
       </Card>
     </template>

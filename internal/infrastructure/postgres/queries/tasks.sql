@@ -42,7 +42,12 @@ SELECT id, owner, repo, issue_number, title, status, workflow,
        pr_number, tokens_used, iterations, attempt, park_reason, retry_count,
        created_at, updated_at, plan, source, identity, binding_id, binding_version,
        outputs, review_gate, rereview_rounds
-FROM tasks ORDER BY updated_at DESC LIMIT $1;
+FROM tasks
+WHERE (cardinality(@statuses::text[]) = 0 OR status = ANY(@statuses::text[]))
+  AND (sqlc.narg(before_updated)::timestamptz IS NULL
+       OR (updated_at, id) < (sqlc.narg(before_updated)::timestamptz, @before_id::bigint))
+ORDER BY updated_at DESC, id DESC
+LIMIT @page_limit;
 
 -- name: CountTasksByStatus :many
 SELECT status, count(*)::int AS count FROM tasks GROUP BY status;
