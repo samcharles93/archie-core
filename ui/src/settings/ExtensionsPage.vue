@@ -36,15 +36,17 @@ async function install(): Promise<void> {
   }
 }
 
+// The dialog's action closes it before its click handler runs, so the
+// target outlives the open flag rather than being cleared on close.
 const accepting = ref<Extension | null>(null);
+const acceptOpen = ref(false);
 async function accept(): Promise<void> {
   if (accepting.value) await store.accept(accepting.value.name);
-  accepting.value = null;
 }
 const removing = ref<Extension | null>(null);
+const removeOpen = ref(false);
 async function remove(): Promise<void> {
   if (removing.value) await store.remove(removing.value.name);
-  removing.value = null;
 }
 
 const tones = {
@@ -108,7 +110,7 @@ const tones = {
           variant="ghost"
           size="sm"
           :disabled="!!store.busy"
-          @click="accepting = extension"
+          @click="(accepting = extension), (acceptOpen = true)"
           >Review authority</Button
         >
         <Switch
@@ -118,7 +120,7 @@ const tones = {
           :aria-label="`Enable ${extension.name}`"
           @update:model-value="(value: boolean) => store.setEnabled(extension.name, value)"
         />
-        <Button variant="ghost" size="sm" class="text-danger" :disabled="!!store.busy" @click="removing = extension">Remove</Button>
+        <Button variant="ghost" size="sm" class="text-danger" :disabled="!!store.busy" @click="(removing = extension), (removeOpen = true)">Remove</Button>
       </li>
       <li v-if="!store.extensions.length">
         <Empty class="py-6">
@@ -131,7 +133,7 @@ const tones = {
 
     <ApplyStatusRows :kind="KIND" class="mt-6 border-t border-border py-4" />
 
-    <AlertDialog :open="!!accepting" @update:open="(open) => !open && (accepting = null)">
+    <AlertDialog v-model:open="acceptOpen">
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Accept what {{ accepting?.name }} may use?</AlertDialogTitle>
@@ -150,7 +152,7 @@ const tones = {
       </AlertDialogContent>
     </AlertDialog>
 
-    <AlertDialog :open="!!removing" @update:open="(open) => !open && (removing = null)">
+    <AlertDialog v-model:open="removeOpen">
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Remove {{ removing?.name }}?</AlertDialogTitle>
