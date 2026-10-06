@@ -98,9 +98,9 @@ path. `--from-source` (or `ARCHIE_UPDATE_SOURCE_BUILD=1`) explicitly clones and
 builds the selected release instead.
 
 The update check command accepts `--channel stable` (default), `--channel next`
-(includes prereleases), or `--channel exact-pin --pin 1.2.3`. Both commands are
-edited under Settings → Status → Updates, and default to the scripts installed
-beside the binaries.
+(includes prereleases), or `--channel exact-pin --pin 1.2.3`. The services run
+only the scripts installed beside their binaries; Settings → Status → Updates
+chooses the channel they select from.
 The notification destination remains separate from the release channel.
 
 For scheduled, unattended runs, `archie-update-install --auto` discovers the

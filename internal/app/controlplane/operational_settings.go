@@ -2,8 +2,6 @@ package controlplane
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -63,8 +61,8 @@ func operationalDefinitions() []Definition {
 		{Kind: ExtensionSettingsKind, Title: "Extension settings", ApplyMode: "live", Document: controlplanerpc.ExtensionSettings{}, Seed: func(config.Config) any { return controlplanerpc.ExtensionSettings{} }, Validate: validateExtensions},
 		// Live: the container pool reads these on every acquire and the dispatcher
 		// is resized on publish.
-		// Live: every check and install reads the commands afresh.
-		{Kind: UpdateSettingsKind, Title: "Update settings", ApplyMode: "live", Document: releaseupdate.Commands{}, Seed: seedUpdateCommands, Validate: validateUpdateCommands},
+		// Live: every check and install reads the channel afresh.
+		{Kind: UpdateSettingsKind, Title: "Update settings", ApplyMode: "live", Document: controlplanerpc.UpdateSettings{}, Seed: func(config.Config) any { return controlplanerpc.UpdateSettings{Channel: "stable"} }, Validate: validateUpdateSettings},
 		{Kind: ContainerRuntimePoliciesKind, Title: "Container runtime policies", ApplyMode: "live", Document: containerRuntimePolicies{}, Seed: seedContainerPolicies, Validate: validateContainers, Normalize: normalizeContainerPolicies},
 	}
 }
@@ -126,38 +124,9 @@ func validateScheduling(input []byte) error {
 	})
 }
 
-// seedUpdateCommands points at the update scripts a release installs beside
-// its binaries, so a zip install can update itself with nothing configured.
-func seedUpdateCommands(config.Config) any {
-	var commands releaseupdate.Commands
-	exe, err := os.Executable()
-	if err != nil {
-		return commands
-	}
-	script := func(name string) []string {
-		path := filepath.Join(filepath.Dir(exe), name)
-		if info, err := os.Stat(path); err != nil || info.Mode()&0o111 == 0 {
-			return nil
-		}
-		return []string{path}
-	}
-	commands.Check = script("archie-update-check")
-	commands.Install = script("archie-update-install")
-	return commands
-}
-
-// validateUpdateCommands refuses a command with a blank program, and an
-// install command without a check to approve its release.
-func validateUpdateCommands(input []byte) error {
-	return validateAs(input, func(doc releaseupdate.Commands) error {
-		for name, command := range map[string][]string{"check_command": doc.Check, "install_command": doc.Install} {
-			if len(command) != 0 && strings.TrimSpace(command[0]) == "" {
-				return fmt.Errorf("%s needs a program", name)
-			}
-		}
-		if len(doc.Install) != 0 && len(doc.Check) == 0 {
-			return fmt.Errorf("install_command needs a check_command")
-		}
-		return nil
+// validateUpdateSettings refuses a channel the update scripts cannot select.
+func validateUpdateSettings(input []byte) error {
+	return validateAs(input, func(doc controlplanerpc.UpdateSettings) error {
+		return releaseupdate.ValidateChannel(doc.Channel, doc.Pin)
 	})
 }

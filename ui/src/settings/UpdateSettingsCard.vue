@@ -3,29 +3,30 @@ import { computed, onMounted } from "vue";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { SettingRow } from "@/components/ui/setting-row";
 import { useControlPlaneStore } from "@/stores/control-plane";
 
 const KIND = "update-settings";
-type Commands = { check_command: string[] | null; install_command: string[] | null };
+type UpdateSettings = { channel: string; pin: string };
 
 const store = useControlPlaneStore();
 onMounted(store.load);
 
-const draft = computed(() => store.drafts[KIND]?.value as Commands | undefined);
+const draft = computed(() => store.drafts[KIND]?.value as UpdateSettings | undefined);
 const error = computed(() => store.stateFor(KIND).error);
 
-// Each command is an argv array, edited as one line split on whitespace.
-function argv(field: keyof Commands) {
-  return computed({
-    get: () => (draft.value?.[field] ?? []).join(" "),
-    set: (line: string) => {
-      if (draft.value) draft.value[field] = line.split(/\s+/).filter(Boolean);
-    },
-  });
-}
-const check = argv("check_command");
-const install = argv("install_command");
+const channels = [
+  { value: "stable", label: "Stable" },
+  { value: "next", label: "Prereleases" },
+  { value: "exact-pin", label: "Pinned" },
+];
+const channel = computed({
+  get: () => draft.value?.channel || "stable",
+  set: (value: string) => {
+    if (draft.value) draft.value.channel = value;
+  },
+});
 </script>
 
 <template>
@@ -35,11 +36,11 @@ const install = argv("install_command");
     </CardHeader>
     <CardContent>
       <p v-if="error" class="mb-2 text-sm text-danger" role="alert">{{ error }}</p>
-      <SettingRow label="Check command" for="update-check" hint="Prints the available releases as JSON.">
-        <Input id="update-check" v-model="check" class="font-mono" placeholder="archie-update-check" />
+      <SettingRow label="Release channel">
+        <SegmentedControl v-model="channel" label="Release channel" :options="channels" />
       </SettingRow>
-      <SettingRow label="Install command" for="update-install" hint="Installs the release you approve. Empty hides Install.">
-        <Input id="update-install" v-model="install" class="font-mono" placeholder="archie-update-install" />
+      <SettingRow v-if="channel === 'exact-pin'" label="Version" for="update-pin">
+        <Input id="update-pin" v-model="draft.pin" class="max-w-40 font-mono" placeholder="1.48.0" />
       </SettingRow>
     </CardContent>
   </Card>

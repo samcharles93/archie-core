@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -22,6 +24,7 @@ const updateResultSentinel = "ARCHIE_UPDATE_RESULT "
 // administrator-owned adapter.
 type CommandCatalog struct {
 	Command []string
+	Env     []string
 }
 
 func (c CommandCatalog) Check(ctx context.Context) (Snapshot, error) {
@@ -29,6 +32,7 @@ func (c CommandCatalog) Check(ctx context.Context) (Snapshot, error) {
 		return Snapshot{}, fmt.Errorf("update check command is empty")
 	}
 	cmd := exec.CommandContext(ctx, c.Command[0], c.Command[1:]...)
+	cmd.Env = append(cmd.Environ(), c.Env...)
 	output, err := cmd.Output()
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("run update check: %w", err)
@@ -133,10 +137,34 @@ func componentVersions(snapshot Snapshot) map[string]Component {
 // ErrNotConfigured is returned when the step's command is unset.
 var ErrNotConfigured = errors.New("updates are not configured")
 
-// Commands is the argv pair a deployment runs to check for and install updates.
+// Commands is what a deployment runs to check for and install updates. Env
+// is added to the check's environment.
 type Commands struct {
-	Check   []string `json:"check_command" title:"Check command" doc:"Prints the available releases as JSON."`
-	Install []string `json:"install_command" title:"Install command" doc:"Installs an approved release."`
+	Check   []string
+	Install []string
+	Env     []string
+}
+
+// ScriptCommands runs the update scripts a release installs beside this
+// binary, selecting releases from channel. Only these scripts ever run, so a
+// setting cannot name an arbitrary program. A missing script is unset.
+func ScriptCommands(channel, pin string) Commands {
+	exe, err := os.Executable()
+	if err != nil {
+		return Commands{}
+	}
+	script := func(name string) []string {
+		path := filepath.Join(filepath.Dir(exe), name)
+		if info, err := os.Stat(path); err != nil || info.Mode()&0o111 == 0 {
+			return nil
+		}
+		return []string{path}
+	}
+	return Commands{
+		Check:   script("archie-update-check"),
+		Install: script("archie-update-install"),
+		Env:     []string{"ARCHIE_UPDATE_RELEASE_CHANNEL=" + channel, "ARCHIE_UPDATE_PIN=" + pin},
+	}
 }
 
 // SettingsCommands is both Catalog and Installer. It loads Commands on every
@@ -154,7 +182,7 @@ func (s SettingsCommands) Check(ctx context.Context) (Snapshot, error) {
 	if len(commands.Check) == 0 {
 		return Snapshot{}, ErrNotConfigured
 	}
-	return CommandCatalog{Command: commands.Check}.Check(ctx)
+	return CommandCatalog{Command: commands.Check, Env: commands.Env}.Check(ctx)
 }
 
 func (s SettingsCommands) Install(ctx context.Context, snapshot Snapshot, meta InstallMeta, progress func(string)) (Result, error) {

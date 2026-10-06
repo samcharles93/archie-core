@@ -109,8 +109,14 @@ func (d *ChannelDuration) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// UpdateSettingsKind holds the commands that check for and install releases.
+// UpdateSettingsKind holds which releases the update scripts select.
 const UpdateSettingsKind = "update-settings"
+
+// UpdateSettings is the update-settings document.
+type UpdateSettings struct {
+	Channel string `json:"channel" title:"Release channel" doc:"stable, next (includes prereleases) or exact-pin."`
+	Pin     string `json:"pin" title:"Pinned version" doc:"The version exact-pin installs."`
+}
 
 // UpdateService runs the stored update commands, reading them on every call.
 // statePath keeps each recipient's deferrals; healthURL reaches the installer.
@@ -119,14 +125,16 @@ func UpdateService(reader ResourceReader, statePath, healthURL string) *releaseu
 	return &releaseupdate.Service{Catalog: commands, Installer: commands, StatePath: statePath, InstallType: installtype.Type()}
 }
 
-// updateCommands reads the update-settings resource. An unstored kind is no
-// commands.
+// updateCommands reads the update-settings resource. An unstored kind is the
+// stable channel.
 func updateCommands(reader ResourceReader) func(context.Context) (releaseupdate.Commands, error) {
 	return func(ctx context.Context) (releaseupdate.Commands, error) {
-		var commands releaseupdate.Commands
-		_, _, err := reader.Query(ctx, UpdateSettingsKind, func(value []byte) error {
-			return json.Unmarshal(value, &commands)
-		})
-		return commands, err
+		settings := UpdateSettings{Channel: "stable"}
+		if _, _, err := reader.Query(ctx, UpdateSettingsKind, func(value []byte) error {
+			return json.Unmarshal(value, &settings)
+		}); err != nil {
+			return releaseupdate.Commands{}, err
+		}
+		return releaseupdate.ScriptCommands(settings.Channel, settings.Pin), nil
 	}
 }
