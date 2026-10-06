@@ -14,7 +14,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/presence"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
-	"github.com/samcharles93/archie-core/internal/installtype"
 	"github.com/samcharles93/archie-core/internal/releaseannounce"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
 	"github.com/samcharles93/archie-core/internal/secret"
@@ -28,8 +27,8 @@ func configureTelegram(ctx context.Context, g *telegram.Gateway, cfg ResolvedCon
 	g.Reload = telegramReloader(cfg.Options, d.Secrets, d.Log)
 	g.RunningVersions = runningVersions(ctx, d.Presence, cfg.Options.DependencyTimeout)
 
-	if updates := updateService(cfg); updates != nil {
-		g.Updates = updates
+	if d.Updates != nil {
+		g.Updates = d.Updates
 	}
 	if cfg.WorkDir != "" {
 		g.UpdateReportPath = identityStatePath(cfg.WorkDir, "update-report", cfg.BotUser)
@@ -89,26 +88,6 @@ func gatewayVersionReporter(ctx context.Context, chat messaging.ChatContract, ti
 		}
 		return snapshot.Version
 	}
-}
-
-// updateService builds /update from [chat.telegram] commands, or nil when
-// none are configured.
-func updateService(cfg ResolvedConfig) *releaseupdate.Service {
-	if len(cfg.Telegram.UpdateCheckCommand) == 0 {
-		return nil
-	}
-	updates := &releaseupdate.Service{
-		Catalog:     releaseupdate.CommandCatalog{Command: cfg.Telegram.UpdateCheckCommand},
-		StatePath:   filepath.Join(cfg.WorkDir, "telegram-update-deferrals.json"),
-		InstallType: installtype.Type(),
-	}
-	if len(cfg.Telegram.UpdateInstallCommand) != 0 {
-		updates.Installer = releaseupdate.CommandInstaller{
-			Command:   cfg.Telegram.UpdateInstallCommand,
-			HealthURL: cfg.HealthURL,
-		}
-	}
-	return updates
 }
 
 // telegramReloader re-resolves the token and allowlist from this service's own

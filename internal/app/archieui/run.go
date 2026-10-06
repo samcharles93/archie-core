@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"time"
 
@@ -18,6 +19,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/applystatus"
 	"github.com/samcharles93/archie-core/internal/domain/presence"
 	infraaccess "github.com/samcharles93/archie-core/internal/infrastructure/access"
+	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
+	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/webui"
@@ -87,6 +90,7 @@ func Run(ctx context.Context, options Options) error {
 		Log:          log,
 		Store:        tasks,
 		Chat:         chat,
+		Updates:      controlplanerpc.UpdateService(controlplanerpc.NewRPCClient(tasks.ControlPlane()), filepath.Join(configuration.DefaultWorkDir(), "ui-update-deferrals.json"), ""),
 		Health:       newReadinessRegistry(opts, tasks, chat, chain, provider),
 		ControlPlane: tasks.ControlPlane(),
 		Identities:   tasks,

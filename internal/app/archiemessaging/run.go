@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"path/filepath"
 
 	"google.golang.org/grpc"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/messagingrpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/secretengine"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
+	"github.com/samcharles93/archie-core/internal/releaseupdate"
 	"github.com/samcharles93/archie-core/internal/secret"
 )
 
@@ -52,6 +54,7 @@ func Run(ctx context.Context, o Options) error {
 	var settingsSource chatSettingsSource
 	var applyReporter *applystatus.Reporter
 	var appliedVersion int64
+	var updates *releaseupdate.Service
 	var extensionChannels []*channelInstance
 	if cfg.Options.StateStore.Target != "" {
 		stateStore, closeClient, dialErr := staterpc.Dial(cfg.Options.StateStore.Target, presence.Messaging, cfg.Options.StateStore.Token, staterpc.WaitForPeer)
@@ -81,6 +84,7 @@ func Run(ctx context.Context, o Options) error {
 		settings = messaging.NewSettingsCommand(messagingControlPlane{client: stateStore.ControlPlane()}).WithIdentities(stateStore)
 		channelStatusStore, presenceStore = stateStore, stateStore
 		settingsSource, applyReporter, appliedVersion = controlPlaneClient, reporter, channelVersion
+		updates = controlplanerpc.UpdateService(controlPlaneClient, filepath.Join(cfg.WorkDir, "telegram-update-deferrals.json"), cfg.HealthURL)
 	}
 
 	if cfg.Options.StateStore.Target == "" {
@@ -101,6 +105,7 @@ func Run(ctx context.Context, o Options) error {
 		SettingsSource:    settingsSource,
 		ApplyReporter:     applyReporter,
 		AppliedVersion:    appliedVersion,
+		Updates:           updates,
 	})
 	if err != nil {
 		return err

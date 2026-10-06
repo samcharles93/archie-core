@@ -19,6 +19,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/infrastructure/messagingrpc"
+	"github.com/samcharles93/archie-core/internal/releaseupdate"
 	"github.com/samcharles93/archie-core/internal/sdnotify"
 	"github.com/samcharles93/archie-core/internal/secret"
 )
@@ -43,6 +44,9 @@ type deps struct {
 	// SettingsSource enables live channel-settings reconciliation. Nil disables
 	// it.
 	SettingsSource chatSettingsSource
+	// Updates serves /update from the stored update settings. Nil without a
+	// State Store.
+	Updates *releaseupdate.Service
 	// ApplyReporter records what this process applied. Nil reports nothing.
 	ApplyReporter *applystatus.Reporter
 	// AppliedVersion is the channel-settings version already running when the

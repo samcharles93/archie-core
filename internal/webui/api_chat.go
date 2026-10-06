@@ -3,6 +3,7 @@ package webui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -506,6 +507,16 @@ func (s *Server) handleChatPersona(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "name": strings.ToLower(req.Name)})
 }
 
+// writeUpdateCheckError answers an unset check command as not configured, which
+// the dashboard shows as such rather than as a failure.
+func writeUpdateCheckError(w http.ResponseWriter, err error) {
+	if errors.Is(err, releaseupdate.ErrNotConfigured) {
+		http.Error(w, "updates are not configured", http.StatusNotImplemented)
+		return
+	}
+	http.Error(w, err.Error(), http.StatusBadGateway)
+}
+
 func (s *Server) handleChatUpdate(w http.ResponseWriter, r *http.Request) {
 	chat, ok := s.chatReady(w)
 	if !ok {
@@ -517,7 +528,7 @@ func (s *Server) handleChatUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	snapshot, err := chat.Updates.Check(r.Context(), 0)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		writeUpdateCheckError(w, err)
 		return
 	}
 	writeJSON(w, map[string]any{
@@ -564,7 +575,7 @@ func (s *Server) handleChatUpdateInstall(w http.ResponseWriter, r *http.Request)
 	}
 	fresh, err := chat.Updates.Check(r.Context(), 0)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		writeUpdateCheckError(w, err)
 		return
 	}
 	if !releaseupdate.SameAvailable(fresh, req.Snapshot) {

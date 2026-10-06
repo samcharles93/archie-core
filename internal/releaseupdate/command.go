@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -20,9 +21,7 @@ const updateResultSentinel = "ARCHIE_UPDATE_RESULT "
 // argv command. It never invokes a shell; deployment tooling remains an
 // administrator-owned adapter.
 type CommandCatalog struct {
-	Command        []string
-	ReleaseChannel string
-	Pin            string
+	Command []string
 }
 
 func (c CommandCatalog) Check(ctx context.Context) (Snapshot, error) {
@@ -30,9 +29,6 @@ func (c CommandCatalog) Check(ctx context.Context) (Snapshot, error) {
 		return Snapshot{}, fmt.Errorf("update check command is empty")
 	}
 	cmd := exec.CommandContext(ctx, c.Command[0], c.Command[1:]...)
-	if c.ReleaseChannel != "" {
-		cmd.Env = append(cmd.Environ(), "ARCHIE_UPDATE_RELEASE_CHANNEL="+c.ReleaseChannel, "ARCHIE_UPDATE_PIN="+c.Pin)
-	}
 	output, err := cmd.Output()
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("run update check: %w", err)
@@ -132,4 +128,48 @@ func componentVersions(snapshot Snapshot) map[string]Component {
 		versions[component.ID] = component
 	}
 	return versions
+}
+
+// ErrNotConfigured is returned when the step's command is unset.
+var ErrNotConfigured = errors.New("updates are not configured")
+
+// Commands is the argv pair a deployment runs to check for and install updates.
+type Commands struct {
+	Check   []string `json:"check_command" title:"Check command" doc:"Prints the available releases as JSON."`
+	Install []string `json:"install_command" title:"Install command" doc:"Installs an approved release."`
+}
+
+// SettingsCommands is both Catalog and Installer. It loads Commands on every
+// call so an edited setting applies without a restart.
+type SettingsCommands struct {
+	Load      func(context.Context) (Commands, error)
+	HealthURL string
+}
+
+func (s SettingsCommands) Check(ctx context.Context) (Snapshot, error) {
+	commands, err := s.Load(ctx)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	if len(commands.Check) == 0 {
+		return Snapshot{}, ErrNotConfigured
+	}
+	return CommandCatalog{Command: commands.Check}.Check(ctx)
+}
+
+func (s SettingsCommands) Install(ctx context.Context, snapshot Snapshot, meta InstallMeta, progress func(string)) (Result, error) {
+	commands, err := s.Load(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+	if len(commands.Install) == 0 {
+		return Result{}, ErrNotConfigured
+	}
+	return CommandInstaller{Command: commands.Install, HealthURL: s.HealthURL}.Install(ctx, snapshot, meta, progress)
+}
+
+// Installable reports whether an install command is set.
+func (s SettingsCommands) Installable(ctx context.Context) bool {
+	commands, err := s.Load(ctx)
+	return err == nil && len(commands.Install) != 0
 }

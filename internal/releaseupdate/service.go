@@ -204,7 +204,17 @@ func (s *Service) Install(ctx context.Context, snapshot Snapshot, meta InstallMe
 	return s.Installer.Install(installCtx, snapshot, meta, progress)
 }
 
-func (s *Service) CanInstall() bool { return s != nil && s.Installer != nil }
+func (s *Service) CanInstall() bool {
+	if s == nil || s.Installer == nil {
+		return false
+	}
+	if installer, ok := s.Installer.(interface{ Installable(context.Context) bool }); ok {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return installer.Installable(ctx)
+	}
+	return true
+}
 
 type deferrals map[string]map[string]string
 

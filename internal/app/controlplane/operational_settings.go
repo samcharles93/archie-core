@@ -2,6 +2,8 @@ package controlplane
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -9,6 +11,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
+	"github.com/samcharles93/archie-core/internal/releaseupdate"
 )
 
 const (
@@ -18,6 +21,7 @@ const (
 	PluginSettingsKind           = "plugin-settings"
 	ContainerRuntimePoliciesKind = "container-runtime-policies"
 	ExtensionSettingsKind        = controlplanerpc.ExtensionSettingsKind
+	UpdateSettingsKind           = controlplanerpc.UpdateSettingsKind
 )
 
 type schedulingPolicy struct {
@@ -59,6 +63,8 @@ func operationalDefinitions() []Definition {
 		{Kind: ExtensionSettingsKind, Title: "Extension settings", ApplyMode: "live", Document: controlplanerpc.ExtensionSettings{}, Seed: func(config.Config) any { return controlplanerpc.ExtensionSettings{} }, Validate: validateExtensions},
 		// Live: the container pool reads these on every acquire and the dispatcher
 		// is resized on publish.
+		// Live: every check and install reads the commands afresh.
+		{Kind: UpdateSettingsKind, Title: "Update settings", ApplyMode: "live", Document: releaseupdate.Commands{}, Seed: seedUpdateCommands, Validate: validateUpdateCommands},
 		{Kind: ContainerRuntimePoliciesKind, Title: "Container runtime policies", ApplyMode: "live", Document: containerRuntimePolicies{}, Seed: seedContainerPolicies, Validate: validateContainers, Normalize: normalizeContainerPolicies},
 	}
 }
@@ -115,6 +121,42 @@ func validateScheduling(input []byte) error {
 		// A label-requiring trigger needs a label.
 		if workintake.RequiresLabel(policy.Dispatch.Trigger) && (policy.Label == nil || *policy.Label == "") {
 			return fmt.Errorf("label is required when dispatch.trigger is %q (an empty label matches every open issue)", policy.Dispatch.Trigger)
+		}
+		return nil
+	})
+}
+
+// seedUpdateCommands points at the update scripts a release installs beside
+// its binaries, so a zip install can update itself with nothing configured.
+func seedUpdateCommands(config.Config) any {
+	var commands releaseupdate.Commands
+	exe, err := os.Executable()
+	if err != nil {
+		return commands
+	}
+	script := func(name string) []string {
+		path := filepath.Join(filepath.Dir(exe), name)
+		if info, err := os.Stat(path); err != nil || info.Mode()&0o111 == 0 {
+			return nil
+		}
+		return []string{path}
+	}
+	commands.Check = script("archie-update-check")
+	commands.Install = script("archie-update-install")
+	return commands
+}
+
+// validateUpdateCommands refuses a command with a blank program, and an
+// install command without a check to approve its release.
+func validateUpdateCommands(input []byte) error {
+	return validateAs(input, func(doc releaseupdate.Commands) error {
+		for name, command := range map[string][]string{"check_command": doc.Check, "install_command": doc.Install} {
+			if len(command) != 0 && strings.TrimSpace(command[0]) == "" {
+				return fmt.Errorf("%s needs a program", name)
+			}
+		}
+		if len(doc.Install) != 0 && len(doc.Check) == 0 {
+			return fmt.Errorf("install_command needs a check_command")
 		}
 		return nil
 	})

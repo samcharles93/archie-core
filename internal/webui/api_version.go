@@ -71,7 +71,7 @@ func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 	}
 	snapshot, err := s.Chat.Updates.Check(r.Context(), 0)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		writeUpdateCheckError(w, err)
 		return
 	}
 	running := map[string]string{}

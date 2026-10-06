@@ -534,8 +534,6 @@ func (c Config) Clone() Config {
 	c.Identities = cloneIdentities(c.Identities)
 	c.Chat.Models = append([]string(nil), c.Chat.Models...)
 	c.Chat.Telegram.AllowedUserIDs = append([]int64(nil), c.Chat.Telegram.AllowedUserIDs...)
-	c.Chat.Telegram.UpdateCheckCommand = append([]string(nil), c.Chat.Telegram.UpdateCheckCommand...)
-	c.Chat.Telegram.UpdateInstallCommand = append([]string(nil), c.Chat.Telegram.UpdateInstallCommand...)
 	c.Bindings.PreviousEncryptionKeys = append([]SecretRef(nil), c.Bindings.PreviousEncryptionKeys...)
 	c.Tools.MCPServers = cloneMCPServers(c.Tools.MCPServers)
 	// Services is a map of structs, so the header is shared by the value copy
@@ -918,11 +916,6 @@ type TelegramConfig struct {
 	// Token references the bot token from @BotFather through the configured
 	// secret engine. Empty disables the Telegram channel.
 	Token SecretRef `toml:"token" yaml:"token"`
-	// UpdateCheckCommand writes a releaseupdate.Snapshot JSON document to
-	// stdout. UpdateInstallCommand applies an already-approved update. Both
-	// are argv arrays, never shell snippets.
-	UpdateCheckCommand   []string `toml:"update_check_command" yaml:"update_check_command"`
-	UpdateInstallCommand []string `toml:"update_install_command" yaml:"update_install_command"`
 }
 
 // Notify configures outbound notifications (n8n webhook → email etc.).

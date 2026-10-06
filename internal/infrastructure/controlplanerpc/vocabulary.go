@@ -2,11 +2,14 @@ package controlplanerpc
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/installtype"
+	"github.com/samcharles93/archie-core/internal/releaseupdate"
 )
 
 // ChannelSettings is the channel-settings resource document, with
@@ -104,4 +107,26 @@ func (d *ChannelDuration) UnmarshalJSON(data []byte) error {
 	}
 	*d = ChannelDuration(nanos)
 	return nil
+}
+
+// UpdateSettingsKind holds the commands that check for and install releases.
+const UpdateSettingsKind = "update-settings"
+
+// UpdateService runs the stored update commands, reading them on every call.
+// statePath keeps each recipient's deferrals; healthURL reaches the installer.
+func UpdateService(reader ResourceReader, statePath, healthURL string) *releaseupdate.Service {
+	commands := releaseupdate.SettingsCommands{Load: updateCommands(reader), HealthURL: healthURL}
+	return &releaseupdate.Service{Catalog: commands, Installer: commands, StatePath: statePath, InstallType: installtype.Type()}
+}
+
+// updateCommands reads the update-settings resource. An unstored kind is no
+// commands.
+func updateCommands(reader ResourceReader) func(context.Context) (releaseupdate.Commands, error) {
+	return func(ctx context.Context) (releaseupdate.Commands, error) {
+		var commands releaseupdate.Commands
+		_, _, err := reader.Query(ctx, UpdateSettingsKind, func(value []byte) error {
+			return json.Unmarshal(value, &commands)
+		})
+		return commands, err
+	}
 }

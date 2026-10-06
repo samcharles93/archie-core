@@ -17,6 +17,7 @@ import (
 	infraaccess "github.com/samcharles93/archie-core/internal/infrastructure/access"
 	"github.com/samcharles93/archie-core/internal/infrastructure/captureintake"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
+	"github.com/samcharles93/archie-core/internal/releaseupdate"
 	"github.com/samcharles93/archie-core/internal/webhookguard"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
@@ -29,6 +30,7 @@ type deps struct {
 	Log          *slog.Logger
 	Store        storecontract.TaskStore
 	Chat         messaging.ChatContract
+	Updates      *releaseupdate.Service
 	Health       *health.Registry
 	ControlPlane controlpb.ControlPlaneServiceClient
 	Identities   identity.Repository
@@ -107,7 +109,7 @@ func compose(d deps) *webui.Server {
 		srv.EventTypes = eventTypes
 	}
 	if d.Chat != nil {
-		srv.Chat = &webui.ChatService{Contract: d.Chat}
+		srv.Chat = &webui.ChatService{Contract: d.Chat, Updates: d.Updates}
 	}
 	wireCatalog(d, srv)
 	// The policy chain: wired together or not at all.

@@ -80,11 +80,10 @@ func RuntimeChatConfigFrom(ctx context.Context, reader ResourceReader, base conf
 		if err := json.Unmarshal(value, &settings); err != nil {
 			return err
 		}
-		check, install := base.Telegram.UpdateCheckCommand, base.Telegram.UpdateInstallCommand
 		out = config.ChatConfig{
 			Operator: settings.Operator, ShowToolCalls: settings.ShowToolCalls, MaxSteps: settings.MaxSteps,
 			Models:                 settings.Models,
-			Telegram:               config.TelegramConfig{AllowedUserIDs: settings.Telegram.AllowedUserIDs, Token: settings.Telegram.Token, UpdateCheckCommand: check, UpdateInstallCommand: install},
+			Telegram:               config.TelegramConfig{AllowedUserIDs: settings.Telegram.AllowedUserIDs, Token: settings.Telegram.Token},
 			RateLimit:              config.RateLimitConfig{Window: time.Duration(settings.RateLimit.Window), MaxRequests: settings.RateLimit.MaxRequests},
 			UnrestrictedFilesystem: settings.UnrestrictedFilesystem, Workspace: settings.Workspace,
 		}

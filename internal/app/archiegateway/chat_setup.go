@@ -17,6 +17,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 	"github.com/samcharles93/archie-core/internal/installtype"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
 	"github.com/samcharles93/archie-core/internal/tools"
@@ -95,23 +96,9 @@ func componentInstallTypeEnricher(nats config.NATSConfig) func(string) (string, 
 	}
 }
 
-func makeUpdateService(s chatSetup) *releaseupdate.Service {
-	cfg := s.Cfg.Get()
-	if len(cfg.Chat.Telegram.UpdateCheckCommand) == 0 {
-		return nil
-	}
-	updates := &releaseupdate.Service{
-		Catalog:     releaseupdate.CommandCatalog{Command: cfg.Chat.Telegram.UpdateCheckCommand},
-		StatePath:   filepath.Join(cfg.WorkDir, "telegram-update-deferrals.json"),
-		InstallType: installtype.Type(),
-		Enrich:      componentInstallTypeEnricher(cfg.NATS),
-	}
-	if len(cfg.Chat.Telegram.UpdateInstallCommand) != 0 {
-		updates.Installer = releaseupdate.CommandInstaller{
-			Command:   cfg.Chat.Telegram.UpdateInstallCommand,
-			HealthURL: cfg.Health.URL(),
-		}
-	}
+func makeUpdateService(reader controlplanerpc.ResourceReader, cfg config.Config) *releaseupdate.Service {
+	updates := controlplanerpc.UpdateService(reader, filepath.Join(cfg.WorkDir, "telegram-update-deferrals.json"), cfg.Health.URL())
+	updates.Enrich = componentInstallTypeEnricher(cfg.NATS)
 	return updates
 }
 

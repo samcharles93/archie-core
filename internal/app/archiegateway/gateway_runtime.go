@@ -86,7 +86,7 @@ func (b *server) setupChatRuntime(ctx context.Context, cfg config.Config, actor 
 		},
 		cancelExecution: b.stateStore.CancelExecution,
 	})
-	b.updateService = makeUpdateService(chatSetup{Cfg: config.NewHolder(cfg)})
+	b.updateService = makeUpdateService(b.controlPlane, cfg)
 	return nil
 }
 

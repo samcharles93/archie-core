@@ -146,16 +146,9 @@ class = "ollama"
 #   "openrouter/openai/gpt-5.6-sol",
 # ]
 
-# Optional self-hosted update adapter. Both values are argv arrays (never
-# shell snippets). The check command must write a releaseupdate.Snapshot JSON
-# document to stdout; configure the installer as well to show Approve/Defer.
 # [chat.telegram]
 # The bot token from @BotFather, resolved through a configured secret engine.
 # token = { engine = "bws", key = "TELEGRAM_BOT_TOKEN" }
-# Run by archie-messaging, which serves /update, so these commands execute on
-# whichever host runs that process.
-# update_check_command = ["/usr/local/bin/archie-update-check"]
-# update_install_command = ["/usr/local/bin/archie-update-install"]
 
 # Email and the generic inbound webhook are archipelago channel extensions
 # (channels/email, channels/webhook): install, accept and enable them from the
