@@ -161,7 +161,7 @@ func makeUpdateArchive(t *testing.T, root, scripts, scenario string) []byte {
 	for _, name := range []string{"archied", "archie-state-store", "archie-gateway", "archie-ui", "archie-messaging"} {
 		files[name] = "#!/bin/bash\n# new\nif [ \"$1\" = -version ]; then echo '" + name + " 2.0.0'; fi\nexit 0\n"
 	}
-	for _, name := range []string{"archie-update-install", "archie-update-watchdog", "archie-update-check"} {
+	for _, name := range []string{"archie-update-install", "archie-update-watchdog"} {
 		data, err := os.ReadFile(filepath.Join(scripts, name))
 		if err != nil {
 			t.Fatal(err)

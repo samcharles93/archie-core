@@ -63,7 +63,7 @@ for arg in "$@"; do
 done
 
 if [ "$AUTO" = 1 ] && [ -z "${ARCHIE_UPDATE_DAEMON_VERSION:-}${ARCHIE_UPDATE_AGENT_VERSION:-}" ]; then
- snapshot="$("$(dirname "$0")/archie-update-check")"
+ snapshot="$("$BIN_DIR/archied" update check)"
  export ARCHIE_UPDATE_DAEMON_PREVIOUS="$(jq -r '.Components[] | select(.ID == "daemon") | .Installed' <<< "$snapshot")"
  export ARCHIE_UPDATE_DAEMON_VERSION="$(jq -r '.Components[] | select(.ID == "daemon") | .Available' <<< "$snapshot")"
  export ARCHIE_UPDATE_AGENT_PREVIOUS="$(jq -r '.Components[] | select(.ID == "agent") | .Installed' <<< "$snapshot")"
@@ -226,7 +226,7 @@ if [[ ",$components," == *,daemon,* ]]; then
   done
   mkdir -p "$(dirname "$DB_SNAPSHOT")"
   "$BIN_DIR/archie-state-store" backup -config "$CONFIG_PATH" -out "$DB_SNAPSHOT"
-  built="$GATEWAY_BINARIES archie-update-install archie-update-watchdog archie-update-check"
+  built="$GATEWAY_BINARIES archie-update-install archie-update-watchdog"
 fi
 
 # Freeze recovery code and every prior file before publishing the intent.

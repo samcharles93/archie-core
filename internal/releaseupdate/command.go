@@ -19,31 +19,6 @@ import (
 // as-is.
 const updateResultSentinel = "ARCHIE_UPDATE_RESULT "
 
-// CommandCatalog reads a Snapshot JSON document from an explicitly configured
-// argv command. It never invokes a shell; deployment tooling remains an
-// administrator-owned adapter.
-type CommandCatalog struct {
-	Command []string
-	Env     []string
-}
-
-func (c CommandCatalog) Check(ctx context.Context) (Snapshot, error) {
-	if len(c.Command) == 0 {
-		return Snapshot{}, fmt.Errorf("update check command is empty")
-	}
-	cmd := exec.CommandContext(ctx, c.Command[0], c.Command[1:]...)
-	cmd.Env = append(cmd.Environ(), c.Env...)
-	output, err := cmd.Output()
-	if err != nil {
-		return Snapshot{}, fmt.Errorf("run update check: %w", err)
-	}
-	var snapshot Snapshot
-	if err := json.Unmarshal(output, &snapshot); err != nil {
-		return Snapshot{}, fmt.Errorf("decode update check output: %w", err)
-	}
-	return snapshot, nil
-}
-
 // CommandInstaller runs the deployment's install command. HealthURL is
 // passed as ARCHIE_HEALTH_URL when set.
 type CommandInstaller struct {
@@ -137,67 +112,30 @@ func componentVersions(snapshot Snapshot) map[string]Component {
 // ErrNotConfigured is returned when the step's command is unset.
 var ErrNotConfigured = errors.New("updates are not configured")
 
-// Commands is what a deployment runs to check for and install updates. Env
-// is added to the check's environment.
-type Commands struct {
-	Check   []string
-	Install []string
-	Env     []string
-}
-
-// ScriptCommands runs the update scripts a release installs beside this
-// binary, selecting releases from channel. Only these scripts ever run, so a
-// setting cannot name an arbitrary program. A missing script is unset.
-func ScriptCommands(channel, pin string) Commands {
-	exe, err := os.Executable()
-	if err != nil {
-		return Commands{}
-	}
-	script := func(name string) []string {
-		path := filepath.Join(filepath.Dir(exe), name)
-		if info, err := os.Stat(path); err != nil || info.Mode()&0o111 == 0 {
-			return nil
-		}
-		return []string{path}
-	}
-	return Commands{
-		Check:   script("archie-update-check"),
-		Install: script("archie-update-install"),
-		Env:     []string{"ARCHIE_UPDATE_RELEASE_CHANNEL=" + channel, "ARCHIE_UPDATE_PIN=" + pin},
-	}
-}
-
-// SettingsCommands is both Catalog and Installer. It loads Commands on every
-// call so an edited setting applies without a restart.
-type SettingsCommands struct {
-	Load      func(context.Context) (Commands, error)
+// ScriptInstaller runs the install script a release places beside this binary.
+type ScriptInstaller struct {
 	HealthURL string
 }
 
-func (s SettingsCommands) Check(ctx context.Context) (Snapshot, error) {
-	commands, err := s.Load(ctx)
+func (s ScriptInstaller) path() string {
+	exe, err := os.Executable()
 	if err != nil {
-		return Snapshot{}, err
+		return ""
 	}
-	if len(commands.Check) == 0 {
-		return Snapshot{}, ErrNotConfigured
+	path := filepath.Join(filepath.Dir(exe), "archie-update-install")
+	if info, err := os.Stat(path); err != nil || info.Mode()&0o111 == 0 {
+		return ""
 	}
-	return CommandCatalog{Command: commands.Check, Env: commands.Env}.Check(ctx)
+	return path
 }
 
-func (s SettingsCommands) Install(ctx context.Context, snapshot Snapshot, meta InstallMeta, progress func(string)) (Result, error) {
-	commands, err := s.Load(ctx)
-	if err != nil {
-		return Result{}, err
-	}
-	if len(commands.Install) == 0 {
+func (s ScriptInstaller) Install(ctx context.Context, snapshot Snapshot, meta InstallMeta, progress func(string)) (Result, error) {
+	path := s.path()
+	if path == "" {
 		return Result{}, ErrNotConfigured
 	}
-	return CommandInstaller{Command: commands.Install, HealthURL: s.HealthURL}.Install(ctx, snapshot, meta, progress)
+	return CommandInstaller{Command: []string{path}, HealthURL: s.HealthURL}.Install(ctx, snapshot, meta, progress)
 }
 
-// Installable reports whether an install command is set.
-func (s SettingsCommands) Installable(ctx context.Context) bool {
-	commands, err := s.Load(ctx)
-	return err == nil && len(commands.Install) != 0
-}
+// Installable reports whether the install script is present.
+func (s ScriptInstaller) Installable(context.Context) bool { return s.path() != "" }

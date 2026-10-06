@@ -92,7 +92,7 @@ archied_dirs() {
 	component_dirs ./cmd/archie-ui
 	printf '%s\n' "cmd/archied" "Dockerfile.archied" "cmd/archie-ui" "internal/app/archieui" \
 		"Taskfile.yml" ".github/workflows/deploy.yml" "install.sh" \
-		"scripts/archie-update-install" "scripts/archie-update-check" \
+		"scripts/archie-update-install" \
 		"scripts/archie-update-watchdog" "deployments/INSTRUCTIONS.md"
 }
 

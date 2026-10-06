@@ -92,15 +92,15 @@ an install (or an upgrade across v1.30.0) needs its unit as well -- see
 
 `archie-update-install` downloads the approved release's Linux/amd64 archive
 and verifies its `SHA256SUMS` entry before executing or installing it. Releases
-must include `release.json`, all host binaries, and the three updater scripts.
+must include `release.json`, all host binaries, and the two updater scripts.
 Older releases without this contract cannot be installed through the artifact
 path. `--from-source` (or `ARCHIE_UPDATE_SOURCE_BUILD=1`) explicitly clones and
 builds the selected release instead.
 
-The update check command accepts `--channel stable` (default), `--channel next`
-(includes prereleases), or `--channel exact-pin --pin 1.2.3`. The services run
-only the scripts installed beside their binaries; Settings → Status → Updates
-chooses the channel they select from.
+`archied update check` finds the newest GitHub release with a linux-amd64 zip on
+the channel chosen under Settings → Status → Updates: stable, next (includes
+prereleases) or a pinned version. From a shell it reads
+`ARCHIE_UPDATE_RELEASE_CHANNEL` and `ARCHIE_UPDATE_PIN`, or `-channel` and `-pin`.
 The notification destination remains separate from the release channel.
 
 For scheduled, unattended runs, `archie-update-install --auto` discovers the

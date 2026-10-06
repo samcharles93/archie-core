@@ -118,23 +118,26 @@ type UpdateSettings struct {
 	Pin     string `json:"pin" title:"Pinned version" doc:"The version exact-pin installs."`
 }
 
-// UpdateService runs the stored update commands, reading them on every call.
-// statePath keeps each recipient's deferrals; healthURL reaches the installer.
+// UpdateService checks GitHub on the stored release channel and installs
+// through the script beside this binary. statePath keeps each recipient's
+// deferrals; healthURL reaches the installer.
 func UpdateService(reader ResourceReader, statePath, healthURL string) *releaseupdate.Service {
-	commands := releaseupdate.SettingsCommands{Load: updateCommands(reader), HealthURL: healthURL}
-	return &releaseupdate.Service{Catalog: commands, Installer: commands, StatePath: statePath, InstallType: installtype.Type()}
+	return &releaseupdate.Service{
+		Catalog:     releaseupdate.GitHubCatalog{Channel: updateChannel(reader)},
+		Installer:   releaseupdate.ScriptInstaller{HealthURL: healthURL},
+		StatePath:   statePath,
+		InstallType: installtype.Type(),
+	}
 }
 
-// updateCommands reads the update-settings resource. An unstored kind is the
+// updateChannel reads the update-settings resource. An unstored kind is the
 // stable channel.
-func updateCommands(reader ResourceReader) func(context.Context) (releaseupdate.Commands, error) {
-	return func(ctx context.Context) (releaseupdate.Commands, error) {
+func updateChannel(reader ResourceReader) func(context.Context) (string, string, error) {
+	return func(ctx context.Context) (string, string, error) {
 		settings := UpdateSettings{Channel: "stable"}
-		if _, _, err := reader.Query(ctx, UpdateSettingsKind, func(value []byte) error {
+		_, _, err := reader.Query(ctx, UpdateSettingsKind, func(value []byte) error {
 			return json.Unmarshal(value, &settings)
-		}); err != nil {
-			return releaseupdate.Commands{}, err
-		}
-		return releaseupdate.ScriptCommands(settings.Channel, settings.Pin), nil
+		})
+		return settings.Channel, settings.Pin, err
 	}
 }
