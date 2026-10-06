@@ -5,6 +5,12 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.47.3] - 2026-10-07
+
+### archied
+
+- **Settings → Extensions**: **Accept** in the authority review now accepts the extension, and **Remove** removes it. Both previously closed the dialog without doing anything.
+
 ## [1.47.2] - 2026-10-06
 
 ### archied

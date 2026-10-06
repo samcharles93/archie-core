@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.47.3",
+    "date": "2026-10-07",
+    "body": "### archied\n\n- **Settings → Extensions**: **Accept** in the authority review now accepts the extension, and **Remove** removes it. Both previously closed the dialog without doing anything."
+  },
+  {
     "version": "1.47.2",
     "date": "2026-10-06",
     "body": "### archied\n\n- **Events → Inspector** now lists your capture sources with their real URLs and a **New source** button, replacing the `/webhooks/capture/<source>` placeholder. Sources no longer sit on the Bindings tab."
