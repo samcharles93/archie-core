@@ -5,6 +5,13 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.48.0] - 2026-10-07
+
+### archied
+
+- **Settings → Status → Updates** edits the update check and install commands. They default to the `archie-update-*` scripts installed beside the binaries, so a zip install shows **Install** on the Versions card with nothing configured. The `update_check_command` and `update_install_command` keys under `[chat.telegram]` are no longer read; remove them from `config.toml`.
+- `archie-update-install` run from a shell now reads `~/.config/archie/env`, so the pre-update backup of the bundled database no longer fails with `no password supplied`. Run it with `--auto` to install the newest release.
+
 ## [1.47.3] - 2026-10-07
 
 ### archied
