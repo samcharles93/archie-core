@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.48.1",
+    "date": "2026-10-07",
+    "body": "### archied\n\n- **Settings → Status → Updates** now chooses only the release channel (stable, prereleases, or a pinned version). Update checks and installs always run the `archie-update-*` scripts installed beside the binaries; the dashboard can no longer set the command that runs."
+  },
+  {
     "version": "1.48.0",
     "date": "2026-10-07",
     "body": "### archied\n\n- **Settings → Status → Updates** edits the update check and install commands. They default to the `archie-update-*` scripts installed beside the binaries, so a zip install shows **Install** on the Versions card with nothing configured. The `update_check_command` and `update_install_command` keys under `[chat.telegram]` are no longer read; remove them from `config.toml`.\n- `archie-update-install` run from a shell now reads `~/.config/archie/env`, so the pre-update backup of the bundled database no longer fails with `no password supplied`. Run it with `--auto` to install the newest release."

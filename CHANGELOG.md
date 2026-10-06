@@ -5,6 +5,12 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.48.1] - 2026-10-07
+
+### archied
+
+- **Settings → Status → Updates** now chooses only the release channel (stable, prereleases, or a pinned version). Update checks and installs always run the `archie-update-*` scripts installed beside the binaries; the dashboard can no longer set the command that runs.
+
 ## [1.48.0] - 2026-10-07
 
 ### archied
