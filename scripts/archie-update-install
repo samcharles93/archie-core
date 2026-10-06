@@ -15,6 +15,14 @@ SOURCE_URL="${ARCHIE_SOURCE_URL:-https://github.com/samcharles93/archie-core.git
 BIN_DIR="${ARCHIE_BIN_DIR:-$HOME/.local/bin}"
 CONFIG_PATH="${ARCHIE_CONFIG_PATH:-${XDG_CONFIG_HOME:-$HOME/.config}/archie/config.toml}"
 export PATH="/usr/local/go/bin:$PATH"
+# The units load this file; a run from a shell needs it too, for PGPASSWORD.
+ENV_FILE="$(dirname "$CONFIG_PATH")/env"
+if [ -r "$ENV_FILE" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$ENV_FILE"
+  set +a
+fi
 
 # State for the managed image, independent of archied's daemon build stamp.
 AGENT_VERSION_FILE="${ARCHIE_AGENT_VERSION_FILE:-$BIN_DIR/archie-agent.version}"
