@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/creativeprojects/go-selfupdate"
 
@@ -28,9 +30,18 @@ var buildSuffix = regexp.MustCompile(`-[0-9]+-g[0-9a-f]+$`)
 type GitHubCatalog struct {
 	// Channel returns the release channel and pin in force.
 	Channel func(context.Context) (channel, pin string, err error)
+
+	// A found release is reused for checkTTL: unauthenticated GitHub API
+	// calls are limited to 60 an hour per address.
+	mu      sync.Mutex
+	key     string
+	at      time.Time
+	release *selfupdate.Release
 }
 
-func (c GitHubCatalog) Check(ctx context.Context) (Snapshot, error) {
+const checkTTL = 10 * time.Minute
+
+func (c *GitHubCatalog) Check(ctx context.Context) (Snapshot, error) {
 	channel, pin, err := c.Channel(ctx)
 	if err != nil {
 		return Snapshot{}, err
@@ -38,7 +49,7 @@ func (c GitHubCatalog) Check(ctx context.Context) (Snapshot, error) {
 	if channel == "" {
 		channel = "stable"
 	}
-	release, err := detectRelease(ctx, channel, pin)
+	release, err := c.detect(ctx, channel, pin)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -53,6 +64,21 @@ func (c GitHubCatalog) Check(ctx context.Context) (Snapshot, error) {
 		component("daemon", "Gateway", installedVersion(buildinfo.Version)),
 		component("agent", "Runtime", installedAgent()),
 	}}, nil
+}
+
+func (c *GitHubCatalog) detect(ctx context.Context, channel, pin string) (*selfupdate.Release, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	key := channel + "\x00" + pin
+	if c.release != nil && c.key == key && time.Since(c.at) < checkTTL {
+		return c.release, nil
+	}
+	release, err := detectRelease(ctx, channel, pin)
+	if err != nil {
+		return nil, err
+	}
+	c.key, c.at, c.release = key, time.Now(), release
+	return release, nil
 }
 
 // detectRelease resolves channel to one published release. A release with no

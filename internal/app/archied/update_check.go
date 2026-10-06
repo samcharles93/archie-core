@@ -25,7 +25,7 @@ func RunUpdate(args []string, out, stderr io.Writer) int {
 	if err := flags.Parse(args[1:]); err != nil {
 		return 2
 	}
-	catalog := releaseupdate.GitHubCatalog{Channel: func(context.Context) (string, string, error) { return *channel, *pin, nil }}
+	catalog := &releaseupdate.GitHubCatalog{Channel: func(context.Context) (string, string, error) { return *channel, *pin, nil }}
 	snapshot, err := catalog.Check(context.Background())
 	if err != nil {
 		fmt.Fprintln(stderr, err)

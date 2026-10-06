@@ -123,7 +123,7 @@ type UpdateSettings struct {
 // deferrals; healthURL reaches the installer.
 func UpdateService(reader ResourceReader, statePath, healthURL string) *releaseupdate.Service {
 	return &releaseupdate.Service{
-		Catalog:     releaseupdate.GitHubCatalog{Channel: updateChannel(reader)},
+		Catalog:     &releaseupdate.GitHubCatalog{Channel: updateChannel(reader)},
 		Installer:   releaseupdate.ScriptInstaller{HealthURL: healthURL},
 		StatePath:   statePath,
 		InstallType: installtype.Type(),
