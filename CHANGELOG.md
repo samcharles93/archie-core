@@ -5,6 +5,12 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.51.1] - 2026-10-08
+
+### archied
+
+- Chat with OpenAI's gpt-6 models (gpt-6-luna and the rest) works with tools; a turn failed with "Function tools with reasoning_effort are not supported".
+
 ## [1.51.0] - 2026-10-08
 
 ### archied
