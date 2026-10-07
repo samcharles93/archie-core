@@ -5,6 +5,13 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.49.3] - 2026-10-07
+
+### archied
+
+- Settings → Status → Versions shows the Gateway as "Update available" with an Install button when a newer release exists; it read "Unknown" with no way to install. The Runtime row stays "Unknown" until an agent task has run.
+- The release channel buttons sit at the Updates card's right edge instead of mid-row.
+
 ## [1.49.2] - 2026-10-07
 
 ### archied
