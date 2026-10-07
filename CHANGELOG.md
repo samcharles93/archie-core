@@ -5,6 +5,13 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.49.0] - 2026-10-07
+
+### archied
+
+- Extensions that declare no egress hosts (vault, email, gitea) reach the network again; only packages that declare their hosts are confined to them. The Accept dialog shows "network: unrestricted" for the rest.
+- The update check finds releases itself, and reuses a found release for ten minutes so repeated checks stay under GitHub's rate limit.
+
 ## [1.48.1] - 2026-10-07
 
 ### archied

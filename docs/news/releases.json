@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.49.0",
+    "date": "2026-10-07",
+    "body": "### archied\n\n- Extensions that declare no egress hosts (vault, email, gitea) reach the network again; only packages that declare their hosts are confined to them. The Accept dialog shows \"network: unrestricted\" for the rest.\n- The update check finds releases itself, and reuses a found release for ten minutes so repeated checks stay under GitHub's rate limit."
+  },
+  {
     "version": "1.48.1",
     "date": "2026-10-07",
     "body": "### archied\n\n- **Settings → Status → Updates** now chooses only the release channel (stable, prereleases, or a pinned version). Update checks and installs always run the `archie-update-*` scripts installed beside the binaries; the dashboard can no longer set the command that runs."
