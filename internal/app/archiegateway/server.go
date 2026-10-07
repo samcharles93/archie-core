@@ -64,6 +64,7 @@ type server struct {
 	taskLogs  *logging.TaskRegistry
 
 	secrets          *secret.Registry
+	engines          *secretengine.Runner
 	stateStore       *staterpc.Client
 	controlPlane     *controlplane.Client
 	applyStatus      *applystatus.Reporter
@@ -191,7 +192,8 @@ func (b *server) openState(ctx context.Context) error {
 	report := func(ctx context.Context, version int64, err error) {
 		b.applyStatus.Report(ctx, controlplanerpc.ExtensionSettingsKind, version, err)
 	}
-	b.addCleanup(secretengine.Supervise(ctx, b.secrets, source, applystatus.Gateway, report, b.log).Close)
+	b.engines = secretengine.Supervise(ctx, b.secrets, source, applystatus.Gateway, report, b.log)
+	b.addCleanup(b.engines.Close)
 	cfg, versions, err := b.runtimeConfig(ctx, b.cfg)
 	if err != nil {
 		return fmt.Errorf("load runtime settings: %w", err)
@@ -286,6 +288,14 @@ var gatewayRuntimeKinds = []string{
 }
 
 func (b *server) startRuntimeWatches(ctx context.Context) error {
+	// An engine that starts after boot answers references that failed then, so
+	// the providers resolve again.
+	b.engines.OnChange(func() {
+		base := b.cfgHolder.Get()
+		catalog, _ := b.catalogState()
+		modelcatalog.Apply(&base, catalog)
+		_ = b.relayer(ctx, base, controlplane.ProviderSettingsKind)
+	})
 	for _, kind := range gatewayRuntimeKinds {
 		updates, err := b.controlPlane.WatchResource(ctx, kind, b.runtimeVersions[kind])
 		if err != nil {

@@ -259,6 +259,16 @@ func TestRunnerRunsOnlyWhatIsAcceptedAndEnabled(t *testing.T) {
 	runner := NewRunner(host, registry, Source{Query: source, Packages: source}, t.TempDir(), slog.New(slog.DiscardHandler))
 	t.Cleanup(runner.Close)
 	ctx := context.Background()
+	changes := make(chan struct{}, 4)
+	runner.OnChange(func() { changes <- struct{}{} })
+	changed := func() bool {
+		select {
+		case <-changes:
+			return true
+		case <-time.After(time.Second):
+			return false
+		}
+	}
 
 	registered := func() bool { _, ok := registry.Get("echo"); return ok }
 	sync := func() {
@@ -273,6 +283,9 @@ func TestRunnerRunsOnlyWhatIsAcceptedAndEnabled(t *testing.T) {
 	if registered() {
 		t.Fatal("an extension whose authority was never accepted must not run")
 	}
+	if len(changes) > 0 {
+		t.Fatal("a sync that started nothing must not report a change")
+	}
 
 	source.pkg.AcceptedAuthority = &storepkg.Authority{}
 	sync()
@@ -280,10 +293,16 @@ func TestRunnerRunsOnlyWhatIsAcceptedAndEnabled(t *testing.T) {
 	if err != nil || got != "v" {
 		t.Fatalf("accepted and enabled: Resolve = %q, %v; want v", got, err)
 	}
+	if !changed() {
+		t.Fatal("starting an engine must report a change, so references resolve again")
+	}
 
 	source.settings.Extensions[0].Enabled = false
 	sync()
 	if registered() || host.Alive("echo") {
 		t.Fatal("a disabled extension must be unregistered and its process stopped")
+	}
+	if !changed() {
+		t.Fatal("stopping an engine must report a change")
 	}
 }

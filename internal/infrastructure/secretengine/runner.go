@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -39,8 +40,19 @@ type Runner struct {
 	// outcome. Nil reports nothing.
 	report func(ctx context.Context, version int64, err error)
 
+	// changed runs after a sync starts or stops an engine, so a service can
+	// resolve again the references that engine answers. Nil does nothing.
+	changed func()
+
 	mu      sync.Mutex
 	running map[string]runningEngine
+}
+
+// OnChange makes every sync that starts or stops an engine call changed.
+func (r *Runner) OnChange(changed func()) {
+	r.mu.Lock()
+	r.changed = changed
+	r.mu.Unlock()
 }
 
 type runningEngine struct {
@@ -96,6 +108,12 @@ func (r *Runner) apply(ctx context.Context, settings map[string]controlplanerpc.
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	before := r.runningDigests()
+	defer func() {
+		if r.changed != nil && !maps.Equal(before, r.runningDigests()) {
+			go r.changed()
+		}
+	}()
 
 	var problems []error
 	want := make(map[string]bool)
@@ -119,6 +137,14 @@ func (r *Runner) apply(ctx context.Context, settings map[string]controlplanerpc.
 		_ = os.RemoveAll(filepath.Join(r.cacheDir, name))
 	}
 	return errors.Join(problems...)
+}
+
+func (r *Runner) runningDigests() map[string]string {
+	out := make(map[string]string, len(r.running))
+	for name, engine := range r.running {
+		out[name] = engine.digest
+	}
+	return out
 }
 
 func secretEngines(d storepkg.Descriptor) []storepkg.Extension {
