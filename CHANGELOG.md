@@ -5,6 +5,15 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.50.0] - 2026-10-08
+
+### archied
+
+- Tools that need your approval ask for it again, and Archie can ask you a question or offer choices mid-reply. Since the services were split these never reached Telegram or the dashboard: approval-gated tools failed and questions were never asked.
+- The dashboard chat shows approvals as Approve / Always this session / Deny, choices as buttons, and questions with a reply field.
+- `/update` in the dashboard chat lists what's available with Install and Not now.
+- Settings → Status → Versions installs the update it shows; its Install button sent an empty request.
+
 ## [1.49.4] - 2026-10-07
 
 ### archied
