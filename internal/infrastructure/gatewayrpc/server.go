@@ -2,6 +2,7 @@ package gatewayrpc
 
 import (
 	"context"
+	"sync"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -19,6 +20,7 @@ type server struct {
 	chat     messaging.ChatContract
 	sessions messaging.SessionStore
 	catalog  Catalog
+	asks     pendingAsks
 }
 
 // RegisterServer serves the Gateway chat contract. catalog supplies the
@@ -259,7 +261,15 @@ func (s *server) SearchMessages(ctx context.Context, r *pb.SearchMessagesRequest
 }
 
 func (s *server) Stream(r *pb.StreamRequest, out grpc.ServerStreamingServer[pb.StreamResponse]) error {
-	events, err := s.chat.Stream(out.Context(), inboundValue(r.Message))
+	// An ask is sent from the turn's goroutine while this one sends events.
+	var sendMu sync.Mutex
+	send := func(v *pb.StreamResponse) error {
+		sendMu.Lock()
+		defer sendMu.Unlock()
+		return out.Send(v)
+	}
+	ctx := withAsks(out.Context(), r, remoteAsker{pending: &s.asks, send: send})
+	events, err := s.chat.Stream(ctx, inboundValue(r.Message))
 	if err != nil {
 		return err
 	}
@@ -271,9 +281,13 @@ func (s *server) Stream(r *pb.StreamRequest, out grpc.ServerStreamingServer[pb.S
 			if !ok {
 				return nil
 			}
-			if err := out.Send(eventProto(event)); err != nil {
+			if err := send(eventProto(event)); err != nil {
 				return err
 			}
 		}
 	}
+}
+
+func (s *server) Answer(_ context.Context, r *pb.AnswerRequest) (*pb.AnswerResponse, error) {
+	return &pb.AnswerResponse{Found: s.asks.answer(r.AskId, r.Answer)}, nil
 }

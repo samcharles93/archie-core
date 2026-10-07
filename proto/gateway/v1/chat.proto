@@ -11,6 +11,7 @@ service ChatService {
   rpc RecentTurns(RecentTurnsRequest) returns (RecentTurnsResponse);
   rpc Route(RouteRequest) returns (RouteResponse);
   rpc Stream(StreamRequest) returns (stream StreamResponse);
+  rpc Answer(AnswerRequest) returns (AnswerResponse);
   rpc Cancel(CancelRequest) returns (CancelResponse);
   rpc StopTasks(StopTasksRequest) returns (StopTasksResponse);
   rpc SetPersona(SetPersonaRequest) returns (SetPersonaResponse);
@@ -144,13 +145,35 @@ message RouteResponse {
   // outcome.
   bool rate_limited = 3;
 }
-message StreamRequest { Message message = 1; }
+// The caller states which asks it can answer; the turn offers only those.
+message StreamRequest {
+  Message message = 1;
+  bool can_approve = 2;
+  bool can_clarify = 3;
+  bool can_pick = 4;
+}
+// Ask is a question the turn blocks on until Answer names its id.
+message Ask {
+  string id = 1;
+  // approval, clarify or picker.
+  string kind = 2;
+  string prompt = 3;
+  // Tool description, for an approval.
+  string detail = 4;
+  repeated Choice choices = 5;
+}
+message Choice { string id = 1; string label = 2; }
+// For an approval, answer is approve, always or deny; for a picker, the
+// choice id; for a clarify, the reply text.
+message AnswerRequest { string ask_id = 1; string answer = 2; }
+message AnswerResponse { bool found = 1; }
 message StreamResponse {
   string kind = 1;
   string text = 2;
   string session_id = 3;
   ToolCall tool = 4;
   Media media = 5;
+  Ask ask = 6;
 }
 message CancelRequest { string session_id = 1; }
 message CancelResponse { bool cancelled = 1; int64 dropped = 2; }

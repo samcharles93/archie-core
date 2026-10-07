@@ -25,6 +25,7 @@ const (
 	ChatService_RecentTurns_FullMethodName             = "/gateway.v1.ChatService/RecentTurns"
 	ChatService_Route_FullMethodName                   = "/gateway.v1.ChatService/Route"
 	ChatService_Stream_FullMethodName                  = "/gateway.v1.ChatService/Stream"
+	ChatService_Answer_FullMethodName                  = "/gateway.v1.ChatService/Answer"
 	ChatService_Cancel_FullMethodName                  = "/gateway.v1.ChatService/Cancel"
 	ChatService_StopTasks_FullMethodName               = "/gateway.v1.ChatService/StopTasks"
 	ChatService_SetPersona_FullMethodName              = "/gateway.v1.ChatService/SetPersona"
@@ -56,6 +57,7 @@ type ChatServiceClient interface {
 	RecentTurns(ctx context.Context, in *RecentTurnsRequest, opts ...grpc.CallOption) (*RecentTurnsResponse, error)
 	Route(ctx context.Context, in *RouteRequest, opts ...grpc.CallOption) (*RouteResponse, error)
 	Stream(ctx context.Context, in *StreamRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamResponse], error)
+	Answer(ctx context.Context, in *AnswerRequest, opts ...grpc.CallOption) (*AnswerResponse, error)
 	Cancel(ctx context.Context, in *CancelRequest, opts ...grpc.CallOption) (*CancelResponse, error)
 	StopTasks(ctx context.Context, in *StopTasksRequest, opts ...grpc.CallOption) (*StopTasksResponse, error)
 	SetPersona(ctx context.Context, in *SetPersonaRequest, opts ...grpc.CallOption) (*SetPersonaResponse, error)
@@ -153,6 +155,16 @@ func (c *chatServiceClient) Stream(ctx context.Context, in *StreamRequest, opts 
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ChatService_StreamClient = grpc.ServerStreamingClient[StreamResponse]
+
+func (c *chatServiceClient) Answer(ctx context.Context, in *AnswerRequest, opts ...grpc.CallOption) (*AnswerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AnswerResponse)
+	err := c.cc.Invoke(ctx, ChatService_Answer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
 
 func (c *chatServiceClient) Cancel(ctx context.Context, in *CancelRequest, opts ...grpc.CallOption) (*CancelResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -354,6 +366,7 @@ type ChatServiceServer interface {
 	RecentTurns(context.Context, *RecentTurnsRequest) (*RecentTurnsResponse, error)
 	Route(context.Context, *RouteRequest) (*RouteResponse, error)
 	Stream(*StreamRequest, grpc.ServerStreamingServer[StreamResponse]) error
+	Answer(context.Context, *AnswerRequest) (*AnswerResponse, error)
 	Cancel(context.Context, *CancelRequest) (*CancelResponse, error)
 	StopTasks(context.Context, *StopTasksRequest) (*StopTasksResponse, error)
 	SetPersona(context.Context, *SetPersonaRequest) (*SetPersonaResponse, error)
@@ -400,6 +413,9 @@ func (UnimplementedChatServiceServer) Route(context.Context, *RouteRequest) (*Ro
 }
 func (UnimplementedChatServiceServer) Stream(*StreamRequest, grpc.ServerStreamingServer[StreamResponse]) error {
 	return status.Error(codes.Unimplemented, "method Stream not implemented")
+}
+func (UnimplementedChatServiceServer) Answer(context.Context, *AnswerRequest) (*AnswerResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Answer not implemented")
 }
 func (UnimplementedChatServiceServer) Cancel(context.Context, *CancelRequest) (*CancelResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Cancel not implemented")
@@ -579,6 +595,24 @@ func _ChatService_Stream_Handler(srv interface{}, stream grpc.ServerStream) erro
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ChatService_StreamServer = grpc.ServerStreamingServer[StreamResponse]
+
+func _ChatService_Answer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AnswerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatServiceServer).Answer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatService_Answer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatServiceServer).Answer(ctx, req.(*AnswerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
 
 func _ChatService_Cancel_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CancelRequest)
@@ -948,6 +982,10 @@ var ChatService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Route",
 			Handler:    _ChatService_Route_Handler,
+		},
+		{
+			MethodName: "Answer",
+			Handler:    _ChatService_Answer_Handler,
 		},
 		{
 			MethodName: "Cancel",

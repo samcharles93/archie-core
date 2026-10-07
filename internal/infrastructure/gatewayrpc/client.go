@@ -123,7 +123,14 @@ func (c *Client) ApplyOperatorTaskAction(ctx context.Context, actor taskactions.
 }
 
 func (c *Client) Stream(ctx context.Context, in messaging.Inbound) (<-chan messaging.ChatEvent, error) {
-	stream, err := c.client.Stream(ctx, &pb.StreamRequest{Message: inboundProto(in)})
+	approver := messaging.ApprovalFromContext(ctx)
+	interactive := messaging.InteractiveFromContext(ctx)
+	stream, err := c.client.Stream(ctx, &pb.StreamRequest{
+		Message:    inboundProto(in),
+		CanApprove: approver != nil,
+		CanClarify: interactive.Clarifier != nil,
+		CanPick:    interactive.Picker != nil,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -134,6 +141,11 @@ func (c *Client) Stream(ctx context.Context, in messaging.Inbound) (<-chan messa
 			v, err := stream.Recv()
 			if errors.Is(err, io.EOF) {
 				return
+			}
+			if err == nil && v.GetAsk() != nil {
+				// The turn blocks on this; keep receiving while the human answers.
+				go c.answer(ctx, v.GetAsk(), approver, interactive)
+				continue
 			}
 			var event messaging.ChatEvent
 			if err != nil {
@@ -152,4 +164,44 @@ func (c *Client) Stream(ctx context.Context, in messaging.Inbound) (<-chan messa
 		}
 	}()
 	return out, nil
+}
+
+// answer puts ask to the channel's own requester and returns its reply. A
+// failed or abandoned ask answers deny or empty, which the turn reads as no.
+func (c *Client) answer(ctx context.Context, ask *pb.Ask, approver messaging.ApprovalRequester, interactive messaging.Interactive) {
+	var reply string
+	switch ask.GetKind() {
+	case "approval":
+		if approver != nil {
+			decision, err := approver.RequestApproval(ctx, ask.GetPrompt(), ask.GetDetail())
+			switch {
+			case err != nil || decision == messaging.ApprovalDenied:
+				reply = "deny"
+			case decision == messaging.ApprovalPermanentlyApproved:
+				reply = "always"
+			default:
+				reply = "approve"
+			}
+		}
+	case "clarify":
+		if interactive.Clarifier != nil {
+			reply, _ = interactive.Clarifier.RequestClarification(ctx, messaging.ClarifyRequest{Question: ask.GetPrompt(), Suggestions: choicesValue(ask.GetChoices())})
+		}
+	case "picker":
+		if interactive.Picker != nil {
+			choice, err := interactive.Picker.RequestChoice(ctx, messaging.PickerRequest{Prompt: ask.GetPrompt(), Options: choicesValue(ask.GetChoices())})
+			if err == nil {
+				reply = choice.ID
+			}
+		}
+	}
+	_, _ = c.client.Answer(ctx, &pb.AnswerRequest{AskId: ask.GetId(), Answer: reply})
+}
+
+func choicesValue(choices []*pb.Choice) []messaging.InteractiveChoice {
+	out := make([]messaging.InteractiveChoice, 0, len(choices))
+	for _, c := range choices {
+		out = append(out, messaging.InteractiveChoice{ID: c.GetId(), Label: c.GetLabel()})
+	}
+	return out
 }
