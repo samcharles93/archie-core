@@ -50,11 +50,13 @@ if [ "$MODE" = "prepare" ]; then
 fi
 
 # component_dirs <cmd-path> -- repo-relative dirs of every package the binary
-# links, plus the files that build only that binary.
+# links, plus the files that build only that binary. go.mod and go.sum pin the
+# dependencies every binary links, so a dependency bump changes them all.
 component_dirs() {
 	go list -deps -f '{{.Dir}}' "$1" 2>/dev/null |
 		grep -F "$PWD/" |
 		sed "s|^$PWD/||"
+	printf '%s\n' go.mod go.sum
 }
 
 # matches <changed-files> <dirs> -- true when any changed file lives in one
