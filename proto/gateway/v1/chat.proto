@@ -130,6 +130,7 @@ message SnapshotResponse {
   bool cancellation_available = 10;
   bool personas_available = 11;
   string version = 12;
+  bool voice_available = 13;
 }
 message GetSessionRequest { string session_id = 1; }
 message GetSessionResponse { Session session = 1; bool found = 2; }

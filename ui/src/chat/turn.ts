@@ -7,10 +7,12 @@ import { randomUUID } from "@/lib/uuid";
 export interface ChatTurn {
   text: string;
   sourceID: string;
+  /** A recorded clip, base64, transcribed by the server. */
+  voice?: { data: string; mime_type: string };
 }
 
-export function newChatTurn(text: string): ChatTurn {
-  return { text, sourceID: randomUUID() };
+export function newChatTurn(text: string, voice?: ChatTurn["voice"]): ChatTurn {
+  return { text, sourceID: randomUUID(), voice };
 }
 
 export function retryChatTurn(turn: ChatTurn): ChatTurn {
@@ -21,6 +23,7 @@ export function retryChatTurn(turn: ChatTurn): ChatTurn {
 export interface RetryOptions {
   textOverride?: string;
   turn?: ChatTurn;
+  voice?: ChatTurn["voice"];
 }
 
 // resolveTurn decides what to send: a real retry descriptor's original turn,
@@ -42,6 +45,6 @@ export function resolveTurn(
     typeof retry.turn.text === "string"
   );
   const text = isRetry ? retry.turn!.text : composerValue.trim();
-  const turn = isRetry ? retryChatTurn(retry.turn!) : newChatTurn(text);
+  const turn = isRetry ? retryChatTurn(retry.turn!) : newChatTurn(text, retry?.voice);
   return { text, turn, isRetry };
 }

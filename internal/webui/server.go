@@ -27,6 +27,8 @@ import (
 type Server struct {
 	// chatAsks holds the chat questions waiting for the operator's answer.
 	chatAsks chatAsks
+	// chatFiles holds the downloads for files chat turns sent.
+	chatFiles chatFiles
 
 	Store storecontract.TaskStore
 	Log   *slog.Logger
@@ -362,6 +364,7 @@ func (s *Server) registerChatRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/chat/stream", s.handleChatStream)
 	mux.HandleFunc("POST /api/chat/cancel", s.handleChatCancel)
 	mux.HandleFunc("POST /api/chat/answer", s.handleChatAnswer)
+	mux.HandleFunc("GET /api/chat/file/{token}", s.handleChatFile)
 	mux.HandleFunc("POST /api/chat/persona", s.handleChatPersona)
 	mux.HandleFunc("GET /api/chat/update", s.handleChatUpdate)
 	mux.HandleFunc("POST /api/chat/update/defer", s.handleChatUpdateDefer)

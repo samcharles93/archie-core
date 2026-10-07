@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
+
+import { Mic } from "@lucide/vue";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,6 +17,8 @@ import {
   isSending,
   moveCommandSelection,
   sendMessage,
+  selectorData,
+  sendVoice,
   stopTurn,
   syncCommandMenu,
 } from "./state";
@@ -33,6 +37,33 @@ import {
  * transcript above it.
  */
 const props = defineProps<{ open: boolean }>();
+
+// Voice: recorded in the browser, transcribed by the server like a Telegram
+// voice note. The mic shows only while the composer is empty.
+const canRecord = computed(
+  () => !!selectorData.value.voice_available && typeof MediaRecorder !== "undefined" && !!navigator.mediaDevices?.getUserMedia,
+);
+const recording = ref(false);
+let recorder: MediaRecorder | null = null;
+async function toggleRecording() {
+  if (recorder) {
+    recorder.stop();
+    return;
+  }
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const chunks: Blob[] = [];
+  recorder = new MediaRecorder(stream);
+  recorder.ondataavailable = (e) => chunks.push(e.data);
+  recorder.onstop = () => {
+    stream.getTracks().forEach((t) => t.stop());
+    const clip = new Blob(chunks, { type: recorder?.mimeType || "audio/webm" });
+    recorder = null;
+    recording.value = false;
+    if (clip.size) void sendVoice(clip);
+  };
+  recorder.start();
+  recording.value = true;
+}
 
 const field = ref<{ $el: HTMLTextAreaElement } | null>(null);
 
@@ -156,6 +187,16 @@ function onKeydown(event: KeyboardEvent): void {
           >Stop</Button
         >
         <Button
+          v-if="canRecord && !composerText.trim()"
+          size="sm"
+          :variant="recording ? 'destructive' : 'outline'"
+          :disabled="isSending && !recording"
+          :aria-label="recording ? 'Stop recording and send' : 'Record a voice message'"
+          @click="toggleRecording"
+          ><Mic data-icon="inline-start" />{{ recording ? "Send" : "" }}</Button
+        >
+        <Button
+          v-else
           size="sm"
           :disabled="isSending || !composerText.trim()"
           @click="sendMessage()"

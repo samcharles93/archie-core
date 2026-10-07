@@ -17,7 +17,9 @@ type ChatSnapshot struct {
 	Version               string
 	RestartAvailable      bool
 	CancellationAvailable bool
-	PersonasAvailable     bool
+	// VoiceAvailable reports that a voice clip is transcribed into the turn.
+	VoiceAvailable    bool
+	PersonasAvailable bool
 }
 
 // ChatReply is the blocking reply from Route.

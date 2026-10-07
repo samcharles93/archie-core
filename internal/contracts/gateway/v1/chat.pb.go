@@ -730,6 +730,7 @@ type SnapshotResponse struct {
 	CancellationAvailable bool                   `protobuf:"varint,10,opt,name=cancellation_available,json=cancellationAvailable,proto3" json:"cancellation_available,omitempty"`
 	PersonasAvailable     bool                   `protobuf:"varint,11,opt,name=personas_available,json=personasAvailable,proto3" json:"personas_available,omitempty"`
 	Version               string                 `protobuf:"bytes,12,opt,name=version,proto3" json:"version,omitempty"`
+	VoiceAvailable        bool                   `protobuf:"varint,13,opt,name=voice_available,json=voiceAvailable,proto3" json:"voice_available,omitempty"`
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
 }
@@ -846,6 +847,13 @@ func (x *SnapshotResponse) GetVersion() string {
 		return x.Version
 	}
 	return ""
+}
+
+func (x *SnapshotResponse) GetVoiceAvailable() bool {
+	if x != nil {
+		return x.VoiceAvailable
+	}
+	return false
 }
 
 type GetSessionRequest struct {
@@ -3811,7 +3819,7 @@ const file_gateway_v1_chat_proto_rawDesc = "" +
 	"\n" +
 	"StringList\x12\x16\n" +
 	"\x06values\x18\x01 \x03(\tR\x06values\"\x11\n" +
-	"\x0fSnapshotRequest\"\xeb\x05\n" +
+	"\x0fSnapshotRequest\"\x94\x06\n" +
 	"\x10SnapshotResponse\x12/\n" +
 	"\bsessions\x18\x01 \x03(\v2\x13.gateway.v1.SessionR\bsessions\x12\x16\n" +
 	"\x06models\x18\x02 \x03(\tR\x06models\x12`\n" +
@@ -3825,7 +3833,8 @@ const file_gateway_v1_chat_proto_rawDesc = "" +
 	"\x16cancellation_available\x18\n" +
 	" \x01(\bR\x15cancellationAvailable\x12-\n" +
 	"\x12personas_available\x18\v \x01(\bR\x11personasAvailable\x12\x18\n" +
-	"\aversion\x18\f \x01(\tR\aversion\x1a[\n" +
+	"\aversion\x18\f \x01(\tR\aversion\x12'\n" +
+	"\x0fvoice_available\x18\r \x01(\bR\x0evoiceAvailable\x1a[\n" +
 	"\x15ModelsByProviderEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12,\n" +
 	"\x05value\x18\x02 \x01(\v2\x16.gateway.v1.StringListR\x05value:\x028\x01\x1aA\n" +

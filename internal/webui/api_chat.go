@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -44,7 +45,18 @@ type chatMessageRequest struct {
 	// set by the web chat so the agent's system prompt can state where the
 	// operator is looking and point them somewhere relevant.
 	Page string `json:"page,omitempty"`
+	// Voice is a recorded clip, transcribed by the Gateway like a Telegram
+	// voice note. Base64 in JSON.
+	Voice *chatVoice `json:"voice,omitempty"`
 }
+
+type chatVoice struct {
+	Data     []byte `json:"data"`
+	MIMEType string `json:"mime_type"`
+}
+
+// maxVoiceBytes bounds a recorded clip: about ten minutes of Opus.
+const maxVoiceBytes = 10 << 20
 
 // chatMessageView is one entry of a session's history as the dashboard
 // reads it. The persisted record is messaging.Message; this is the shape
@@ -175,6 +187,7 @@ func (s *Server) handleChatSessions(w http.ResponseWriter, r *http.Request) {
 		"active_model":       snapshot.ActiveModel,
 		"active_provider":    snapshot.ActiveProvider,
 		"personas":           snapshot.Personas,
+		"voice_available":    snapshot.VoiceAvailable,
 		"active_personas":    active,
 		"commands":           chatCommandSpecs(chat),
 		"restart_available":  snapshot.RestartAvailable,
@@ -257,11 +270,23 @@ func (s *Server) handleChatTurns(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) decodeChatMessage(w http.ResponseWriter, r *http.Request) (messaging.Inbound, bool) {
 	var req chatMessageRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	// Base64 makes a clip a third larger than its bytes.
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxVoiceBytes*3/2)).Decode(&req); err != nil {
 		http.Error(w, "invalid chat message", http.StatusBadRequest)
 		return messaging.Inbound{}, false
 	}
 	req.Text = strings.TrimSpace(req.Text)
+	var media []messaging.MediaAttachment
+	if req.Voice != nil {
+		if len(req.Voice.Data) == 0 || len(req.Voice.Data) > maxVoiceBytes {
+			http.Error(w, "voice clip is empty or too long", http.StatusBadRequest)
+			return messaging.Inbound{}, false
+		}
+		media = append(media, messaging.MediaAttachment{Type: messaging.MediaTypeVoice, MIMEType: req.Voice.MIMEType, Data: req.Voice.Data})
+		if req.Text == "" {
+			req.Text = "[voice message]"
+		}
+	}
 	if req.Text == "" || req.ChannelID == "" {
 		http.Error(w, "text and channel_id are required", http.StatusBadRequest)
 		return messaging.Inbound{}, false
@@ -280,7 +305,8 @@ func (s *Server) decodeChatMessage(w http.ResponseWriter, r *http.Request) (mess
 			Role:           messaging.RoleUser,
 			Text:           req.Text,
 		},
-		Page: req.Page,
+		Media: media,
+		Page:  req.Page,
 		// The dashboard names the channel it carries; see the platform field's
 		// note in internal/domain/messaging/inbound.go.
 		Platform: "web",
@@ -327,6 +353,8 @@ type chatStreamEvent struct {
 type chatStreamSink struct {
 	write         func(chatStreamEvent)
 	showToolCalls bool
+	// files hands out downloads for the local files a turn sends.
+	files *chatFiles
 }
 
 func (s chatStreamSink) Delta(text string) {
@@ -371,15 +399,12 @@ func (s chatStreamSink) Media(event messaging.MediaEvent) {
 	switch {
 	case att.URL != "":
 		s.write(chatStreamEvent{Type: "delta", Text: "\n\n📎 " + att.Type + ": " + att.URL})
-	case att.Path != "":
+	case att.Path != "" && s.files != nil:
 		name := att.FileName
 		if name == "" {
-			name = att.Path
+			name = filepath.Base(att.Path)
 		}
-		s.write(chatStreamEvent{
-			Type: "delta",
-			Text: "\n\n📎 could not send " + name + ": this channel cannot deliver a local file. It is on the daemon host at " + att.Path + ".",
-		})
+		s.write(chatStreamEvent{Type: "delta", Text: "\n\n📎 [" + name + "](" + chatFileURL(s.files.offer(att.Path, att.FileName)) + ")"})
 	}
 }
 
@@ -427,7 +452,7 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		writeChatEvent(chatStreamEvent{Type: "error", Text: err.Error()}, "")
 		return
 	}
-	sink := chatStreamSink{showToolCalls: s.chatShowToolCalls(r.Context())}
+	sink := chatStreamSink{showToolCalls: s.chatShowToolCalls(r.Context()), files: &s.chatFiles}
 	for event := range events {
 		sink.write = func(frame chatStreamEvent) { writeChatEvent(frame, event.SessionID) }
 		switch event.Kind {

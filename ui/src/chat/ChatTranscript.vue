@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/message-scroller";
 import ChatAskCard from "./ChatAskCard.vue";
 import ChatBubble from "./ChatBubble.vue";
+import ChatChooseCard from "./ChatChooseCard.vue";
 import ChatUpdateCard from "./ChatUpdateCard.vue";
 import ChatEmptyState from "./ChatEmptyState.vue";
 import {
@@ -44,6 +45,7 @@ function parts(message: ChatMessage) {
     media: message.media || [],
     assistant: from !== "web",
     update: message.update,
+    choose: message.choose,
   };
 }
 
@@ -73,6 +75,7 @@ const bubbles = computed(() => messages.value.map(parts));
                 :assistant="bubble.assistant"
               >
                 <ChatUpdateCard v-if="bubble.update" :update="bubble.update" />
+                <ChatChooseCard v-if="bubble.choose" :choose="bubble.choose" />
               </ChatBubble>
             </MessageScrollerItem>
 

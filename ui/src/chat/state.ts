@@ -93,6 +93,8 @@ export interface ChatMessage {
   MessageID?: string;
   /** An update check answered in the panel, with its install actions. */
   update?: ChatUpdate;
+  /** A bare /model or /personality, answered with its choices. */
+  choose?: "model" | "personality";
 }
 
 /** The update snapshot /update shows, and whether this host can install it. */
@@ -133,6 +135,7 @@ export interface ChatSelectorData {
   active_provider?: string;
   active_model?: string;
   commands?: Array<ChatCommandSpec | string>;
+  voice_available?: boolean;
 }
 
 /**
@@ -422,6 +425,16 @@ export async function sendMessage(retryOpts?: RetryOptions): Promise<void> {
     composerText.value = "";
   }
 
+  // Bare /model and /personality offer their choices as buttons, as Telegram
+  // does; with an argument they go to the gateway like any command.
+  if (!isRetry && (text.trim() === "/model" || text.trim() === "/personality")) {
+    const choose = text.trim() === "/model" ? "model" : "personality";
+    messages.value = [...messages.value, { from: "assistant", text: "", choose }];
+    isSending.value = false;
+    statusText.value = "Ready";
+    return;
+  }
+
   // /update answers here, where the panel can offer Install like Telegram does.
   if (!isRetry && text.trim() === "/update") {
     try {
@@ -468,6 +481,7 @@ export async function sendMessage(retryOpts?: RetryOptions): Promise<void> {
         source_id: turn.sourceID,
         text: turn.text,
         page: currentPage(),
+        voice: turn.voice,
       },
       { signal: controller.signal },
     );
@@ -584,5 +598,18 @@ export function useChat(): void {
   });
   onUnmounted(() => {
     abortActiveTurn();
+  });
+}
+
+/** sendVoice sends a recorded clip as a turn; the server transcribes it. */
+export async function sendVoice(clip: Blob): Promise<void> {
+  const bytes = new Uint8Array(await clip.arrayBuffer());
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  await sendMessage({
+    textOverride: "🎤 Voice message",
+    voice: { data: btoa(binary), mime_type: clip.type || "audio/webm" },
   });
 }
