@@ -5,6 +5,12 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.49.1] - 2026-10-07
+
+### archied
+
+- When the dashboard session expires, the page returns to the sign-in screen instead of showing errors on every page until a manual refresh.
+
 ## [1.49.0] - 2026-10-07
 
 ### archied

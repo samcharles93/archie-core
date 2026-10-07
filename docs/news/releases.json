@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.49.1",
+    "date": "2026-10-07",
+    "body": "### archied\n\n- When the dashboard session expires, the page returns to the sign-in screen instead of showing errors on every page until a manual refresh."
+  },
+  {
     "version": "1.49.0",
     "date": "2026-10-07",
     "body": "### archied\n\n- Extensions that declare no egress hosts (vault, email, gitea) reach the network again; only packages that declare their hosts are confined to them. The Accept dialog shows \"network: unrestricted\" for the rest.\n- The update check finds releases itself, and reuses a found release for ten minutes so repeated checks stay under GitHub's rate limit."
