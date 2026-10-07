@@ -85,7 +85,7 @@ func Run(ctx context.Context, options Options) error {
 		return err
 	}
 
-	srv := compose(deps{
+	srv := compose(ctx, deps{
 		Options:      opts,
 		Log:          log,
 		Store:        tasks,

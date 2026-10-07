@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/app/servicekit"
 	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/health"
@@ -50,7 +51,7 @@ type deps struct {
 
 // compose builds the dashboard server from contract-backed dependencies.
 // Unset fields answer 501/503 or empty.
-func compose(d deps) *webui.Server {
+func compose(ctx context.Context, d deps) *webui.Server {
 	srv := &webui.Server{
 		Store:                 d.Store,
 		Log:                   d.Log,
@@ -90,6 +91,7 @@ func compose(d deps) *webui.Server {
 	wireOrgSurface(srv, d.Store)
 	if presence, ok := d.Store.(storecontract.PresenceStore); ok {
 		srv.Presence = presence
+		srv.RunningVersions = servicekit.RunningVersions(ctx, presence, 0)
 	}
 	if applyStatus, ok := d.Store.(storecontract.ApplyStatusStore); ok {
 		srv.ApplyStatus = applyStatus

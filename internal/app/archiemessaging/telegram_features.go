@@ -9,13 +9,11 @@ import (
 	"time"
 
 	configtemplate "github.com/samcharles93/archie-core"
+	"github.com/samcharles93/archie-core/internal/app/servicekit"
 	"github.com/samcharles93/archie-core/internal/buildinfo"
 	"github.com/samcharles93/archie-core/internal/channels/telegram"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
-	"github.com/samcharles93/archie-core/internal/domain/presence"
-	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/releaseannounce"
-	"github.com/samcharles93/archie-core/internal/releaseupdate"
 	"github.com/samcharles93/archie-core/internal/secret"
 )
 
@@ -25,7 +23,7 @@ func configureTelegram(ctx context.Context, g *telegram.Gateway, cfg ResolvedCon
 	g.Version = gatewayVersionReporter(ctx, d.Chat, cfg.Options.DependencyTimeout)
 	g.SetShowToolCalls(cfg.ShowToolCalls)
 	g.Reload = telegramReloader(cfg.Options, d.Secrets, d.Log)
-	g.RunningVersions = runningVersions(ctx, d.Presence, cfg.Options.DependencyTimeout)
+	g.RunningVersions = servicekit.RunningVersions(ctx, d.Presence, cfg.Options.DependencyTimeout)
 
 	if d.Updates != nil {
 		g.Updates = d.Updates
@@ -38,34 +36,6 @@ func configureTelegram(ctx context.Context, g *telegram.Gateway, cfg ResolvedCon
 				{ID: "archie", Label: "ARCHIE", Version: buildinfo.Version, Changelog: configtemplate.Changelog},
 			},
 		}
-	}
-}
-
-// runningVersions reports the daemon version archied's own presence record
-// carries, so an update report is checked against what archied compiled in
-// rather than this process's build. A down or unreachable daemon, or a
-// missing store, leaves the daemon unverified. The agent stays unverified:
-// only archied observes it.
-func runningVersions(ctx context.Context, store storecontract.PresenceStore, timeout time.Duration) func() map[string]string {
-	return func() map[string]string {
-		if store == nil {
-			return nil
-		}
-		if timeout <= 0 {
-			timeout = 5 * time.Second
-		}
-		callCtx, cancel := context.WithTimeout(ctx, timeout)
-		defer cancel()
-		records, err := store.ListPresence(callCtx)
-		if err != nil {
-			return nil
-		}
-		for _, service := range presence.Mesh(records, time.Now()) {
-			if service.Service == presence.Daemon && service.State != presence.StateDown {
-				return map[string]string{releaseupdate.ComponentDaemon: service.Version}
-			}
-		}
-		return nil
 	}
 }
 
