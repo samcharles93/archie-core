@@ -5,6 +5,15 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.49.4] - 2026-10-07
+
+### archied
+
+- Settings → Status and Settings → Extensions are split into tabs instead of one long page; the Versions table's status column ends at the card's edge.
+- Tools & MCP has one "Add MCP server" button; the transport is chosen in the form, and an unnamed new server is not an unsaved change.
+- Settings → Repositories shows the add field when no repositories are configured, instead of a blank page.
+- The unsaved-changes bar always rests at the bottom of the window.
+
 ## [1.49.3] - 2026-10-07
 
 ### archied
