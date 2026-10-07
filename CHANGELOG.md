@@ -5,6 +5,12 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.50.1] - 2026-10-08
+
+### archied
+
+- When an update is rolled back, the log names the health check that failed instead of only "unhealthy".
+
 ## [1.50.0] - 2026-10-08
 
 ### archied
