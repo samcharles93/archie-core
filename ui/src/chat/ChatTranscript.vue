@@ -10,7 +10,9 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
+import ChatAskCard from "./ChatAskCard.vue";
 import ChatBubble from "./ChatBubble.vue";
+import ChatUpdateCard from "./ChatUpdateCard.vue";
 import ChatEmptyState from "./ChatEmptyState.vue";
 import {
   messages,
@@ -41,6 +43,7 @@ function parts(message: ChatMessage) {
     // metadata only -- so the bubble labels them.
     media: message.media || [],
     assistant: from !== "web",
+    update: message.update,
   };
 }
 
@@ -68,7 +71,9 @@ const bubbles = computed(() => messages.value.map(parts));
                 :tools="bubble.tools"
                 :media="bubble.media"
                 :assistant="bubble.assistant"
-              />
+              >
+                <ChatUpdateCard v-if="bubble.update" :update="bubble.update" />
+              </ChatBubble>
             </MessageScrollerItem>
 
             <!-- The live turn is a bubble like any other, so what arrives is
@@ -94,6 +99,7 @@ const bubbles = computed(() => messages.value.map(parts));
                 >
                   Retry
                 </Button>
+                <ChatAskCard v-if="streamingTurn.ask" :ask="streamingTurn.ask" />
               </ChatBubble>
             </MessageScrollerItem>
           </template>

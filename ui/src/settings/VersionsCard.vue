@@ -35,20 +35,9 @@ interface ComponentVersion {
   status: "ok" | "update_available" | "drift" | "unknown";
 }
 
-interface ComponentSnapshot {
-  id?: string;
-  label?: string;
-  installed?: string;
-  available?: string;
-}
-
-interface UpdateSnapshot {
-  components?: ComponentSnapshot[];
-  deferred?: boolean;
-}
-
 const components = ref<ComponentVersion[]>([]);
-const snapshot = ref<UpdateSnapshot | null>(null);
+const snapshot = ref<unknown>(null);
+const available = ref<unknown[]>([]);
 const canInstall = ref(false);
 const notConfigured = ref(false);
 const loading = ref(true);
@@ -86,7 +75,7 @@ async function load(): Promise<void> {
     const [report, update] = await Promise.all([
       api.version<{ components: ComponentVersion[] }>(),
       api
-        .updateSnapshot<{ snapshot: UpdateSnapshot; can_install: boolean }>()
+        .updateSnapshot<{ snapshot: unknown; available: unknown[] | null; can_install: boolean }>()
         .catch((err) => {
           if (err instanceof ApiError && err.status === 501) {
             notConfigured.value = true;
@@ -98,6 +87,7 @@ async function load(): Promise<void> {
     components.value = report.components;
     if (update) {
       snapshot.value = update.snapshot;
+      available.value = update.available ?? [];
       canInstall.value = update.can_install;
     }
   } catch (err) {
@@ -107,18 +97,10 @@ async function load(): Promise<void> {
   }
 }
 
-// The snapshot the install endpoint demands is the one the operator saw —
+// The snapshot the install endpoint demands is the one the operator saw --
 // the endpoint re-checks freshness and answers 409 when releases moved.
-function installableSnapshot(): UpdateSnapshot | null {
-  if (!snapshot.value) return null;
-  if (
-    snapshot.value.components?.some(
-      (c) => c.available && c.available !== c.installed,
-    )
-  ) {
-    return snapshot.value;
-  }
-  return null;
+function installableSnapshot(): unknown {
+  return snapshot.value && available.value.length ? snapshot.value : null;
 }
 
 async function install(): Promise<void> {

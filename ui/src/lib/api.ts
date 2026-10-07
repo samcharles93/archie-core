@@ -262,6 +262,8 @@ export const api = {
   // not the 15s default, and the watchdog owns everything after the restart.
   version: <T = unknown>() => request<T>("/api/version"),
   updateSnapshot: <T = unknown>() => request<T>("/api/chat/update"),
+  updateDefer: (snapshot: unknown) =>
+    request("/api/chat/update/defer", { method: "POST", body: { snapshot } }),
   updateInstall: <T = unknown>(snapshot: unknown) =>
     request<T>("/api/chat/update/install", {
       method: "POST",
@@ -351,6 +353,8 @@ export const api = {
       method: "POST",
     }),
   chatSessions: <T = unknown>() => request<T>("/api/chat/sessions"),
+  chatAnswer: (id: string, answer: string) =>
+    request("/api/chat/answer", { method: "POST", body: { id, answer } }),
   chatMessages: <T = unknown>(id: string) =>
     request<T>(`/api/chat/sessions/${encodeURIComponent(id)}/messages`),
   chatTurns: <T = unknown>(id: string) =>

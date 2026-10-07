@@ -91,6 +91,15 @@ export interface ChatMessage {
   ToolCalls?: ChatToolCall[];
   message_id?: string;
   MessageID?: string;
+  /** An update check answered in the panel, with its install actions. */
+  update?: ChatUpdate;
+}
+
+/** The update snapshot /update shows, and whether this host can install it. */
+export interface ChatUpdate {
+  snapshot: unknown;
+  available: unknown[];
+  can_install: boolean;
 }
 
 /** A turn in flight: what it is showing, and what to resend if it fails. */
@@ -100,6 +109,17 @@ export interface StreamingTurn {
   isError: boolean;
   turn?: ChatTurn;
   isRetry: boolean;
+  /** A question the turn waits on until the operator answers it. */
+  ask?: ChatAsk;
+}
+
+/** An approval, clarify or picker question from a running turn. */
+export interface ChatAsk {
+  id: string;
+  kind: "approval" | "clarify" | "picker";
+  prompt: string;
+  detail?: string;
+  choices?: { id: string; label: string }[];
 }
 
 /** Everything the selectors on the panel read, from one sessions read. */
@@ -130,10 +150,21 @@ interface ChatStreamFrame extends ChatToolCall {
   type?: string;
   text: string;
   session_id?: string;
+  ask?: ChatAsk;
 }
 
 /** A turn that never settles must not hold the composer closed forever. */
 const STREAM_TIMEOUT_MS = 120000;
+let rearmTimeout: (() => void) | null = null;
+
+/** answerAsk sends the operator's answer to the question the turn waits on. */
+export async function answerAsk(answer: string): Promise<void> {
+  const ask = streamingTurn.value?.ask;
+  if (!ask) return;
+  streamingTurn.value = streamingTurn.value ? { ...streamingTurn.value, ask: undefined } : null;
+  rearmTimeout?.();
+  await api.chatAnswer(ask.id, answer);
+}
 
 export const sessions = ref<ChatSession[]>([]);
 export const currentSession = ref("");
@@ -391,6 +422,24 @@ export async function sendMessage(retryOpts?: RetryOptions): Promise<void> {
     composerText.value = "";
   }
 
+  // /update answers here, where the panel can offer Install like Telegram does.
+  if (!isRetry && text.trim() === "/update") {
+    try {
+      const update = await api.updateSnapshot<ChatUpdate>();
+      messages.value = [...messages.value, { from: "assistant", text: "", update }];
+      statusText.value = "Ready";
+    } catch (err) {
+      messages.value = [
+        ...messages.value,
+        { from: "assistant", text: `Could not check for updates: ${(err as Error).message}` },
+      ];
+      statusText.value = "Ready";
+    } finally {
+      isSending.value = false;
+    }
+    return;
+  }
+
   let activeTools: ChatToolCall[] = [];
   streamingTurn.value = { text: "", tools: [], isError: false, turn, isRetry };
 
@@ -402,10 +451,16 @@ export async function sendMessage(retryOpts?: RetryOptions): Promise<void> {
   try {
     const controller = new AbortController();
     activeController = controller;
-    timeoutId = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, STREAM_TIMEOUT_MS);
+    const arm = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, STREAM_TIMEOUT_MS);
+    };
+    arm();
+    // The clock stops while a question waits on the operator.
+    rearmTimeout = arm;
 
     const response = await api.chatStream(
       {
@@ -454,6 +509,12 @@ export async function sendMessage(retryOpts?: RetryOptions): Promise<void> {
             ? { ...streamingTurn.value, tools: activeTools }
             : null;
         }
+        if (event.type === "ask" && event.ask) {
+          clearTimeout(timeoutId);
+          streamingTurn.value = streamingTurn.value
+            ? { ...streamingTurn.value, ask: event.ask }
+            : null;
+        }
         if (event.type === "done") {
           finished = true;
           if (!streamedText) streamedText = event.text || "";
@@ -495,6 +556,7 @@ export async function sendMessage(retryOpts?: RetryOptions): Promise<void> {
     }
   } finally {
     clearTimeout(timeoutId);
+    rearmTimeout = null;
     activeController = null;
     isSending.value = false;
   }

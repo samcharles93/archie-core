@@ -318,6 +318,8 @@ type chatStreamEvent struct {
 	// only on a navigate event.
 	Path  string `json:"path,omitempty"`
 	Label string `json:"label,omitempty"`
+	// Ask is a question the turn waits on; answered by POST /api/chat/answer.
+	Ask *chatAsk `json:"ask,omitempty"`
 }
 
 // chatStreamSink writes turn text and tool activity to the browser stream.
@@ -408,13 +410,19 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Accel-Buffering", "no")
+	// An ask is written from the gateway client's goroutine while this one
+	// writes the turn's events.
+	var writeMu sync.Mutex
 	writeChatEvent := func(event chatStreamEvent, sessionID string) {
+		writeMu.Lock()
+		defer writeMu.Unlock()
 		event.SessionID = sessionID
 		payload, _ := json.Marshal(event)
 		_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
 		flusher.Flush()
 	}
-	events, err := chat.Contract.Stream(r.Context(), msg)
+	asker := dashboardAsker{asks: &s.chatAsks, write: func(frame chatStreamEvent) { writeChatEvent(frame, "") }}
+	events, err := chat.Contract.Stream(withDashboardAsks(r.Context(), asker), msg)
 	if err != nil {
 		writeChatEvent(chatStreamEvent{Type: "error", Text: err.Error()}, "")
 		return
