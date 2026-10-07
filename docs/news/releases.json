@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.51.0",
+    "date": "2026-10-08",
+    "body": "### archied\n\n- A secret engine enabled after Archie started (Bitwarden, for example) now supplies its keys straight away; providers that depended on it no longer stay disabled until a restart.\n- The dashboard chat has a microphone button: record a voice message and it is transcribed like a Telegram voice note. It shows only when a `transcription` model role is set under Settings → Models.\n- A file Archie sends in the dashboard chat is a download link for an hour, instead of a note that it can't be delivered.\n- Typing `/model` or `/personality` on its own in the dashboard chat offers the choices as buttons."
+  },
+  {
     "version": "1.50.1",
     "date": "2026-10-08",
     "body": "### archied\n\n- When an update is rolled back, the log names the health check that failed instead of only \"unhealthy\"."

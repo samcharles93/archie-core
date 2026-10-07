@@ -5,6 +5,15 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.51.0] - 2026-10-08
+
+### archied
+
+- A secret engine enabled after Archie started (Bitwarden, for example) now supplies its keys straight away; providers that depended on it no longer stay disabled until a restart.
+- The dashboard chat has a microphone button: record a voice message and it is transcribed like a Telegram voice note. It shows only when a `transcription` model role is set under Settings → Models.
+- A file Archie sends in the dashboard chat is a download link for an hour, instead of a note that it can't be delivered.
+- Typing `/model` or `/personality` on its own in the dashboard chat offers the choices as buttons.
+
 ## [1.50.1] - 2026-10-08
 
 ### archied
