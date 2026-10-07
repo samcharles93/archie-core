@@ -37,10 +37,14 @@ const channel = computed({
     <CardContent>
       <p v-if="error" class="mb-2 text-sm text-danger" role="alert">{{ error }}</p>
       <SettingRow label="Release channel">
-        <SegmentedControl v-model="channel" label="Release channel" :options="channels" />
+        <div class="flex justify-end">
+          <SegmentedControl v-model="channel" label="Release channel" :options="channels" />
+        </div>
       </SettingRow>
       <SettingRow v-if="channel === 'exact-pin'" label="Version" for="update-pin">
-        <Input id="update-pin" v-model="draft.pin" class="max-w-40 font-mono" placeholder="1.48.0" />
+        <div class="flex justify-end">
+          <Input id="update-pin" v-model="draft.pin" class="max-w-40 font-mono" placeholder="1.48.0" />
+        </div>
       </SettingRow>
     </CardContent>
   </Card>
