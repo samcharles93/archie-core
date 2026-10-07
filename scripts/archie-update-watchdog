@@ -78,9 +78,16 @@ EOF
   mv -f "$tmp" "$REPORT_PATH"
 }
 
+# LAST_HEALTH is the last report healthy saw, printed when the update is
+# given up so the log says which component failed.
+LAST_HEALTH=""
 healthy() {
   local report
-  report="$(curl -fsS --max-time 10 "$HEALTH_URL/health/detailed")" || return 1
+  if ! report="$(curl -fsS --max-time 10 "$HEALTH_URL/health/detailed")"; then
+    LAST_HEALTH="$(curl -sS --max-time 10 "$HEALTH_URL/health/detailed" 2>&1)"
+    return 1
+  fi
+  LAST_HEALTH="$report"
   [ "$(jq -r '.version' <<< "$report")" = "$ARCHIE_UPDATE_INSTALLED_GATEWAY" ] &&
     [ "$(jq -r '.status' <<< "$report")" = ok ]
 }
@@ -92,12 +99,13 @@ wait_healthy() {
       deadline=$((SECONDS + OBSERVE_SECONDS))
       while [ "$SECONDS" -lt "$deadline" ]; do
         sleep "$POLL_INTERVAL_SECONDS"
-        healthy || return 1
+        healthy || { echo "==> unhealthy while observing: $LAST_HEALTH"; return 1; }
       done
       return 0
     fi
     sleep "$POLL_INTERVAL_SECONDS"
   done
+  echo "==> never became healthy; last report: $LAST_HEALTH"
   return 1
 }
 
