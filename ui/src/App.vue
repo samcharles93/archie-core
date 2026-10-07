@@ -1,40 +1,13 @@
 <script setup lang="ts">
-import { storeToRefs } from "pinia";
-import { onMounted, ref } from "vue";
+import { onMounted } from "vue";
 
 import ChatLauncher from "@/chat/ChatLauncher.vue";
 import CommandPalette from "@/components/command-palette/CommandPalette.vue";
 import Topbar from "@/components/topbar/Topbar.vue";
 import SettingsShell from "@/settings/SettingsShell.vue";
-import {
-  Alert,
-  AlertAction,
-  AlertDescription,
-  AlertTitle,
-} from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { hidden, loadCapabilities } from "@/lib/capabilities";
-import { createSessionRetry } from "@/lib/session-retry";
 import { loadTaskMeta } from "@/lib/task-meta";
-import { useLiveUpdatesStore } from "@/stores/live-updates";
-
-const { authenticationRequired } = storeToRefs(useLiveUpdatesStore());
-
-// Re-runs the reads that report their own 401s to the live-updates store. A
-// session that came back clears the banner without a document reload; one that
-// did not leaves it up.
-const retrying = ref(false);
-const retrySession = createSessionRetry([loadCapabilities, loadTaskMeta]);
-
-async function retryAuthentication(): Promise<void> {
-  retrying.value = true;
-  try {
-    await retrySession();
-  } finally {
-    retrying.value = false;
-  }
-}
 
 onMounted(() => {
   // Asked for once, after the shell is up: the nav paints immediately and
@@ -69,23 +42,6 @@ onMounted(() => {
     >
       <Topbar :hidden="hidden" />
       <main class="w-full flex-1 overflow-x-clip p-8 max-lg:p-4">
-        <Alert v-if="authenticationRequired" variant="destructive" class="mb-4">
-          <AlertTitle>Dashboard authentication required</AlertTitle>
-          <AlertDescription>
-            Open the dashboard URL Archie logged at startup to establish a new
-            authenticated session.
-          </AlertDescription>
-          <AlertAction>
-            <Button
-              variant="outline"
-              size="sm"
-              :disabled="retrying"
-              @click="retryAuthentication"
-            >
-              {{ retrying ? "Retrying…" : "Retry" }}
-            </Button>
-          </AlertAction>
-        </Alert>
         <!--
           Keyed on the path and its parameters but not the query: a query-only
           change is an entry state, so the page keeps the operator's filters,

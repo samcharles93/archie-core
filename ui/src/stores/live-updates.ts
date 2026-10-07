@@ -20,7 +20,6 @@ import {
 export const useLiveUpdatesStore = defineStore("live-updates", () => {
   const streamState = ref<StreamState | "connecting">("connecting");
   const connectionRevision = ref(0);
-  const authenticationRequired = ref(false);
   const activity = ref<LiveEvent[]>([]);
   const revisions = reactive<Record<LiveResource, number>>({
     tasks: 0,
@@ -74,8 +73,10 @@ export const useLiveUpdatesStore = defineStore("live-updates", () => {
 
   function initialize(): void {
     if (unsubscribe) return;
+    // An expired session reloads the document: the server answers a page
+    // request without a session by sending the browser to sign in.
     setAuthenticationStateHandler((required) => {
-      authenticationRequired.value = required;
+      if (required) window.location.reload();
     });
     connect();
   }
@@ -96,7 +97,6 @@ export const useLiveUpdatesStore = defineStore("live-updates", () => {
 
   return {
     activity,
-    authenticationRequired,
     connectionRevision,
     revisions,
     streamKind,
