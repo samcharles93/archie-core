@@ -167,7 +167,7 @@ const models = computed({
 
       <section class="mt-8 rounded-lg border border-border bg-card px-5 pt-4 pb-2" aria-labelledby="ch-defaults">
         <h2 id="ch-defaults" class="text-[11px] font-medium tracking-[0.06em] text-fg-subtle uppercase">
-          Chat session defaults · all channels
+          Chat session defaults
         </h2>
         <SettingRow label="Workspace" for="cs-workspace" hint="Empty disables file tools.">
           <Input id="cs-workspace" v-model="chat.workspace" class="max-w-md font-mono" />

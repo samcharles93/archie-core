@@ -55,15 +55,17 @@ const { catalog, catalogError } = storeToRefs(store);
 onMounted(store.load);
 
 const resources = computed(() => resourcesForPage(catalog.value, "repositories"));
-const repos = computed(() => store.drafts[KIND]?.value as Repo[] | undefined);
+const draft = computed(() => store.drafts[KIND]);
+const repos = computed(() => (draft.value?.value ?? []) as Repo[]);
 const error = computed(() => store.stateFor(KIND).error);
 
 const ecosystems = ["go", "python", "node", "rust", "custom"];
 const newRepo = ref("");
 function addRepo() {
   const [owner, name] = newRepo.value.trim().split("/");
-  if (!repos.value || !owner || !name) return;
-  repos.value.push({
+  if (!draft.value || !owner || !name) return;
+  draft.value.value ??= [];
+  (draft.value.value as Repo[]).push({
     owner, name, base: "main", ecosystem: "go", gate: [], preflight: null, protect: null,
     test_glob: "", persistent_storage: false, max_retries: 0, allow_concurrent: false,
   });
@@ -80,7 +82,7 @@ const protectOf = (repo: Repo) => repo.protect ?? [];
 
     <p v-if="catalogError || error" class="mb-4 text-sm text-danger" role="alert">{{ catalogError || error }}</p>
 
-    <template v-if="repos">
+    <template v-if="draft">
       <section
         v-for="(repo, i) in repos"
         :key="i"

@@ -61,7 +61,7 @@ async function save() {
 <template>
   <div
     v-if="count > 0"
-    class="sticky bottom-4 z-30 mt-6 rounded-lg border border-border bg-popover shadow-[var(--shadow-md)]"
+    class="sticky bottom-4 z-30 mt-auto rounded-lg border border-border bg-popover shadow-[var(--shadow-md)]"
     role="region"
     aria-label="Unsaved changes"
   >

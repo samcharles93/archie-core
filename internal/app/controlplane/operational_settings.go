@@ -36,7 +36,7 @@ type pluginSettings struct {
 
 func operationalDefinitions() []Definition {
 	return []Definition{
-		{Kind: RepositoryPoliciesKind, Title: "Repository policies", ApplyMode: "live", Document: []config.Repo{}, Seed: func(cfg config.Config) any { return cfg.Repos }, Validate: validateRepositories},
+		{Kind: RepositoryPoliciesKind, Title: "Repository policies", ApplyMode: "live", Document: []config.Repo{}, Seed: func(cfg config.Config) any { return append([]config.Repo{}, cfg.Repos...) }, Validate: validateRepositories},
 		// Restart-required: the Messaging Service, which owns the channel
 		// transports, reconciles them live and archied re-layers each update, but
 		// the Gateway's chat surfaces (workspace tools, rate limit, model

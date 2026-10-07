@@ -120,7 +120,9 @@ onBeforeUnmount(() => {
         aria-hidden="true"
       />
     </div>
-    <div class="min-w-0 flex-1" :class="route.meta.wide ? '' : 'max-w-[960px]'">
+    <!-- At least a screen tall, so the sticky save bar always rests at the
+         viewport's bottom edge rather than under the last setting. -->
+    <div class="flex min-h-screen min-w-0 flex-1 flex-col" :class="route.meta.wide ? '' : 'max-w-[960px]'">
       <RestartPendingBanner />
       <!-- Room below the last setting, so it can be scrolled up to eye level. -->
       <div class="pb-[40vh]">

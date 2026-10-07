@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import HistoryLink from "@/settings/HistoryLink.vue";
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref, toRaw, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { Plus } from "@lucide/vue";
 
@@ -47,14 +47,41 @@ const webFetchOn = computed({
   },
 });
 
-function addServer(transport: string) {
-  tools.value?.mcp_servers.push({
-    name: "",
-    transport,
-    parallel_tool_calls: false,
-    headers_configured: false,
-  });
+// A new server is held here, outside the draft, until it is named: opening
+// the form is not yet a change to save.
+const pending = ref<McpServer | null>(null);
+const shown = computed(() => {
+  const servers = tools.value?.mcp_servers ?? [];
+  return pending.value ? [...servers, pending.value] : servers;
+});
+// Keyed by identity, so the pending editor keeps its focus when it joins the draft.
+const keys = new WeakMap<object, number>();
+let nextKey = 0;
+function keyOf(server: McpServer): number {
+  const raw = toRaw(server);
+  if (!keys.has(raw)) keys.set(raw, nextKey++);
+  return keys.get(raw)!;
 }
+function removeServer(server: McpServer) {
+  if (pending.value && toRaw(pending.value) === toRaw(server)) {
+    pending.value = null;
+    return;
+  }
+  const servers = tools.value?.mcp_servers;
+  const i = servers?.findIndex((s) => toRaw(s) === toRaw(server)) ?? -1;
+  if (i >= 0) servers!.splice(i, 1);
+}
+function addServer() {
+  pending.value = { name: "", transport: "stdio", parallel_tool_calls: false, headers_configured: false };
+}
+watch(
+  () => pending.value?.name,
+  (name) => {
+    if (!name?.trim() || !pending.value || !tools.value) return;
+    tools.value.mcp_servers.push(pending.value);
+    pending.value = null;
+  },
+);
 
 const eyebrow = "mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle uppercase";
 </script>
@@ -73,23 +100,17 @@ const eyebrow = "mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
       <h2 :class="eyebrow">MCP servers</h2>
       <div class="grid gap-3 border-t border-border pt-4">
         <McpServerEditor
-          v-for="(_, i) in tools.mcp_servers"
-          :key="i"
-          v-model="tools.mcp_servers[i]!"
-          @remove="tools.mcp_servers.splice(i, 1)"
+          v-for="server in shown"
+          :key="keyOf(server)"
+          :model-value="server"
+          @remove="removeServer(server)"
         />
-        <p v-if="!tools.mcp_servers.length" class="text-sm text-fg-muted">
+        <p v-if="!tools.mcp_servers.length && !pending" class="text-sm text-fg-muted">
           No MCP servers.
         </p>
-        <div class="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" @click="addServer('stdio')">
-            <Plus data-icon="inline-start" /> stdio command
-          </Button>
-          <Button variant="outline" size="sm" @click="addServer('http')">
-            <Plus data-icon="inline-start" /> HTTP endpoint
-          </Button>
-          <Button variant="outline" size="sm" @click="addServer('sse')">
-            <Plus data-icon="inline-start" /> SSE endpoint
+        <div v-if="!pending">
+          <Button variant="outline" size="sm" @click="addServer">
+            <Plus data-icon="inline-start" /> Add MCP server
           </Button>
         </div>
       </div>
