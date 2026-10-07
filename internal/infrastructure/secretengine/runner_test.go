@@ -158,10 +158,13 @@ func TestHostLaunch(t *testing.T) {
 		key     string
 		want    string
 		wantErr string
+		// open runs the package with no declared egress hosts.
+		open bool
 	}{
 		{name: "an accepted egress host is reachable through the proxy", sha: good, key: "GET:http://" + accepted, want: "reached"},
 		{name: "a host that was not accepted is refused", sha: good, key: "GET:http://" + other, want: "403 Forbidden"},
 		{name: "a direct connection bypassing the proxy fails", sha: good, key: "DIAL:" + accepted, want: "dial failed"},
+		{name: "a package declaring no egress hosts dials directly", sha: good, key: "DIAL:" + accepted, want: "connected", open: true},
 		{name: "loopback is refused even when accepted", sha: good, key: "GET:http://" + loopback, want: "502 Bad Gateway"},
 		{name: "settings reach the engine", sha: good, key: "color", want: "blue"},
 		{name: "an unknown key is not found", sha: good, key: "missing", wantErr: "not found"},
@@ -174,6 +177,9 @@ func TestHostLaunch(t *testing.T) {
 			host := extension.NewHost(hclog.NewNullLogger())
 			t.Cleanup(host.Close)
 			spec := extension.Spec{Name: "echo", Path: os.Args[0], SHA256: tt.sha, Env: []string{"ARCHIE_TEST_PASSED"}, Egress: []string{accepted, loopback}}
+			if tt.open {
+				spec.Egress = nil
+			}
 			engine, err := Start(context.Background(), host, spec, map[string]string{"color": "blue"})
 			if tt.sha != good {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {

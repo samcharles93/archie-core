@@ -53,6 +53,15 @@ func confinedCommand(ctx context.Context, binary *os.File, socket string) (*exec
 	return cmd, nil
 }
 
+// openCommand runs the verified binary by its open descriptor with the host's
+// network, for a package that declares no egress hosts.
+func openCommand(ctx context.Context, binary *os.File) *exec.Cmd {
+	path := fmt.Sprintf("/proc/%d/fd/%d", os.Getpid(), binary.Fd())
+	cmd := exec.CommandContext(ctx, path) //nolint:gosec // the host-verified binary, by descriptor
+	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
+	return cmd
+}
+
 // launch runs inside the namespace: loopback up, relay listening, then the
 // extension from descriptor 3 with every capability gone.
 func launch(socket string) int {

@@ -58,7 +58,9 @@ export function grants(authority: Authority): string[] {
     ["tool", authority.tools],
     ["env", authority.env],
   ];
-  return labelled.flatMap(([label, values]) => values.map((value) => `${label}: ${value}`));
+  const lines = labelled.flatMap(([label, values]) => values.map((value) => `${label}: ${value}`));
+  // A package that declares no egress hosts runs on the host's network.
+  return authority.egress_hosts.length ? lines : ["network: unrestricted", ...lines];
 }
 
 /** What an extension needs from the operator next, in the order it happens. */

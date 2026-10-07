@@ -14,3 +14,7 @@ import (
 func confinedCommand(context.Context, *os.File, string) (*exec.Cmd, error) {
 	return nil, errors.New("extensions need Linux network namespaces to confine their egress")
 }
+
+func openCommand(ctx context.Context, binary *os.File) *exec.Cmd {
+	return exec.CommandContext(ctx, binary.Name()) //nolint:gosec // the host-verified binary
+}

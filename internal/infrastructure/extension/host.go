@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"sync"
 
 	"github.com/hashicorp/go-hclog"
@@ -36,9 +37,9 @@ type Spec struct {
 	// Env names the host environment variables the extension may see. PATH and
 	// HOME are always passed so a plugin can find the CLI it wraps.
 	Env []string
-	// Egress is the accepted egress host list. The extension runs in its own
-	// network namespace and reaches only these hosts, through a proxy; an
-	// empty list reaches nothing.
+	// Egress is the accepted egress host list. When it names hosts, the
+	// extension runs in its own network namespace and reaches only these,
+	// through a proxy; an empty list runs it on the host's network.
 	Egress []string
 }
 
@@ -58,7 +59,28 @@ type proc struct {
 
 func (p *proc) kill() {
 	p.client.Kill()
-	p.gate.close()
+	if p.gate != nil {
+		p.gate.close()
+	}
+}
+
+// command confines the extension to egress when the package declares hosts.
+// A package that declares none opted out of confinement and gets the host's
+// network, with no gate.
+func command(ctx context.Context, binary *os.File, egress []string) (*exec.Cmd, *gate, error) {
+	if len(egress) == 0 {
+		return openCommand(ctx, binary), nil, nil
+	}
+	g, err := openGate(ctx, egress)
+	if err != nil {
+		return nil, nil, fmt.Errorf("egress: %w", err)
+	}
+	cmd, err := confinedCommand(ctx, binary, g.socket)
+	if err != nil {
+		g.close()
+		return nil, nil, err
+	}
+	return cmd, g, nil
 }
 
 // NewHost returns a Host that reports plugin lifecycle problems to log.
@@ -81,13 +103,8 @@ func (h *Host) Start(ctx context.Context, spec Spec, surface string, impl goplug
 		return nil, fmt.Errorf("extension %q: %w", spec.Name, err)
 	}
 	defer func() { _ = binary.Close() }()
-	g, err := openGate(ctx, spec.Egress)
+	cmd, g, err := command(ctx, binary, spec.Egress)
 	if err != nil {
-		return nil, fmt.Errorf("extension %q: egress: %w", spec.Name, err)
-	}
-	cmd, err := confinedCommand(ctx, binary, g.socket)
-	if err != nil {
-		g.close()
 		return nil, fmt.Errorf("extension %q: %w", spec.Name, err)
 	}
 	cmd.Env = passEnv(spec.Env)

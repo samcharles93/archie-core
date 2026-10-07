@@ -143,7 +143,6 @@ const tones = {
         </AlertDialogHeader>
         <ul class="font-mono text-xs">
           <li v-for="line in accepting ? grants(accepting.declared) : []" :key="line">{{ line }}</li>
-          <li v-if="accepting && !grants(accepting.declared).length">Nothing beyond its own process.</li>
         </ul>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
