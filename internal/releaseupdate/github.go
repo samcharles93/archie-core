@@ -2,8 +2,10 @@ package releaseupdate
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -11,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/creativeprojects/go-selfupdate"
+	"golang.org/x/mod/semver"
 
 	"github.com/samcharles93/archie-core/internal/buildinfo"
 )
@@ -36,7 +38,7 @@ type GitHubCatalog struct {
 	mu      sync.Mutex
 	key     string
 	at      time.Time
-	release *selfupdate.Release
+	release *release
 }
 
 const checkTTL = 10 * time.Minute
@@ -56,8 +58,8 @@ func (c *GitHubCatalog) Check(ctx context.Context) (Snapshot, error) {
 	component := func(id, label, installed string) Component {
 		return Component{
 			ID: id, Label: label,
-			Installed: installed, Available: release.Version(),
-			Reference: release.AssetName, Changelog: changelogURL,
+			Installed: installed, Available: release.version,
+			Reference: release.asset, Changelog: changelogURL,
 		}
 	}
 	return Snapshot{Components: []Component{
@@ -66,7 +68,7 @@ func (c *GitHubCatalog) Check(ctx context.Context) (Snapshot, error) {
 	}}, nil
 }
 
-func (c *GitHubCatalog) detect(ctx context.Context, channel, pin string) (*selfupdate.Release, error) {
+func (c *GitHubCatalog) detect(ctx context.Context, channel, pin string) (*release, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	key := channel + "\x00" + pin
@@ -81,39 +83,111 @@ func (c *GitHubCatalog) detect(ctx context.Context, channel, pin string) (*selfu
 	return release, nil
 }
 
+// release is one published version and the zip that installs it here.
+type release struct {
+	version string
+	asset   string
+}
+
+const releasesURL = "https://api.github.com/repos/" + ReleaseSlug + "/releases?per_page=100"
+
+type githubRelease struct {
+	TagName    string `json:"tag_name"`
+	Draft      bool   `json:"draft"`
+	Prerelease bool   `json:"prerelease"`
+	Assets     []struct {
+		Name string `json:"name"`
+	} `json:"assets"`
+}
+
 // detectRelease resolves channel to one published release. A release with no
-// zip for this platform is not installable, so it is never offered.
-func detectRelease(ctx context.Context, channel, pin string) (*selfupdate.Release, error) {
+// zip for this platform, or no SHA256SUMS to verify it against, is not
+// installable, so it is never offered.
+func detectRelease(ctx context.Context, channel, pin string) (*release, error) {
 	if err := ValidateChannel(channel, pin); err != nil {
 		return nil, err
 	}
-	updater, err := selfupdate.NewUpdater(selfupdate.Config{
-		Validator:  &selfupdate.ChecksumValidator{UniqueFilename: "SHA256SUMS"},
-		Filters:    []string{`-linux-amd64\.zip$`},
-		OS:         "linux",
-		Arch:       "amd64",
-		Prerelease: channel == "next",
-	})
-	if err != nil {
-		return nil, err
-	}
-	repository := selfupdate.ParseSlug(ReleaseSlug)
-	var (
-		release *selfupdate.Release
-		found   bool
-	)
-	if channel == "exact-pin" {
-		release, found, err = updater.DetectVersion(ctx, repository, "v"+strings.TrimPrefix(pin, "v"))
-	} else {
-		release, found, err = updater.DetectLatest(ctx, repository)
-	}
+	releases, err := listReleases(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("find releases: %w", err)
 	}
-	if !found {
-		return nil, errors.New("no published release with a linux-amd64 zip matches the channel")
+	if found := pick(releases, channel, pin); found != nil {
+		return found, nil
 	}
-	return release, nil
+	return nil, errors.New("no published release with a linux-amd64 zip matches the channel")
+}
+
+func listReleases(ctx context.Context) ([]githubRelease, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, releasesURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GitHub answered %s", resp.Status)
+	}
+	var releases []githubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return nil, fmt.Errorf("decode releases: %w", err)
+	}
+	return releases, nil
+}
+
+// pick returns the newest installable release on channel.
+func pick(releases []githubRelease, channel, pin string) *release {
+	var best *release
+	for _, r := range releases {
+		if !onChannel(r, channel, pin) {
+			continue
+		}
+		asset := installable(r)
+		if asset == "" {
+			continue
+		}
+		if best == nil || semver.Compare(r.TagName, "v"+best.version) > 0 {
+			best = &release{version: strings.TrimPrefix(r.TagName, "v"), asset: asset}
+		}
+	}
+	return best
+}
+
+// onChannel: stable skips prereleases, next includes them, and exact-pin takes
+// only the pinned tag.
+func onChannel(r githubRelease, channel, pin string) bool {
+	if r.Draft || !semver.IsValid(r.TagName) {
+		return false
+	}
+	switch channel {
+	case "exact-pin":
+		return r.TagName == "v"+strings.TrimPrefix(pin, "v")
+	case "next":
+		return true
+	default:
+		return !r.Prerelease
+	}
+}
+
+// installable names the release's linux-amd64 zip, or "" when it has none or
+// no SHA256SUMS to verify it against.
+func installable(r githubRelease) string {
+	asset, sums := "", false
+	for _, a := range r.Assets {
+		switch {
+		case a.Name == "SHA256SUMS":
+			sums = true
+		case strings.HasSuffix(a.Name, "-linux-amd64.zip"):
+			asset = a.Name
+		}
+	}
+	if !sums {
+		return ""
+	}
+	return asset
 }
 
 func installedVersion(version string) string {
