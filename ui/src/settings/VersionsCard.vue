@@ -169,7 +169,7 @@ onMounted(load);
               <TableHead>Component</TableHead>
               <TableHead>Running</TableHead>
               <TableHead>Available</TableHead>
-              <TableHead>Status</TableHead>
+              <TableHead class="text-right">Status</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -183,7 +183,7 @@ onMounted(load);
               <TableCell class="font-mono text-fg-muted">{{
                 component.latest_available || "—"
               }}</TableCell>
-              <TableCell>
+              <TableCell class="text-right">
                 <Badge :variant="statusKind[component.status]">{{
                   statusLabel[component.status]
                 }}</Badge>
