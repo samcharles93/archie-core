@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.49.2",
+    "date": "2026-10-07",
+    "body": "### archied\n\n- Carries the 1.49.0 and 1.49.1 changes, whose builds were never published. The update check reads GitHub releases directly and still offers only releases with a verifiable linux-amd64 zip."
+  },
+  {
     "version": "1.49.1",
     "date": "2026-10-07",
     "body": "### archied\n\n- When the dashboard session expires, the page returns to the sign-in screen instead of showing errors on every page until a manual refresh."

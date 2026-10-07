@@ -5,6 +5,12 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.49.2] - 2026-10-07
+
+### archied
+
+- Carries the 1.49.0 and 1.49.1 changes, whose builds were never published. The update check reads GitHub releases directly and still offers only releases with a verifiable linux-amd64 zip.
+
 ## [1.49.1] - 2026-10-07
 
 ### archied
