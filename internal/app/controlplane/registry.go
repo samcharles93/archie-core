@@ -89,7 +89,7 @@ func (s *Server) ImportConfig(ctx context.Context, cfg config.Config) (map[strin
 	versions := make(map[string]int64, len(s.ordered))
 	var skipped []SeedSkip
 	for _, definition := range s.ordered {
-		version, err := s.seedKind(ctx, definition, cfg)
+		version, err := s.seedKind(ctx, storecontract.DefaultOrgID, definition, cfg)
 		var refusal *seedRefusal
 		switch {
 		case errors.As(err, &refusal):
@@ -98,6 +98,18 @@ func (s *Server) ImportConfig(ctx context.Context, cfg config.Config) (map[strin
 			return nil, nil, err
 		default:
 			versions[definition.Kind] = version
+		}
+	}
+	resources, err := s.store.ListResources(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, resource := range resources {
+		if resource.OrgID == storecontract.DefaultOrgID || resource.Kind != WorkflowDefinitionsKind {
+			continue
+		}
+		if _, err := s.seedKind(ctx, resource.OrgID, s.definitions[resource.Kind], config.Config{}); err != nil {
+			return nil, nil, err
 		}
 	}
 	return versions, skipped, nil
@@ -115,8 +127,8 @@ func (r *seedRefusal) Unwrap() error { return r.err }
 
 // seedKind seeds, refreshes or leaves one kind and returns its version. A
 // *seedRefusal means the seed failed validation and nothing was written.
-func (s *Server) seedKind(ctx context.Context, definition Definition, cfg config.Config) (int64, error) {
-	stored, storedErr := s.store.Resource(ctx, storecontract.DefaultOrgID, definition.Kind)
+func (s *Server) seedKind(ctx context.Context, orgID string, definition Definition, cfg config.Config) (int64, error) {
+	stored, storedErr := s.store.Resource(ctx, orgID, definition.Kind)
 	absent := errors.Is(storedErr, storecontract.ErrResourceNotFound)
 	if storedErr != nil && !absent {
 		return 0, storedErr
@@ -133,7 +145,7 @@ func (s *Server) seedKind(ctx context.Context, definition Definition, cfg config
 		return stored.Version, nil
 	}
 	if !absent {
-		refresh, err := s.shippedValueIsStale(ctx, definition)
+		refresh, err := s.shippedValueIsStale(ctx, orgID, definition)
 		if err != nil {
 			return 0, err
 		}
@@ -142,7 +154,7 @@ func (s *Server) seedKind(ctx context.Context, definition Definition, cfg config
 		}
 	}
 	write := storecontract.ResourceWrite{
-		OrgID: storecontract.DefaultOrgID, Kind: definition.Kind, Value: value,
+		OrgID: orgID, Kind: definition.Kind, Value: value,
 		Actor: seedActor, Source: seedSource,
 		RequestID:       seedRequestID(definition.Kind, value),
 		ExpectedVersion: expectedVersion(stored, absent), At: time.Now().UTC(),
@@ -165,18 +177,18 @@ func expectedVersion(stored storecontract.Resource, absent bool) int64 {
 
 // shippedValueIsStale reports whether the newest stored revision of a
 // shipped document was written by the seed.
-func (s *Server) shippedValueIsStale(ctx context.Context, definition Definition) (bool, error) {
+func (s *Server) shippedValueIsStale(ctx context.Context, orgID string, definition Definition) (bool, error) {
 	if definition.Defaults == nil {
 		return false, nil
 	}
-	return s.seedWroteNewest(ctx, definition.Kind)
+	return s.seedWroteNewest(ctx, orgID, definition.Kind)
 }
 
 // seedWroteNewest reports whether the newest revision of kind was written by a
 // seed. It reads the ledger rather than the current row because the ledger is
 // what records who wrote a value, and the row does not.
-func (s *Server) seedWroteNewest(ctx context.Context, kind string) (bool, error) {
-	history, err := s.store.ResourceHistory(ctx, storecontract.DefaultOrgID, kind, 1)
+func (s *Server) seedWroteNewest(ctx context.Context, orgID, kind string) (bool, error) {
+	history, err := s.store.ResourceHistory(ctx, orgID, kind, 1)
 	if err != nil {
 		return false, fmt.Errorf("read %s history: %w", kind, err)
 	}
@@ -231,19 +243,20 @@ func (s *Server) Owns(kind string) bool {
 // ValidateStored decodes every stored resource with its definition and
 // returns how many it checked. Errors name the kind and revision.
 func (s *Server) ValidateStored(ctx context.Context) (int, error) {
+	resources, err := s.store.ListResources(ctx)
+	if err != nil {
+		return 0, err
+	}
 	checked := 0
 	var failures []error
-	for _, definition := range s.ordered {
-		resource, err := s.store.Resource(ctx, storecontract.DefaultOrgID, definition.Kind)
-		if errors.Is(err, storecontract.ErrResourceNotFound) {
+	for _, resource := range resources {
+		definition, ok := s.definitions[resource.Kind]
+		if !ok {
 			continue
-		}
-		if err != nil {
-			return checked, fmt.Errorf("read %s: %w", definition.Kind, err)
 		}
 		checked++
 		if _, err := definition.Decode(resource.Value); err != nil {
-			failures = append(failures, fmt.Errorf("%s at version %d: %w", definition.Kind, resource.Version, err))
+			failures = append(failures, fmt.Errorf("org %s: %s at version %d: %w", resource.OrgID, definition.Kind, resource.Version, err))
 		}
 	}
 	return checked, errors.Join(failures...)

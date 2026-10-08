@@ -106,6 +106,37 @@ func (q *Queries) InsertResourceHistory(ctx context.Context, arg InsertResourceH
 	return i, err
 }
 
+const listResources = `-- name: ListResources :many
+SELECT kind, value, version, updated_at, org_id FROM resources
+ORDER BY org_id, kind
+`
+
+func (q *Queries) ListResources(ctx context.Context) ([]Resource, error) {
+	rows, err := q.db.Query(ctx, listResources)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Resource
+	for rows.Next() {
+		var i Resource
+		if err := rows.Scan(
+			&i.Kind,
+			&i.Value,
+			&i.Version,
+			&i.UpdatedAt,
+			&i.OrgID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockResourceWrite = `-- name: LockResourceWrite :exec
 SELECT pg_advisory_xact_lock(hashtextextended($1::text || '/' || $2::text, 0))
 `

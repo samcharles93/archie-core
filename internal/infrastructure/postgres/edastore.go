@@ -162,6 +162,7 @@ func (s *EDA) ListUndispatchedCaptures(ctx context.Context, sources []string, li
 		return nil, nil
 	}
 	rows, err := s.q.ListUndispatchedCaptures(ctx, postgresdb.ListUndispatchedCapturesParams{
+		OrgID:      string(org.OrgFromContext(ctx)),
 		Sources:    sources,
 		EntryLimit: int32(limit),
 	})

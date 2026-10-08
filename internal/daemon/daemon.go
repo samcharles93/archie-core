@@ -571,7 +571,32 @@ func (d *Daemon) dispatchBindings(ctx context.Context) {
 	if d.Bindings == nil || d.BindingDispatcher == nil || d.BindingTaskCreator == nil {
 		return
 	}
+	if d.Principals == nil {
+		d.dispatchOrgBindings(ctx)
+		return
+	}
+	identities := []identity.IdentityID{d.RootIdentityID}
+	for _, runner := range d.Identities {
+		if runner != nil {
+			identities = append(identities, runner.ID)
+		}
+	}
+	seen := make(map[org.OrgID]bool)
+	for _, id := range identities {
+		principal, err := d.Principals.PrincipalFor(ctx, id)
+		if err != nil {
+			d.Log.Warn("binding dispatch: principal unavailable", "identity", id, "err", err)
+			continue
+		}
+		if seen[principal.Org] {
+			continue
+		}
+		seen[principal.Org] = true
+		d.dispatchOrgBindings(org.WithOrg(access.WithPrincipal(ctx, principal), principal.Org))
+	}
+}
 
+func (d *Daemon) dispatchOrgBindings(ctx context.Context) {
 	// Gather armed sources first so the captures query filters down to
 	// only relevant rows.
 	bindings, err := d.Bindings.ListBindings(ctx)
@@ -581,7 +606,7 @@ func (d *Daemon) dispatchBindings(ctx context.Context) {
 	}
 	sources := make([]string, 0, len(bindings))
 	for _, b := range bindings {
-		if b.Status == binding.StatusArmed && b.Matcher.Source != "" {
+		if b.OrgID == org.OrgFromContext(ctx) && b.Status == binding.StatusArmed && b.Matcher.Source != "" {
 			sources = append(sources, b.Matcher.Source)
 		}
 	}
@@ -619,7 +644,7 @@ func (d *Daemon) dispatchCapture(ctx context.Context, c storecontract.CapturedEv
 		return
 	}
 	for _, b := range armed {
-		if b.Matcher.Matches(c.Source, c.Dispatchable()) && enablement.Enabled(b.OrgID, b.Workflow) {
+		if b.OrgID == org.OrgFromContext(ctx) && b.Matcher.Matches(c.Source, c.Dispatchable()) && enablement.Enabled(b.OrgID, b.Workflow) {
 			d.dispatchOneBinding(ctx, b, c, workflows)
 		}
 	}
@@ -703,7 +728,11 @@ func (d *Daemon) claimAndEnqueue(ctx context.Context, b binding.Binding, c store
 	if target.declared {
 		body = fmt.Sprintf("Started by binding %q from capture %q; the workflow's inputs travel with the task.", b.Name, c.ID)
 	}
-	task, err := d.BindingTaskCreator.EnqueueBindingTask(ctx, target.owner, target.repo, title, body, b.Workflow, "", b.ID, b.Version, target.inputs)
+	taskIdentity := ""
+	if principal, ok := access.PrincipalFromContext(ctx); ok && (principal.IdentityID != d.RootIdentityID || principal.Org != org.DefaultOrgID) {
+		taskIdentity = string(principal.IdentityID)
+	}
+	task, err := d.BindingTaskCreator.EnqueueBindingTask(ctx, target.owner, target.repo, title, body, b.Workflow, taskIdentity, b.ID, b.Version, target.inputs)
 	if err != nil {
 		d.Log.Warn("binding dispatch: enqueue", "binding", b.ID, "capture", c.ID, "error", err)
 		return
@@ -720,7 +749,11 @@ func (d *Daemon) authorizeDispatch(ctx context.Context, b binding.Binding, c sto
 	if d.Access == nil || d.Principals == nil {
 		return true
 	}
-	principal, err := d.Principals.PrincipalFor(ctx, d.RootIdentityID)
+	principal, ok := access.PrincipalFromContext(ctx)
+	var err error
+	if !ok {
+		principal, err = d.Principals.PrincipalFor(ctx, d.RootIdentityID)
+	}
 	if err != nil {
 		d.Log.Warn("binding dispatch: principal unavailable; dispatch parked for the next cycle",
 			"binding", b.ID, "capture", c.ID, "error", err)
@@ -1858,6 +1891,10 @@ func validateProfileMeetsNeeds(profile config.AgentProfile, needs workflowtask.W
 // passes through here, whatever started it, so this is the one enablement
 // check for issue labels, handoffs, approvals, calls and playbooks alike.
 func (d *Daemon) pinWorkflowDefinition(ctx context.Context, task *workflow.Task) error {
+	ctx, err := d.workflowContext(ctx, task)
+	if err != nil {
+		return err
+	}
 	if err := d.pinDefinition(ctx, task); err != nil {
 		return err
 	}
@@ -2188,7 +2225,7 @@ func (d *Daemon) identityFor(task *workflow.Task) *IdentityRunner {
 // class if not. Empty is the root identity. An unknown or inactive identity
 // never falls back to the root forge.
 func (d *Daemon) identityMayAct(ctx context.Context, name string) (bool, string, taskstate.ParkClass) {
-	if name == "" {
+	if name == "" || name == string(d.RootIdentityID) {
 		return true, "", ""
 	}
 	runner := d.identityFor(&workflow.Task{Identity: name})

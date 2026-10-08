@@ -9,6 +9,10 @@ SELECT pg_advisory_xact_lock(hashtextextended(sqlc.arg(org_id)::text || '/' || s
 SELECT kind, value, version, updated_at, org_id FROM resources
 WHERE org_id = $1 AND kind = $2;
 
+-- name: ListResources :many
+SELECT kind, value, version, updated_at, org_id FROM resources
+ORDER BY org_id, kind;
+
 -- name: ResourceByRequest :one
 SELECT org_id, kind, value, version, actor, source, request_id, expected_version,
        current_version, at

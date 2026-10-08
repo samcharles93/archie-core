@@ -897,24 +897,25 @@ func (q *Queries) ListSources(ctx context.Context) ([]Source, error) {
 const listUndispatchedCaptures = `-- name: ListUndispatchedCaptures :many
 SELECT c.id, c.source, c.remote_addr, c.content_type, c.headers, c.body, c.authenticated, c.received_at, c.unsigned, c.event_type, c.org_id, c.workspace_id, c.delivery
 FROM captures c
-WHERE c.source = ANY($1::text[])
+WHERE c.org_id = $1 AND c.source = ANY($2::text[])
   AND c.event_type <> ''
   AND EXISTS (
 	SELECT 1 FROM bindings b JOIN mappings m ON m.id = b.mapping
-	WHERE b.source = c.source AND b.status = 'armed' AND m.event_type = c.event_type
+	WHERE b.org_id = c.org_id AND b.source = c.source AND b.status = 'armed' AND m.event_type = c.event_type
 	  AND NOT EXISTS (SELECT 1 FROM binding_dispatches d WHERE d.binding = b.id AND d.delivery = c.delivery)
   )
 ORDER BY c.received_at DESC
-LIMIT $2
+LIMIT $3
 `
 
 type ListUndispatchedCapturesParams struct {
+	OrgID      string
 	Sources    []string
 	EntryLimit int32
 }
 
 func (q *Queries) ListUndispatchedCaptures(ctx context.Context, arg ListUndispatchedCapturesParams) ([]Capture, error) {
-	rows, err := q.db.Query(ctx, listUndispatchedCaptures, arg.Sources, arg.EntryLimit)
+	rows, err := q.db.Query(ctx, listUndispatchedCaptures, arg.OrgID, arg.Sources, arg.EntryLimit)
 	if err != nil {
 		return nil, err
 	}

@@ -25,6 +25,19 @@ func NewResources(pool *pgxpool.Pool) *Resources {
 	return &Resources{pool: pool}
 }
 
+// ListResources supplies every org's documents for startup validation.
+func (s *Resources) ListResources(ctx context.Context) ([]storecontract.Resource, error) {
+	rows, err := postgresdb.New(s.pool).ListResources(ctx)
+	if err != nil {
+		return nil, err
+	}
+	resources := make([]storecontract.Resource, 0, len(rows))
+	for _, row := range rows {
+		resources = append(resources, resourceFromCurrent(row))
+	}
+	return resources, nil
+}
+
 func (s *Resources) Resource(ctx context.Context, orgID, kind string) (storecontract.Resource, error) {
 	if err := checkResourceKey(orgID, kind); err != nil {
 		return storecontract.Resource{}, err

@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/samcharles93/archie-core/internal/config"
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
@@ -33,6 +34,7 @@ var (
 // root asserts the State Store against it, so this is the single definition of
 // what a control-plane backing store must offer.
 type ResourceStore interface {
+	ListResources(context.Context) ([]storecontract.Resource, error)
 	Resource(ctx context.Context, orgID, kind string) (storecontract.Resource, error)
 	ResourceHistory(ctx context.Context, orgID, kind string, limit int) ([]storecontract.Resource, error)
 	Audit(ctx context.Context, table string, keys []string, limit int) ([]storecontract.AuditEntry, error)
@@ -80,7 +82,7 @@ func (s *Server) Query(ctx context.Context, request *pb.QueryRequest) (*pb.Query
 	if _, ok := s.definitions[request.GetKind()]; !ok {
 		return nil, status.Error(codes.NotFound, "resource not found")
 	}
-	resource, err := s.store.Resource(ctx, requestOrg(ctx), request.Kind)
+	resource, err := s.resource(ctx, requestOrg(ctx), request.Kind)
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -182,7 +184,7 @@ func (s *Server) Watch(request *pb.WatchRequest, stream pb.ControlPlaneService_W
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		resource, err := s.store.Resource(stream.Context(), requestOrg(stream.Context()), request.Kind)
+		resource, err := s.resource(stream.Context(), requestOrg(stream.Context()), request.Kind)
 		if err == nil && resource.Version > version {
 			if err := stream.Send(&pb.WatchResponse{Resource: resourceProto(resource)}); err != nil {
 				return err
@@ -197,6 +199,19 @@ func (s *Server) Watch(request *pb.WatchRequest, stream pb.ControlPlaneService_W
 		case <-ticker.C:
 		}
 	}
+}
+
+// resource seeds an org's workflow documents on first use, including orgs
+// created after this process started. File-derived settings are never copied.
+func (s *Server) resource(ctx context.Context, orgID, kind string) (storecontract.Resource, error) {
+	resource, err := s.store.Resource(ctx, orgID, kind)
+	if !errors.Is(err, storecontract.ErrResourceNotFound) || (kind != WorkflowDefinitionsKind && kind != WorkflowEnablementKind) {
+		return resource, err
+	}
+	if _, err := s.seedKind(ctx, orgID, s.definitions[kind], config.Config{}); err != nil && !errors.Is(err, storecontract.ErrResourceVersionConflict) {
+		return storecontract.Resource{}, err
+	}
+	return s.store.Resource(ctx, orgID, kind)
 }
 
 func resourceProto(resource storecontract.Resource) *pb.Resource {
