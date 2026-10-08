@@ -1260,6 +1260,12 @@ message EnqueueCallTaskRequest {
   int64 caller_task_id = 1;
   string workflow = 2;
   string inputs_json = 3;
+  // call_key is the call site's durable identity: the call step's declared
+  // path within the run. The store stamps it on the child and, when the
+  // caller already started a child under it, returns that child instead of
+  // starting a second one. Required: a retry of one call site carries the
+  // same key, so the retry cannot duplicate the child's work.
+  string call_key = 4;
 }
 message EnqueueCallTaskResponse {
   Task task = 1;

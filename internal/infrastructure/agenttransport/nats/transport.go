@@ -166,10 +166,10 @@ func (d deadlineCaller) withDeadline(ctx context.Context) (context.Context, cont
 	return context.WithTimeout(ctx, d.timeout)
 }
 
-func (d deadlineCaller) StartCall(ctx context.Context, callerTaskID int64, wf string, inputs map[string]any) (*task.Task, error) {
+func (d deadlineCaller) StartCall(ctx context.Context, callerTaskID int64, callKey, wf string, inputs map[string]any) (*task.Task, error) {
 	ctx, cancel := d.withDeadline(ctx)
 	defer cancel()
-	return d.Caller.StartCall(ctx, callerTaskID, wf, inputs)
+	return d.Caller.StartCall(ctx, callerTaskID, callKey, wf, inputs)
 }
 
 func (d deadlineCaller) CallStatus(ctx context.Context, callerTaskID, callTaskID int64) (string, string, map[string]any, error) {

@@ -12109,10 +12109,16 @@ func (x *EnqueueBindingTaskResponse) GetTask() *Task {
 // workflow.call: the caller's grant names the caller; the store derives the
 // rest from the caller's row (docs/prds/workflow-calls.md).
 type EnqueueCallTaskRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CallerTaskId  int64                  `protobuf:"varint,1,opt,name=caller_task_id,json=callerTaskId,proto3" json:"caller_task_id,omitempty"`
-	Workflow      string                 `protobuf:"bytes,2,opt,name=workflow,proto3" json:"workflow,omitempty"`
-	InputsJson    string                 `protobuf:"bytes,3,opt,name=inputs_json,json=inputsJson,proto3" json:"inputs_json,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	CallerTaskId int64                  `protobuf:"varint,1,opt,name=caller_task_id,json=callerTaskId,proto3" json:"caller_task_id,omitempty"`
+	Workflow     string                 `protobuf:"bytes,2,opt,name=workflow,proto3" json:"workflow,omitempty"`
+	InputsJson   string                 `protobuf:"bytes,3,opt,name=inputs_json,json=inputsJson,proto3" json:"inputs_json,omitempty"`
+	// call_key is the call site's durable identity: the call step's declared
+	// path within the run. The store stamps it on the child and, when the
+	// caller already started a child under it, returns that child instead of
+	// starting a second one. Required: a retry of one call site carries the
+	// same key, so the retry cannot duplicate the child's work.
+	CallKey       string `protobuf:"bytes,4,opt,name=call_key,json=callKey,proto3" json:"call_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -12164,6 +12170,13 @@ func (x *EnqueueCallTaskRequest) GetWorkflow() string {
 func (x *EnqueueCallTaskRequest) GetInputsJson() string {
 	if x != nil {
 		return x.InputsJson
+	}
+	return ""
+}
+
+func (x *EnqueueCallTaskRequest) GetCallKey() string {
+	if x != nil {
+		return x.CallKey
 	}
 	return ""
 }
@@ -15994,12 +16007,13 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\vinputs_json\x18\t \x01(\tR\n" +
 	"inputsJson\"@\n" +
 	"\x1aEnqueueBindingTaskResponse\x12\"\n" +
-	"\x04task\x18\x01 \x01(\v2\x0e.state.v1.TaskR\x04task\"{\n" +
+	"\x04task\x18\x01 \x01(\v2\x0e.state.v1.TaskR\x04task\"\x96\x01\n" +
 	"\x16EnqueueCallTaskRequest\x12$\n" +
 	"\x0ecaller_task_id\x18\x01 \x01(\x03R\fcallerTaskId\x12\x1a\n" +
 	"\bworkflow\x18\x02 \x01(\tR\bworkflow\x12\x1f\n" +
 	"\vinputs_json\x18\x03 \x01(\tR\n" +
-	"inputsJson\"Y\n" +
+	"inputsJson\x12\x19\n" +
+	"\bcall_key\x18\x04 \x01(\tR\acallKey\"Y\n" +
 	"\x17EnqueueCallTaskResponse\x12\"\n" +
 	"\x04task\x18\x01 \x01(\v2\x0e.state.v1.TaskR\x04task\x12\x1a\n" +
 	"\baccepted\x18\x02 \x01(\bR\baccepted\"c\n" +

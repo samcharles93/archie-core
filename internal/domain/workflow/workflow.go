@@ -122,7 +122,12 @@ type TaskContext struct {
 	// body is running: every agent call the stage makes records itself as
 	// this step's child. Zero outside a stage body, which is how the stage
 	// unit tests run their bodies.
-	StepID         int64
+	StepID int64
+	// stepPath is the running step's declared path within the run: its name,
+	// qualified by the branch it runs in and by every step above it. It is a
+	// workflow.call's durable identity, so a retry of one call site starts
+	// one child.
+	stepPath       string
 	workflowBranch string
 	// BuildSummary is the builder agent's finish summary  --  the PR body.
 	BuildSummary string

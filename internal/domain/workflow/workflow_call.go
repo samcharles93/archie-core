@@ -103,6 +103,13 @@ func runWorkflowCall(ctx context.Context, s workflowCallSettings, tc *TaskContex
 	if tc.Calls == nil {
 		return fmt.Errorf("%s: this runner carries no callee capability", WorkflowCallStepName)
 	}
+	// The key is what makes a retry of this call site return the same child,
+	// so a call that cannot name itself refuses rather than sharing a key with
+	// its siblings.
+	key, err := workflowCallKey(tc)
+	if err != nil {
+		return err
+	}
 	if tc.Task.CallDepth+1 > MaxCallDepth {
 		return fmt.Errorf("%s: call depth %d would pass the limit of %d", WorkflowCallStepName, tc.Task.CallDepth+1, MaxCallDepth)
 	}
@@ -110,7 +117,7 @@ func runWorkflowCall(ctx context.Context, s workflowCallSettings, tc *TaskContex
 	if err != nil {
 		return fmt.Errorf("%s: %w", WorkflowCallStepName, err)
 	}
-	callee, err := tc.Calls.StartCall(ctx, tc.Task.ID, s.Workflow, inputs)
+	callee, err := tc.Calls.StartCall(ctx, tc.Task.ID, key, s.Workflow, inputs)
 	if err != nil {
 		return fmt.Errorf("%s: start %q: %w", WorkflowCallStepName, s.Workflow, err)
 	}
@@ -119,8 +126,9 @@ func runWorkflowCall(ctx context.Context, s workflowCallSettings, tc *TaskContex
 		fmt.Sprintf("started %q as task %d", s.Workflow, callee.ID), started); err != nil {
 		tc.Log.Warn("workflow call start not persisted", "err", err)
 	}
-	// Record the call as a step holding the callee's execution ID.
-	callStep, _, err := tc.startCallStep(ctx, callee.ID)
+	// Record the call as a step holding the callee's execution ID, named for
+	// the call site so the dashboard shows which call started it.
+	callStep, _, err := tc.startCallStep(ctx, key, callee.ID)
 	if err != nil {
 		return fmt.Errorf("%s: could not be recorded: %w", WorkflowCallStepName, err)
 	}
@@ -162,14 +170,28 @@ func runWorkflowCall(ctx context.Context, s workflowCallSettings, tc *TaskContex
 	return nil
 }
 
+// workflowCallKey is the running call's durable identity: the step's declared
+// path within the run. validateWorkflowCalls refuses a call step with no id at
+// save, but a definition pinned before that rule still compiles and runs: its
+// path is the bare step type, one key shared by every call site in the run, so
+// the second call site would be handed the first's child. A stage run outside
+// the step wrapper has no path at all, which is the same failure.
+func workflowCallKey(tc *TaskContext) (string, error) {
+	path := tc.stepPath
+	if path == "" || path == WorkflowCallStepName || strings.HasSuffix(path, "/"+WorkflowCallStepName) {
+		return "", fmt.Errorf("%s: the step declares no id, and the step's id is the call's key", WorkflowCallStepName)
+	}
+	return path, nil
+}
+
 // startCallStep records the call step for a callee this run just started.
-func (tc *TaskContext) startCallStep(ctx context.Context, calleeTaskID int64) (int64, events.Event, error) {
+func (tc *TaskContext) startCallStep(ctx context.Context, key string, calleeTaskID int64) (int64, events.Event, error) {
 	if tc.Store == nil {
 		return 0, events.Event{}, nil
 	}
 	stepID, event, err := tc.Store.StartStep(ctx, task.StepStart{
 		ExecutionID: tc.Task.ID, Attempt: tc.Task.Attempt, ParentID: tc.StepID,
-		Kind: task.StepKindCall, Name: WorkflowCallStepName, CalledExecutionID: calleeTaskID,
+		Kind: task.StepKindCall, Name: key, CalledExecutionID: calleeTaskID,
 	})
 	if err != nil {
 		return 0, events.Event{}, err
@@ -271,6 +293,12 @@ func validateWorkflowCalls(parsed map[string]YAMLDefinition) error {
 		err := walkSteps(d.Steps, fmt.Sprintf("workflow %q", id), func(where string, step StepRecord) error {
 			if step.Type != WorkflowCallStepName {
 				return nil
+			}
+			// The step's id is the call's key, so a call without one has no way
+			// to say which call site it is, and two of them in one run would
+			// share a child.
+			if step.ID == "" {
+				return fmt.Errorf("%s: %s declares no id, and the step's id is the call's key", where, WorkflowCallStepName)
 			}
 			s, err := decodeCallSettings(step)
 			if err != nil {

@@ -756,12 +756,12 @@ func (c *Client) EnqueueBindingTask(ctx context.Context, owner, repo, title, bod
 // rehydrates the sentinels the server maps, so a caller's errors.Is(err,
 // storecontract.ErrCallNotYours) works across the wire.
 
-func (c *Client) StartCall(ctx context.Context, callerTaskID int64, wf string, inputs map[string]any) (*task.Task, error) {
+func (c *Client) StartCall(ctx context.Context, callerTaskID int64, callKey, wf string, inputs map[string]any) (*task.Task, error) {
 	encoded, err := task.EncodeInputs(inputs)
 	if err != nil {
 		return nil, err
 	}
-	r, err := c.client.EnqueueCallTask(ctx, &pb.EnqueueCallTaskRequest{CallerTaskId: callerTaskID, Workflow: wf, InputsJson: encoded})
+	r, err := c.client.EnqueueCallTask(ctx, &pb.EnqueueCallTaskRequest{CallerTaskId: callerTaskID, CallKey: callKey, Workflow: wf, InputsJson: encoded})
 	if err != nil {
 		return nil, unmapError(err)
 	}

@@ -207,6 +207,14 @@ func wrapStep(step StepRecord, body func(context.Context, *TaskContext) error) S
 		attempts = step.Retry.Attempts
 	}
 	return Stage{Name: name, ContinueOnFailure: step.OnFailure == onFailureContinue, Run: func(ctx context.Context, tc *TaskContext) error {
+		// The step's path is its name qualified by the branch it runs in and
+		// by every step above it. A workflow.call below keys its child on it,
+		// so two runs of one call site agree and two call sites do not.
+		// Restored on return: a sibling step must not inherit the path of the
+		// step before it, nor a branch its parent's.
+		parentPath := tc.stepPath
+		tc.stepPath = joinStepPath(parentPath, branchStepName(tc.workflowBranch, name))
+		defer func() { tc.stepPath = parentPath }()
 		tc.stepResult = StepResult{}
 		tc.skippedWhen = ""
 		if step.When != "" && !when.holds(tc) {
@@ -223,6 +231,15 @@ func wrapStep(step StepRecord, body func(context.Context, *TaskContext) error) S
 		}
 		return err
 	}}
+}
+
+// joinStepPath qualifies a step name with the path of the step that encloses
+// it; a top-level step's path is its own name.
+func joinStepPath(parent, name string) string {
+	if parent == "" {
+		return name
+	}
+	return parent + "/" + name
 }
 
 func runAttempts(ctx context.Context, tc *TaskContext, name string, attempts int, backoff time.Duration, body func(context.Context, *TaskContext) error) error {

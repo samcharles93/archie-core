@@ -1123,11 +1123,16 @@ func (s *server) EnqueueCallTask(ctx context.Context, r *pb.EnqueueCallTaskReque
 	if r.CallerTaskId <= 0 {
 		return nil, status.Error(codes.InvalidArgument, "caller task id is required")
 	}
+	// A call is identified by its key: without one the store would have to
+	// guess, and two calls of one caller would collide or duplicate.
+	if r.CallKey == "" {
+		return nil, status.Error(codes.InvalidArgument, "call key is required")
+	}
 	inputs, err := task.DecodeInputs(r.InputsJson)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	t, err := s.deps.WorkflowCalls.StartCall(ctx, r.CallerTaskId, r.Workflow, inputs)
+	t, err := s.deps.WorkflowCalls.StartCall(ctx, r.CallerTaskId, r.CallKey, r.Workflow, inputs)
 	if err != nil {
 		return nil, s.logErr("EnqueueCallTask", err)
 	}

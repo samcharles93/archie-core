@@ -429,6 +429,7 @@ type Task struct {
 	ResumeResults             []byte
 	PendingReviews            []byte
 	Origin                    string
+	CallKey                   string
 }
 
 type ToolCall struct {
