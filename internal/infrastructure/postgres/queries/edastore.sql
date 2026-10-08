@@ -30,8 +30,15 @@ LIMIT @entry_limit;
 DELETE FROM captures WHERE received_at < $1;
 
 -- name: DeleteCapturesBeyondCount :exec
-DELETE FROM captures WHERE id NOT IN (
-	SELECT id FROM captures ORDER BY received_at DESC LIMIT $1
+-- Count retention stays within the just-inserted capture's org: one org's
+-- volume must never evict another org's recent captures.
+DELETE FROM captures AS c
+WHERE c.org_id = (SELECT m.org_id FROM captures AS m WHERE m.id = sqlc.arg(capture_id))
+  AND c.id NOT IN (
+	SELECT k.id FROM captures AS k
+	WHERE k.org_id = (SELECT m.org_id FROM captures AS m WHERE m.id = sqlc.arg(capture_id))
+	ORDER BY k.received_at DESC
+	LIMIT sqlc.arg(max_events)
 );
 
 -- name: InsertMapping :exec

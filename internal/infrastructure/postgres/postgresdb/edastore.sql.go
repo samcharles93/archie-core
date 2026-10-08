@@ -137,13 +137,25 @@ func (q *Queries) DeleteCaptureRefusalsBefore(ctx context.Context, refusedAt tim
 }
 
 const deleteCapturesBeyondCount = `-- name: DeleteCapturesBeyondCount :exec
-DELETE FROM captures WHERE id NOT IN (
-	SELECT id FROM captures ORDER BY received_at DESC LIMIT $1
+DELETE FROM captures AS c
+WHERE c.org_id = (SELECT m.org_id FROM captures AS m WHERE m.id = $1)
+  AND c.id NOT IN (
+	SELECT k.id FROM captures AS k
+	WHERE k.org_id = (SELECT m.org_id FROM captures AS m WHERE m.id = $1)
+	ORDER BY k.received_at DESC
+	LIMIT $2
 )
 `
 
-func (q *Queries) DeleteCapturesBeyondCount(ctx context.Context, limit int32) error {
-	_, err := q.db.Exec(ctx, deleteCapturesBeyondCount, limit)
+type DeleteCapturesBeyondCountParams struct {
+	CaptureID string
+	MaxEvents int32
+}
+
+// Count retention stays within the just-inserted capture's org: one org's
+// volume must never evict another org's recent captures.
+func (q *Queries) DeleteCapturesBeyondCount(ctx context.Context, arg DeleteCapturesBeyondCountParams) error {
+	_, err := q.db.Exec(ctx, deleteCapturesBeyondCount, arg.CaptureID, arg.MaxEvents)
 	return err
 }
 

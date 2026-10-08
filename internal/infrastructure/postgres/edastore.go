@@ -107,20 +107,23 @@ func (s *EDA) InsertCapture(ctx context.Context, c storecontract.CapturedEvent, 
 	}); err != nil {
 		return "", fmt.Errorf("edastore: insert capture: %w", err)
 	}
-	if err := s.pruneCaptures(ctx, retention, maxEvents); err != nil {
+	if err := s.pruneCaptures(ctx, id, retention, maxEvents); err != nil {
 		return "", err
 	}
 	return id, nil
 }
 
-func (s *EDA) pruneCaptures(ctx context.Context, retention time.Duration, maxEvents int) error {
+func (s *EDA) pruneCaptures(ctx context.Context, captureID string, retention time.Duration, maxEvents int) error {
 	if retention > 0 {
 		if err := s.q.DeleteCapturesOlderThan(ctx, time.Now().Add(-retention).UTC()); err != nil {
 			return fmt.Errorf("edastore: prune captures by age: %w", err)
 		}
 	}
 	if maxEvents > 0 {
-		if err := s.q.DeleteCapturesBeyondCount(ctx, int32(maxEvents)); err != nil {
+		if err := s.q.DeleteCapturesBeyondCount(ctx, postgresdb.DeleteCapturesBeyondCountParams{
+			CaptureID: captureID,
+			MaxEvents: int32(maxEvents),
+		}); err != nil {
 			return fmt.Errorf("edastore: prune captures by count: %w", err)
 		}
 	}

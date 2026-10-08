@@ -1,7 +1,6 @@
 package postgres_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -33,17 +32,22 @@ func TestListCapturesIsOrgScoped(t *testing.T) {
 	}
 
 	cases := []struct {
-		name string
-		ctx  context.Context
-		want string
+		name    string
+		orgID   org.OrgID
+		withOrg bool
+		want    string
 	}{
-		{"no org keeps the default org", ctx, sysID},
-		{"default org lists only its own", org.WithOrg(ctx, org.DefaultOrgID), sysID},
-		{"other org lists only its own", org.WithOrg(ctx, "acme"), acmeID},
+		{"no org keeps the default org", "", false, sysID},
+		{"default org lists only its own", org.DefaultOrgID, true, sysID},
+		{"other org lists only its own", "acme", true, acmeID},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := eda.ListCaptures(tc.ctx, 10)
+			listCtx := ctx
+			if tc.withOrg {
+				listCtx = org.WithOrg(ctx, tc.orgID)
+			}
+			got, err := eda.ListCaptures(listCtx, 10)
 			if err != nil {
 				t.Fatal(err)
 			}
