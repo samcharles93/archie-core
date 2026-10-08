@@ -106,8 +106,8 @@ type ChatTaskLogQuery struct {
 	// time disables the bound.
 	Until time.Time
 	// AfterID is the byte-offset cursor returned in the previous page's
-	// Cursor field. Zero means "start at the beginning of the scanned
-	// window". The model treats this as opaque and just passes it back
+	// Cursor field, used to read the next older page. Zero selects the most
+	// recent page. The model treats this as opaque and just passes it back
 	// unchanged; the byte offset is not intended to be human-readable.
 	AfterID int64
 	// Limit caps returned entries.

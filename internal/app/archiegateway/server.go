@@ -33,7 +33,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/secretengine"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
-	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/ratelimit"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
@@ -63,7 +62,6 @@ type server struct {
 	cfgHolder *config.Holder
 	cfgPath   string
 	log       *slog.Logger
-	taskLogs  *logging.TaskRegistry
 
 	secrets          *secret.Registry
 	engines          *secretengine.Runner
@@ -167,7 +165,7 @@ func (b *server) loadConfig(cfgPath, overlayPath string) error {
 	b.catalog = modelcatalog.NewCatalog(cfgPath)
 	b.cfgHolder = config.NewHolder(b.cfg)
 	logs := servicekit.Logging(b.cfg, "gateway")
-	b.log, b.taskLogs = logs.Log, logs.TaskLogs
+	b.log = logs.Log
 	b.addCleanup(func() { _ = logs.Closer.Close() })
 	b.secrets = secret.NewRegistry()
 	return nil

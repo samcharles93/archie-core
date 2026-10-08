@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/gateway"
@@ -115,7 +116,7 @@ func (a chatTaskListerAdapter) ListChatTasks(ctx context.Context, identity strin
 // identity through the tool input.
 type chatTaskLogReaderAdapter struct {
 	tasks    func(context.Context, int64) (*workflow.Task, error)
-	taskLogs *logging.TaskRegistry
+	taskLogs storecontract.TaskLogStore
 }
 
 func (a chatTaskLogReaderAdapter) ReadChatTaskLogs(
@@ -141,19 +142,9 @@ func (a chatTaskLogReaderAdapter) ReadChatTaskLogs(
 	if attempt <= 0 {
 		attempt = task.Attempt
 	}
-	path := a.taskLogs.Path(taskID, attempt)
-	if path == "" {
-		return gateway.ChatTaskLogResult{Attempt: attempt, Entries: []gateway.ChatTaskLogEntry{}}, nil
-	}
-
-	page, err := logging.Page(path, logging.Query{
-		Component: q.Component,
-		Contains:  q.Contains,
-		Levels:    q.Levels,
-		Since:     q.Since,
-		Until:     q.Until,
-		Limit:     q.Limit,
-	}, q.AfterID)
+	page, err := a.taskLogs.TaskLog(ctx, taskID, attempt, logging.Query{
+		Component: q.Component, Contains: q.Contains, Levels: q.Levels, Since: q.Since, Until: q.Until, Limit: q.Limit, BeforeID: q.AfterID,
+	})
 	if err != nil {
 		return gateway.ChatTaskLogResult{}, err
 	}

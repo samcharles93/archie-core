@@ -238,7 +238,7 @@ func (b *server) setupGatewayChat(ctx context.Context, actor gateway.ChatTaskAct
 		LLM:        b.chatLLM, ChatModels: b.chatModels, ToolReg: b.toolReg,
 		Soul: b.soul, ChatTasks: b.chatTasks,
 		ChatTaskLister:      chatTaskListerAdapter{tasks: b.stateStore.Tasks},
-		ChatTaskLogs:        chatTaskLogReaderAdapter{tasks: b.stateStore.TaskByID, taskLogs: b.taskLogs},
+		ChatTaskLogs:        chatTaskLogReaderAdapter{tasks: b.stateStore.TaskByID, taskLogs: b.stateStore},
 		ChatTaskActor:       actor,
 		DefaultChatIdentity: b.defaultChatIdentity,
 		Bus:                 b.bus, Log: b.log,
