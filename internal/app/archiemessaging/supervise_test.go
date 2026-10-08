@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/channels"
+	"github.com/samcharles93/archie-core/internal/channels/status"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
@@ -90,6 +91,55 @@ func waitStarts(t *testing.T, ch *fakeChannel, want int) {
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatalf("channel started %d times, want at least %d", ch.count(), want)
+}
+
+// TestAwaitChannelActiveStates pins what counts as up: running and degraded
+// satisfy an enable, only stopped satisfies a disable, and a failed enable
+// fails fast instead of reporting success the next tick would never retry.
+func TestAwaitChannelActiveStates(t *testing.T) {
+	mark := map[string]func(*status.Manager){
+		"running":  func(m *status.Manager) { m.MarkRunning("fake") },
+		"degraded": func(m *status.Manager) { m.MarkDegraded("fake", "slow") },
+		"failed":   func(m *status.Manager) { m.MarkFailed("fake", "boom") },
+		"starting": func(m *status.Manager) { m.MarkStarting("fake") },
+	}
+	// Refusals that wait out the 5s timeout (disable while failed or
+	// running) are pre-existing behavior, unchanged here, and too slow to
+	// pin; every case below answers at once.
+	tests := []struct {
+		name    string
+		state   string
+		active  bool
+		wantErr bool
+	}{
+		{name: "enable accepts running", state: "running", active: true},
+		{name: "enable accepts degraded", state: "degraded", active: true},
+		{name: "enable refuses failed", state: "failed", active: true, wantErr: true},
+		{name: "disable accepts stopped", state: "", active: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := status.NewManager([]status.Descriptor{{ID: "fake"}})
+			if tt.state == "" {
+				manager.MarkStopped("fake", "")
+			} else {
+				mark[tt.state](manager)
+			}
+			srv := &Service{status: manager}
+			// Every case above answers at once: success and failed-enable
+			// refusal never reach the timeout wait.
+			done := make(chan error, 1)
+			go func() { done <- srv.awaitChannelActive("fake", tt.active) }()
+			select {
+			case err := <-done:
+				if (err != nil) != tt.wantErr {
+					t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
+				}
+			case <-time.After(6 * time.Second):
+				t.Fatal("await did not answer")
+			}
+		})
+	}
 }
 
 // TestChannelSupervisorRetriesAndRestarts pins that a channel that fails on its

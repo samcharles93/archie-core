@@ -321,12 +321,28 @@ const channelApplyPoll = 10 * time.Millisecond
 
 // awaitChannelActive waits, up to channelApplyTimeout, for a channel to leave
 // or reach the stopped state, so an enable or disable is reported applied only
-// once the channel is actually running (or not) rather than merely queued.
+// once the channel is actually running (or not) rather than merely queued. A
+// failed channel is never active: reporting it so would mark the settings
+// version applied and retire a failure the next tick must retry. Only a
+// serving state counts, and a failed enable fails fast instead of burning the
+// timeout while no restart can succeed without one.
 func (s *Service) awaitChannelActive(id string, active bool) error {
 	deadline := time.Now().Add(channelApplyTimeout)
 	for {
 		for _, st := range s.status.Snapshot() {
-			if st.ID == id && (st.State != status.StateStopped) == active {
+			if st.ID != id {
+				continue
+			}
+			if active && st.State == status.StateFailed {
+				return fmt.Errorf("channel %q failed to start", id)
+			}
+			// Serving counts, impaired or not; anything else is still in
+			// flight, except a stopped channel answering a disable.
+			if st.State == status.StateRunning || st.State == status.StateDegraded {
+				if active {
+					return nil
+				}
+			} else if !active && st.State == status.StateStopped {
 				return nil
 			}
 		}
