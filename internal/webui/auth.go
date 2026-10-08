@@ -57,8 +57,10 @@ func IsLoopback(listen string) bool {
 }
 
 // DashboardURL renders a listen address as an openable URL, with localhost
-// for wildcard hosts.
-func DashboardURL(listen, token string) string {
+// for wildcard hosts. It deliberately carries no credential: a URL is safe to
+// log and paste, so the dashboard token can only be read from the file the
+// operator named, never from a printed link.
+func DashboardURL(listen string) string {
 	host, port, err := net.SplitHostPort(strings.TrimSpace(listen))
 	if err != nil {
 		host, port = "", strings.TrimPrefix(strings.TrimSpace(listen), ":")
@@ -67,11 +69,7 @@ func DashboardURL(listen, token string) string {
 	case "", "0.0.0.0", "::", "[::]":
 		host = "localhost"
 	}
-	url := "http://" + net.JoinHostPort(host, port) + "/"
-	if token != "" {
-		url += "?t=" + token
-	}
-	return url
+	return "http://" + net.JoinHostPort(host, port) + "/"
 }
 
 // LoadOrCreateToken returns the dashboard token, generating and persisting one

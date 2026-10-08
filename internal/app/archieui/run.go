@@ -116,13 +116,18 @@ func Run(ctx context.Context, options Options) error {
 		return fmt.Errorf("listen for ui: %w", err)
 	}
 	cleanups = append(cleanups, func() { _ = listener.Close() })
-	log.Info(
-		"archie-ui running",
+	attrs := []any{
 		"addr", listener.Addr().String(),
-		"open", webui.DashboardURL(listener.Addr().String(), opts.Token),
+		"open", webui.DashboardURL(listener.Addr().String()),
 		"gateway", opts.Gateway.Target,
 		"state", opts.State.Target,
-	)
+	}
+	// Name the file holding the token, never the token itself: this line
+	// reaches the journal and any log an operator pastes.
+	if opts.TokenFile != "" {
+		attrs = append(attrs, "token_file", opts.TokenFile)
+	}
+	log.Info("archie-ui running", attrs...)
 
 	return serve(ctx, listener, srv.Handler(), opts)
 }
