@@ -91,17 +91,19 @@ func (s *EDA) InsertCapture(ctx context.Context, c storecontract.CapturedEvent, 
 		delivery = id
 	}
 	if err := s.q.InsertCapture(ctx, postgresdb.InsertCaptureParams{
-		ID:            id,
-		Source:        c.Source,
-		RemoteAddr:    c.RemoteAddr,
-		ContentType:   c.ContentType,
-		Headers:       c.Headers,
-		Body:          c.Body,
-		Authenticated: c.Authenticated,
-		Unsigned:      c.Unsigned,
-		ReceivedAt:    received.UTC(),
-		EventType:     eventType,
-		Delivery:      delivery,
+		ID:               id,
+		Source:           c.Source,
+		RemoteAddr:       c.RemoteAddr,
+		ContentType:      c.ContentType,
+		Headers:          c.Headers,
+		Body:             c.Body,
+		Authenticated:    c.Authenticated,
+		Unsigned:         c.Unsigned,
+		ReceivedAt:       received.UTC(),
+		EventType:        eventType,
+		Delivery:         delivery,
+		DefaultOrg:       string(org.DefaultOrgID),
+		DefaultWorkspace: string(org.DefaultWorkspaceID),
 	}); err != nil {
 		return "", fmt.Errorf("edastore: insert capture: %w", err)
 	}

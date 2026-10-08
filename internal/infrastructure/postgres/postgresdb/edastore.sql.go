@@ -443,22 +443,26 @@ func (q *Queries) InsertBindingDispatch(ctx context.Context, arg InsertBindingDi
 
 const insertCapture = `-- name: InsertCapture :exec
 
-INSERT INTO captures (id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned, event_type, delivery)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+INSERT INTO captures (id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned, event_type, delivery, org_id, workspace_id)
+SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+       COALESCE(s.org_id, $12::text), COALESCE(s.workspace_id, $13::text)
+FROM (SELECT 1) intake LEFT JOIN sources s ON s.path = $2
 `
 
 type InsertCaptureParams struct {
-	ID            string
-	Source        string
-	RemoteAddr    string
-	ContentType   string
-	Headers       string
-	Body          string
-	Authenticated bool
-	ReceivedAt    time.Time
-	Unsigned      bool
-	EventType     string
-	Delivery      string
+	ID               string
+	Source           string
+	RemoteAddr       string
+	ContentType      string
+	Headers          string
+	Body             string
+	Authenticated    bool
+	ReceivedAt       time.Time
+	Unsigned         bool
+	EventType        string
+	Delivery         string
+	DefaultOrg       string
+	DefaultWorkspace string
 }
 
 // EDA queries: captures, mappings, bindings, dispatch ledgers, tool_calls.
@@ -475,6 +479,8 @@ func (q *Queries) InsertCapture(ctx context.Context, arg InsertCaptureParams) er
 		arg.Unsigned,
 		arg.EventType,
 		arg.Delivery,
+		arg.DefaultOrg,
+		arg.DefaultWorkspace,
 	)
 	return err
 }

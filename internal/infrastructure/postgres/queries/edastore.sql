@@ -1,8 +1,10 @@
 -- EDA queries: captures, mappings, bindings, dispatch ledgers, tool_calls.
 
 -- name: InsertCapture :exec
-INSERT INTO captures (id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned, event_type, delivery)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11);
+INSERT INTO captures (id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned, event_type, delivery, org_id, workspace_id)
+SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+       COALESCE(s.org_id, @default_org::text), COALESCE(s.workspace_id, @default_workspace::text)
+FROM (SELECT 1) intake LEFT JOIN sources s ON s.path = $2;
 
 -- name: ListCaptures :many
 SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned, event_type, org_id, workspace_id, delivery
