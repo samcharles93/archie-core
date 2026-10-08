@@ -2,20 +2,73 @@ package archiemessaging
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/channels/status"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/secret"
 )
+
+// servingChannel reports itself running once it starts, which is what an
+// enable is reported active on: a channel that only reaches "starting" is not
+// serving yet.
+type servingChannel struct {
+	mu     sync.Mutex
+	starts int
+}
+
+func (c *servingChannel) Name() string { return "telegram" }
+
+func (c *servingChannel) Start(ctx context.Context, _ messaging.ChatContract, lifecycle channels.Lifecycle) error {
+	c.mu.Lock()
+	c.starts++
+	c.mu.Unlock()
+	if lifecycle.Starting != nil {
+		lifecycle.Starting()
+	}
+	if lifecycle.Running != nil {
+		lifecycle.Running()
+	}
+	<-ctx.Done()
+	return nil
+}
+
+func (c *servingChannel) Stop(context.Context) error { return nil }
+
+func (c *servingChannel) ConfigSchema() json.RawMessage { return nil }
+
+func (c *servingChannel) ValidateConfig(map[string]any) error { return nil }
+
+func (c *servingChannel) count() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.starts
+}
+
+// waitCount blocks until count reaches want, so an async start is observed
+// rather than slept for.
+func waitCount(t *testing.T, count func() int, want int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if count() >= want {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("channel started %d times, want at least %d", count(), want)
+}
 
 // startEnablementService composes and starts a service with the Telegram
 // channel's factory replaced by a scripted channel, so enablement can be driven
 // without a real bot.
-func startEnablementService(t *testing.T, ch *fakeChannel) *Service {
+func startEnablementService(t *testing.T, ch *servingChannel) *Service {
 	t.Helper()
 	srv, err := compose(context.Background(), deps{Log: slog.Default()})
 	if err != nil {
@@ -80,7 +133,7 @@ func channelByID(t *testing.T, srv *Service, id string) status.Status {
 // follows: a channel that was never configured is not reported as configured,
 // and one that enablement stopped is reported stopped and unconfigured.
 func TestChannelEnablementAppliesLive(t *testing.T) {
-	ch := &fakeChannel{}
+	ch := &servingChannel{}
 	srv := startEnablementService(t, ch)
 
 	if before := channelByID(t, srv, "telegram"); before.Configured || before.State != status.StateStopped {
@@ -90,9 +143,9 @@ func TestChannelEnablementAppliesLive(t *testing.T) {
 	if err := srv.enableChannel("telegram", ResolvedConfig{TelegramToken: "token"}); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
-	waitStarts(t, ch, 1)
-	if enabled := channelByID(t, srv, "telegram"); !enabled.Configured || enabled.State != status.StateStarting {
-		t.Fatalf("telegram after enable = %+v, want configured and starting", enabled)
+	waitCount(t, ch.count, 1)
+	if enabled := channelByID(t, srv, "telegram"); !enabled.Configured || enabled.State != status.StateRunning {
+		t.Fatalf("telegram after enable = %+v, want configured and running", enabled)
 	}
 
 	if err := srv.disableChannel("telegram"); err != nil {
@@ -125,7 +178,7 @@ func (fakeEngine) Resolve(key string) (string, error) { return "token-" + key, n
 // recorded as applied only once the channel is running it; a later version
 // that clears the token disables it.
 func TestReconcileOnceEnablesAndDisables(t *testing.T) {
-	ch := &fakeChannel{}
+	ch := &servingChannel{}
 	srv := startEnablementService(t, ch)
 	srv.secrets = secret.NewRegistry()
 	srv.secrets.Register(fakeEngine{})
@@ -137,7 +190,7 @@ func TestReconcileOnceEnablesAndDisables(t *testing.T) {
 	if err := srv.reconcileOnce(context.Background()); err != nil {
 		t.Fatalf("reconcile enable: %v", err)
 	}
-	waitStarts(t, ch, 1)
+	waitCount(t, ch.count, 1)
 	if got := channelByID(t, srv, "telegram"); !got.Configured {
 		t.Fatalf("telegram not enabled by reconcile: %+v", got)
 	}
@@ -161,14 +214,14 @@ func TestReconcileOnceEnablesAndDisables(t *testing.T) {
 // a settings change that turns a channel on or off starts or stops it and
 // reports applied, and a tick that changes nothing is a no-op.
 func TestApplyChannelSettingsEnablesAndDisables(t *testing.T) {
-	ch := &fakeChannel{}
+	ch := &servingChannel{}
 	srv := startEnablementService(t, ch)
 
 	applied, err := srv.applyChannelSettings(ResolvedConfig{TelegramToken: "token"})
 	if err != nil || !applied {
 		t.Fatalf("enable: applied=%v err=%v", applied, err)
 	}
-	waitStarts(t, ch, 1)
+	waitCount(t, ch.count, 1)
 	if got := channelByID(t, srv, "telegram"); !got.Configured || got.State == status.StateStopped {
 		t.Fatalf("telegram not enabled: %+v", got)
 	}
