@@ -8,11 +8,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samcharles93/ai-sdk/provider/minimax"
+
 	"github.com/samcharles93/archie-core/internal/agentexec/modelloop"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/tools/mcp"
-	"github.com/samcharles93/archie-core/internal/tools/minimax"
+	minimaxtool "github.com/samcharles93/archie-core/internal/tools/minimax"
 	toolprovider "github.com/samcharles93/archie-core/internal/tools/provider"
 	builtintoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/builtin"
 	mcptoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/mcp"
@@ -123,7 +125,13 @@ func (b *server) registerMinimaxTool(cfg config.Config, log *slog.Logger) {
 		return
 	}
 
-	entry := minimax.Tool(minimax.Config{Enabled: true, APIKey: apiKey, BaseURL: cfg.Tools.Minimax.BaseURL})
+	provider, err := minimax.New(minimax.Config{APIKey: apiKey, BaseURL: cfg.Tools.Minimax.BaseURL})
+	if err != nil {
+		log.Warn("minimax video generation enabled but the provider could not be built; tool not registered", "err", err)
+		return
+	}
+
+	entry := minimaxtool.Tool(provider)
 	if entry == nil {
 		return
 	}

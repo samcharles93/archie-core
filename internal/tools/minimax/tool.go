@@ -1,9 +1,16 @@
+// Package minimax exposes MiniMax video generation as the generate_video
+// tool. The HTTP and polling behaviour lives in ai-sdk's
+// provider/minimax; this package only shapes the tool schema and maps a tool
+// call onto video.Provider.
 package minimax
 
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
+
+	"github.com/samcharles93/ai-sdk/video"
 
 	"github.com/samcharles93/archie-core/internal/tools"
 )
@@ -11,13 +18,11 @@ import (
 // ToolName is the registry name of the video-generation tool.
 const ToolName = "generate_video"
 
-// Tool returns the generate_video tool, or nil when disabled.
-func Tool(cfg Config) *tools.ToolEntry {
-	if !cfg.Enabled {
+// Tool returns the generate_video tool backed by p, or nil when p is nil.
+func Tool(p video.Provider) *tools.ToolEntry {
+	if p == nil {
 		return nil
 	}
-
-	client := New(cfg)
 
 	return &tools.ToolEntry{
 		Name:    ToolName,
@@ -48,7 +53,7 @@ func Tool(cfg Config) *tools.ToolEntry {
 				"ratio": map[string]any{
 					"type":        "string",
 					"enum":        []any{"adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"},
-					"description": "Aspect ratio. Defaults to adaptive.",
+					"description": "Aspect ratio. Defaults to 16:9.",
 				},
 			},
 			"required": []any{"prompt"},
@@ -60,25 +65,30 @@ func Tool(cfg Config) *tools.ToolEntry {
 			}
 			resolution, _ := input["resolution"].(string)
 			ratio, _ := input["ratio"].(string)
-			duration := 0
-			if d, ok := input["duration"].(float64); ok {
-				duration = int(d)
-			}
 
-			url, err := client.GenerateAndWait(ctx, GenerateRequest{
+			req := video.GenerateVideoRequest{
 				Prompt:     prompt,
 				Resolution: resolution,
-				Duration:   duration,
 				Ratio:      ratio,
-			})
+			}
+			// Leave Duration empty when unset so the provider applies its own
+			// default; "0" would be clamped to the 4s floor instead of 6s.
+			if d, ok := input["duration"].(float64); ok && d > 0 {
+				req.Duration = strconv.Itoa(int(d))
+			}
+
+			resp, err := p.GenerateVideo(ctx, req)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", ToolName, err)
+			}
+			if len(resp.Videos) == 0 || resp.Videos[0].URL == "" {
+				return nil, fmt.Errorf("%s: provider returned no video", ToolName)
 			}
 
 			return tools.MultimodalResult{
 				IsMultimodal: true,
 				Summary:      "Generated a video from the prompt.",
-				URLs:         []tools.MediaRef{{Type: "video", URL: url}},
+				URLs:         []tools.MediaRef{{Type: "video", URL: resp.Videos[0].URL}},
 			}, nil
 		},
 	}
