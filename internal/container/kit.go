@@ -49,6 +49,10 @@ func StartKit(ctx context.Context, cli *client.Client, s KitSpec) (string, error
 		}
 		mounts = append(mounts, mount.Mount{Type: mount.TypeVolume, Source: v.Name, Target: v.Path})
 	}
+	// Docker's own init becomes PID 1 and reaps orphans. The worker is PID 1
+	// otherwise, and a detached hook that forks and exits leaves zombies the
+	// worker never waits on, until the container's PID table is exhausted.
+	hostInit := true
 	created, err := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Name: s.Name,
 		Config: &container.Config{
@@ -64,6 +68,7 @@ func StartKit(ctx context.Context, cli *client.Client, s KitSpec) (string, error
 			NetworkMode: container.NetworkMode(s.Network),
 			Binds:       s.Binds,
 			Mounts:      mounts,
+			Init:        &hostInit,
 		},
 	})
 	if err != nil {
