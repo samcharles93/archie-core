@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/domain/access"
@@ -141,6 +142,31 @@ func TestAdministrationRoutes(t *testing.T) {
 			action, kind, _ := accessRequest(httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, nil))
 			if action != tt.action || kind != access.KindPolicy {
 				t.Fatalf("accessRequest = %q on %q, want %q on %q", action, kind, tt.action, access.KindPolicy)
+			}
+		})
+	}
+}
+
+func TestPersonalTokensWithoutPerson(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodDelete} {
+		t.Run(method, func(t *testing.T) {
+			s := &Server{PersonalTokens: &recordingTokens{}}
+			req := httptest.NewRequestWithContext(access.WithPrincipal(t.Context(), access.SharedTokenOwner()), method, "/api/tokens", nil)
+			rec := httptest.NewRecorder()
+			switch method {
+			case http.MethodGet:
+				s.handlePersonalTokensList(rec, req)
+			case http.MethodPost:
+				s.handlePersonalTokenCreate(rec, req)
+			case http.MethodDelete:
+				s.handlePersonalTokenRevoke(rec, req)
+			}
+			if method == http.MethodGet {
+				if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"available":false`) {
+					t.Fatalf("list without person = %d %s", rec.Code, rec.Body.String())
+				}
+			} else if rec.Code != http.StatusForbidden || strings.TrimSpace(rec.Body.String()) != "Personal tokens need a signed-in person." {
+				t.Fatalf("mutation without person = %d %s", rec.Code, rec.Body.String())
 			}
 		})
 	}

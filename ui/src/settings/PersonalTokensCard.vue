@@ -10,6 +10,7 @@ interface PersonalToken {
   created_at: string;
 }
 
+const available = ref(false);
 const tokens = ref<PersonalToken[]>([]);
 const created = ref("");
 const error = ref("");
@@ -38,7 +39,9 @@ async function run(action: () => Promise<void>): Promise<void> {
 
 const load = () =>
   run(async () => {
-    tokens.value = (await call<{ tokens: PersonalToken[] }>("/api/tokens"))?.tokens ?? [];
+    const result = await call<{ tokens: PersonalToken[]; available: boolean }>("/api/tokens");
+    available.value = result?.available ?? false;
+    tokens.value = result?.tokens ?? [];
   });
 
 const create = () =>
@@ -60,9 +63,10 @@ onMounted(load);
   <section class="mb-8" aria-labelledby="personal-tokens">
     <div class="mb-3 flex items-center justify-between gap-2">
       <h2 id="personal-tokens" class="text-sm font-medium">Your API tokens</h2>
-      <Button size="sm" :disabled="busy" @click="create"><Plus data-icon="inline-start" /> New token</Button>
+      <Button v-if="available" size="sm" :disabled="busy" @click="create"><Plus data-icon="inline-start" /> New token</Button>
     </div>
-    <p class="mb-3 text-xs text-fg-subtle">
+    <p v-if="!available && !busy && !error" class="mb-3 text-sm text-fg-subtle">Personal tokens need a signed-in person.</p>
+    <p v-if="available" class="mb-3 text-xs text-fg-subtle">
       Send it as <code>Authorization: Bearer &lt;token&gt;</code>.
     </p>
     <p v-if="error" role="alert" class="mb-3 text-sm text-danger">{{ error }}</p>

@@ -3,6 +3,7 @@ package webui
 import (
 	"net/http"
 
+	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 )
 
@@ -10,7 +11,11 @@ import (
 // on the principal the request carries, so these handlers name no one.
 
 func (s *Server) handlePersonalTokensList(w http.ResponseWriter, r *http.Request) {
-	if !s.personalTokensReady(w) {
+	if !personalTokenOwner(r) {
+		writeJSON(w, map[string]any{"tokens": []identity.PersonalToken{}, "available": false})
+		return
+	}
+	if !s.personalTokensReady(w, r) {
 		return
 	}
 	tokens, err := s.PersonalTokens.ListPersonalTokens(r.Context())
@@ -21,13 +26,13 @@ func (s *Server) handlePersonalTokensList(w http.ResponseWriter, r *http.Request
 	if tokens == nil {
 		tokens = []identity.PersonalToken{}
 	}
-	writeJSON(w, map[string]any{"tokens": tokens})
+	writeJSON(w, map[string]any{"tokens": tokens, "available": true})
 }
 
 // handlePersonalTokenCreate makes a token here and sends only its hash to the
 // State Store; the response is the one time the token is shown.
 func (s *Server) handlePersonalTokenCreate(w http.ResponseWriter, r *http.Request) {
-	if !s.personalTokensReady(w) {
+	if !s.personalTokensReady(w, r) {
 		return
 	}
 	raw, subject, err := identity.NewPersonalToken()
@@ -45,7 +50,7 @@ func (s *Server) handlePersonalTokenCreate(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handlePersonalTokenRevoke(w http.ResponseWriter, r *http.Request) {
-	if !s.personalTokensReady(w) {
+	if !s.personalTokensReady(w, r) {
 		return
 	}
 	if err := s.PersonalTokens.RevokePersonalToken(r.Context(), r.PathValue("id")); err != nil {
@@ -55,7 +60,17 @@ func (s *Server) handlePersonalTokenRevoke(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) personalTokensReady(w http.ResponseWriter) bool {
+func personalTokenOwner(r *http.Request) bool {
+	p, ok := access.PrincipalFromContext(r.Context())
+	return ok && p.IdentityID != "" && p.IdentityID != identity.SystemID
+}
+
+func (s *Server) personalTokensReady(w http.ResponseWriter, r *http.Request) bool {
+	if !personalTokenOwner(r) {
+		http.Error(w, "Personal tokens need a signed-in person.", http.StatusForbidden)
+		return false
+	}
+
 	if s.PersonalTokens == nil {
 		http.Error(w, "personal tokens unavailable", http.StatusServiceUnavailable)
 		return false
