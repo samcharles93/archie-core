@@ -27,6 +27,14 @@ func TestAgentResultToolSchema(t *testing.T) {
 	}{
 		{name: "no schema", schema: nil},
 		{name: "valid schema", schema: valid},
+		{name: "optional boolean", schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"needs_change": map[string]any{"type": "boolean"},
+				"summary":      map[string]any{"type": "string"},
+			},
+			"required": []any{"summary"},
+		}},
 		{name: "not an object", schema: map[string]any{"type": "string"}, wantErr: "must be a JSON Schema with type: object"},
 		{
 			name: "unresolvable reference",
@@ -58,14 +66,30 @@ func TestAgentResultToolSchema(t *testing.T) {
 			if tool == nil {
 				t.Fatal("tool = nil, want a capture tool")
 			}
-			if len(tool.RequiredFields) != 3 {
-				t.Fatalf("RequiredFields = %v, want the schema's three required fields", tool.RequiredFields)
+			// Presence is enforced exactly for the required fields, whether
+			// string or boolean; an optional field of either type is valid
+			// when omitted.
+			required := map[string]bool{}
+			if list, ok := tt.schema["required"].([]any); ok {
+				for _, field := range list {
+					if name, ok := field.(string); ok {
+						required[name] = true
+					}
+				}
 			}
-			if !containsString(tool.NonEmptyStrings, "reasons") && !containsString(tool.NonEmptyStrings, "workflow") {
-				t.Fatalf("NonEmptyStrings = %v, want the required string fields", tool.NonEmptyStrings)
-			}
-			if !containsString(tool.BooleanFields, "needs_change") {
-				t.Fatalf("BooleanFields = %v, want needs_change", tool.BooleanFields)
+			properties, _ := tt.schema["properties"].(map[string]any)
+			for name, raw := range properties {
+				property, _ := raw.(map[string]any)
+				switch property["type"] {
+				case "string":
+					if required[name] != containsString(tool.NonEmptyStrings, name) {
+						t.Fatalf("NonEmptyStrings = %v, want exactly the required strings", tool.NonEmptyStrings)
+					}
+				case "boolean":
+					if required[name] != containsString(tool.BooleanFields, name) {
+						t.Fatalf("BooleanFields = %v, want exactly the required booleans", tool.BooleanFields)
+					}
+				}
 			}
 		})
 	}

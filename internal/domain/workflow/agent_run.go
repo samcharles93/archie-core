@@ -173,7 +173,11 @@ func agentResultTool(schema map[string]any) (*agentrun.CaptureTool, error) {
 		property, _ := properties[name].(map[string]any)
 		switch property["type"] {
 		case "boolean":
-			tool.BooleanFields = append(tool.BooleanFields, name)
+			// Presence is enforced only for required fields, like strings:
+			// an optional boolean the result omits is valid.
+			if slices.Contains(required, name) {
+				tool.BooleanFields = append(tool.BooleanFields, name)
+			}
 		case "string":
 			if slices.Contains(required, name) {
 				tool.NonEmptyStrings = append(tool.NonEmptyStrings, name)
