@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -95,15 +96,11 @@ func newCommandRunStage(settings yaml.Node) (Stage, error) {
 			}
 			return nil
 		}
-		// Park rather than return an error: a returned error fails the
-		// attempt, while a park leaves the run for an operator to retry
-		// after fixing what the command found. An outcome stops the
-		// engine at this step, so later steps do not run.
-		tc.Outcome = Outcome{
-			Status: StatusParked,
-			Detail: fmt.Sprintf("%s: %s", CommandRunStepName, detail),
-		}
-		return nil
+		// Return the failure, with the command's clipped output as its
+		// text: the shared step wrapper applies retry and on_failure, and
+		// the engine parks with this message. Setting a parked outcome
+		// here instead would stop the step before either control ran.
+		return errors.New(detail)
 	}}, nil
 }
 
