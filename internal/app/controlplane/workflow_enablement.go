@@ -30,9 +30,11 @@ func workflowEnablementDefinition() Definition {
 func (c *Client) WorkflowEnablement(ctx context.Context) (task.WorkflowEnablement, error) {
 	response, err := c.rpc.Query(ctx, &controlpb.QueryRequest{Kind: WorkflowEnablementKind})
 	if err != nil {
+		c.ApplyStatus.Report(ctx, WorkflowEnablementKind, 0, err)
 		return task.WorkflowEnablement{}, controlplanerpc.ClientError(err)
 	}
 	var enablement task.WorkflowEnablement
 	err = json.Unmarshal(response.Resource.ValueJson, &enablement)
+	c.ApplyStatus.Report(ctx, WorkflowEnablementKind, response.Resource.Version, err)
 	return enablement, err
 }

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
+	"github.com/samcharles93/archie-core/internal/domain/applystatus"
 	"github.com/samcharles93/archie-core/internal/domain/eda/playbook"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
@@ -21,8 +22,9 @@ const playbookQueryTimeout = 5 * time.Second
 // cannot be reached, or a document that no longer compiles, leaves the last
 // good set in force.
 type LivePlaybooks struct {
-	rpc pb.ControlPlaneServiceClient
-	log *slog.Logger
+	rpc         pb.ControlPlaneServiceClient
+	log         *slog.Logger
+	ApplyStatus *applystatus.Reporter
 
 	mu      sync.Mutex
 	version int64
@@ -40,23 +42,28 @@ func (l *LivePlaybooks) current(ctx context.Context) *playbook.Store {
 	defer cancel()
 	response, err := l.rpc.Query(ctx, &pb.QueryRequest{Kind: PlaybooksKind})
 	if err != nil {
+		l.ApplyStatus.Report(ctx, PlaybooksKind, 0, err)
 		l.log.Warn("eda playbooks unavailable; keeping the last good set", "err", controlplanerpc.ClientError(err))
 		return l.store
 	}
 	if l.store != nil && response.Resource.Version == l.version {
+		l.ApplyStatus.Report(ctx, PlaybooksKind, l.version, nil)
 		return l.store
 	}
 	var collection PlaybookCollection
 	if err := json.Unmarshal(response.Resource.ValueJson, &collection); err != nil {
+		l.ApplyStatus.Report(ctx, PlaybooksKind, response.Resource.Version, err)
 		l.log.Error("eda playbooks undecodable; keeping the last good set", "err", err)
 		return l.store
 	}
 	store, err := CompilePlaybooks(collection)
 	if err != nil {
+		l.ApplyStatus.Report(ctx, PlaybooksKind, response.Resource.Version, err)
 		l.log.Error("eda playbooks do not compile; keeping the last good set", "err", err)
 		return l.store
 	}
 	l.version, l.store = response.Resource.Version, store
+	l.ApplyStatus.Report(ctx, PlaybooksKind, l.version, nil)
 	l.log.Info("eda playbooks loaded", "version", l.version, "playbooks", len(store.Playbooks))
 	return store
 }

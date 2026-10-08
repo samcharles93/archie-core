@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ApplyStatusRows from "./ApplyStatusRows.vue";
 import { computed, onMounted, ref } from "vue";
 import { storeToRefs } from "pinia";
 import { Copy, Plus, Trash2 } from "@lucide/vue";
@@ -67,6 +68,7 @@ function rename(name: string | number) {
     <PageHeader title="Personas">
       <HistoryLink :kinds="resources.map((r) => r.kind)" />
     </PageHeader>
+    <ApplyStatusRows v-for="resource in resources" :key="resource.kind" :kind="resource.kind" class="mb-4" />
 
     <p v-if="catalogError || error" class="mb-4 text-sm text-danger" role="alert">
       {{ catalogError || error }}

@@ -32,7 +32,8 @@ type applyStatusView struct {
 	Records []applyStatusRecord `json:"records"`
 	// Processes is every name a record may carry, so the page can show a
 	// process that has never reported at all rather than omitting the column.
-	Processes []string `json:"processes"`
+	Processes     []string            `json:"processes"`
+	Applicability map[string][]string `json:"applicability"`
 }
 
 // handleApplyStatus reports which version of each control-plane resource each
@@ -48,7 +49,7 @@ func (s *Server) handleApplyStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) readApplyStatus(ctx context.Context) (applyStatusView, error) {
-	view := applyStatusView{Records: []applyStatusRecord{}, Processes: applystatus.Processes()}
+	view := applyStatusView{Records: []applyStatusRecord{}, Processes: applystatus.Processes(), Applicability: applystatus.Applicability()}
 	if s.ApplyStatus == nil {
 		return view, nil
 	}

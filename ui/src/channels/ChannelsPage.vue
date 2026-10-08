@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ApplyStatusRows from "@/settings/ApplyStatusRows.vue";
 import HistoryLink from "@/settings/HistoryLink.vue";
 import { computed, onMounted, reactive, ref } from "vue";
 import { storeToRefs } from "pinia";
@@ -114,6 +115,7 @@ const models = computed({
     <PageHeader title="Channels">
       <HistoryLink :kinds="resources.map((r) => r.kind)" />
     </PageHeader>
+    <ApplyStatusRows :kind="KIND" class="mb-4" />
 
     <p v-if="catalogError || error" class="mb-4 text-sm text-danger" role="alert">
       {{ catalogError || error }}

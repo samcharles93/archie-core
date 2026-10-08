@@ -48,6 +48,8 @@ func (b *boot) openDaemonWorkflowDefinitions() error {
 	if err != nil {
 		return fmt.Errorf("build workflow definitions client: %w", err)
 	}
+	definitions.ApplyStatus = b.applyStatus
+	b.controlPlane.ApplyStatus = b.applyStatus
 	b.workflowDefinitions = definitions
 	return nil
 }

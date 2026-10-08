@@ -175,14 +175,14 @@ test("apply status names a process behind the stored version and one that stoppe
   const processes = ["archied", "archie-gateway", "archie-messaging"];
 
   assert.deepEqual(applyStatusForKind(records, processes, "tool-settings", 7), [
-    { process: "archied", state: "running", version: 7, error: "" },
+    { process: "archied", state: "running", version: 7, error: "", storedVersion: 7, reportedAt: "" },
     {
       process: "archie-gateway",
       state: "pending-restart",
       version: 6,
-      error: "",
+      error: "", storedVersion: 7, reportedAt: "",
     },
-    { process: "archie-messaging", state: "unknown", version: 7, error: "" },
+    { process: "archie-messaging", state: "unknown", version: 7, error: "", storedVersion: 7, reportedAt: "" },
   ]);
 });
 
@@ -195,7 +195,7 @@ test("apply status shows a process that has never reported, and one that rejecte
       applied_version: 6,
       reported_at: "",
       state: "failed",
-      error: "validate database settings: bad policy",
+      error: "validate database settings: bad policy", storedVersion: 7, reportedAt: "",
     },
   ];
 
@@ -204,13 +204,13 @@ test("apply status shows a process that has never reported, and one that rejecte
       process: "archied",
       state: "failed",
       version: 6,
-      error: "validate database settings: bad policy",
+      error: "validate database settings: bad policy", storedVersion: 7, reportedAt: "",
     },
     {
       process: "archie-gateway",
       state: "not-reporting",
       version: 0,
-      error: "",
+      error: "", storedVersion: 7,
     },
   ]);
 });

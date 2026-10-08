@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import ApplyStatusRows from "@/settings/ApplyStatusRows.vue";
+import { useControlPlaneStore } from "@/stores/control-plane";
 import { computed, onMounted, ref } from "vue";
 
 import PageHeader from "@/base/PageHeader.vue";
@@ -36,6 +38,7 @@ async function load() {
 
 useLiveResource("skills", () => void load());
 onMounted(load);
+onMounted(useControlPlaneStore().load);
 
 const filtered = computed(() => {
   const term = search.value.trim().toLowerCase();
@@ -49,6 +52,7 @@ const filtered = computed(() => {
 <template>
   <div>
     <PageHeader title="Skills" />
+    <ApplyStatusRows kind="skills" class="mb-4" />
 
     <Card>
       <CardHeader>

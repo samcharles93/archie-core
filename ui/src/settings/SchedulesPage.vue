@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ApplyStatusRows from "./ApplyStatusRows.vue";
 import { computed, onMounted } from "vue";
 import { storeToRefs } from "pinia";
 import { CalendarClock, Plus, Trash2 } from "@lucide/vue";
@@ -91,6 +92,7 @@ const whenKind = (job: Job) => job.schedule.kind || "interval";
       <HistoryLink :kinds="resources.map((r) => r.kind)" />
       <Button v-if="jobs?.length" size="sm" @click="add"><Plus data-icon="inline-start" /> Add schedule</Button>
     </PageHeader>
+    <ApplyStatusRows v-for="resource in resources" :key="resource.kind" :kind="resource.kind" class="mb-4" />
 
     <p v-if="catalogError || error" class="mb-4 text-sm text-danger" role="alert">
       {{ catalogError || error }}

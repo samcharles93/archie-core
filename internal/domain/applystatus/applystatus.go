@@ -27,6 +27,21 @@ const (
 // for the test that binds writer to reader.
 func Processes() []string { return []string{Daemon, Gateway, Messaging} }
 
+// Applicability names the consumers of each resource, including boot-only settings.
+func Applicability() map[string][]string {
+	kinds := map[string][]string{}
+	for _, kind := range []string{"provider-settings", "model-role-assignments", "repository-policies", "scheduling-policy", "tool-settings", "plugin-settings", "review-settings", "channel-settings", "container-runtime-policies", "credential-bindings", "identity-grants", "agent-profiles", "workflow-execution-settings", "extension-settings", "workflow-definitions", "workflow-enablement", "schedules", "eda-playbooks"} {
+		kinds[kind] = []string{Daemon}
+	}
+	for _, kind := range []string{"provider-settings", "model-role-assignments", "tool-settings", "channel-settings", "plugin-settings", "extension-settings", "personas", "soul", "skills"} {
+		kinds[kind] = append(kinds[kind], Gateway)
+	}
+	for _, kind := range []string{"channel-settings", "extension-settings"} {
+		kinds[kind] = append(kinds[kind], Messaging)
+	}
+	return kinds
+}
+
 const (
 	// RestampInterval is how often a process rewrites its records. It is the
 	// only thing that distinguishes a live process from one that applied a
@@ -77,7 +92,7 @@ func New(process string, store storecontract.ApplyStatusStore, log *slog.Logger)
 // Report records that this process applied version of kind, or failed to. A
 // failure keeps the previous version. Errors are logged.
 func (r *Reporter) Report(ctx context.Context, kind string, version int64, applyErr error) {
-	if r == nil {
+	if r == nil || !slices.Contains(Applicability()[kind], r.process) {
 		return
 	}
 	status := storecontract.ApplyStatus{

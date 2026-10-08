@@ -40,10 +40,18 @@ func (b *server) refreshSkills(ctx context.Context, applied *string) {
 	cfg, log := b.cfg, b.log
 	catalog, err := skill.CatalogRoots(skill.DefaultRoots(cfg.WorkDir, cfg.SkillsDir)...)
 	if err != nil {
+		b.applyStatus.Report(ctx, controlplane.SkillsKind, 0, err)
 		log.Warn("skill catalog load failed", "err", err)
 		return
 	}
-	catalog = append(catalog, b.storedSkills(ctx, catalog)...)
+	stored, version, err := b.storedSkills(ctx, catalog)
+	if err != nil {
+		b.applyStatus.Report(ctx, controlplane.SkillsKind, version, err)
+		return
+	}
+	var applyErr error
+	defer func() { b.applyStatus.Report(ctx, controlplane.SkillsKind, version, applyErr) }()
+	catalog = append(catalog, stored...)
 	b.setSkillList(catalog)
 	signature := catalogSignature(catalog)
 	if signature == *applied {
@@ -52,6 +60,7 @@ func (b *server) refreshSkills(ctx context.Context, applied *string) {
 	b.toolReg.Unregister(skillActivateTool)
 	if entry := skill.ActivateTool(cfg.WorkDir, catalog); entry != nil {
 		if err := b.toolReg.Register(*entry); err != nil {
+			applyErr = err
 			log.Warn("skill_activate registration failed", "err", err)
 			return
 		}
@@ -61,10 +70,10 @@ func (b *server) refreshSkills(ctx context.Context, applied *string) {
 }
 
 // storedSkills reads the skills resource, leaving out any name already in
-// have. An unreadable resource contributes nothing this round.
-func (b *server) storedSkills(ctx context.Context, have []skill.CatalogEntry) []skill.CatalogEntry {
+// have. An unreadable resource leaves the running catalog in place.
+func (b *server) storedSkills(ctx context.Context, have []skill.CatalogEntry) ([]skill.CatalogEntry, int64, error) {
 	var out []skill.CatalogEntry
-	_, _, err := b.controlPlane.Query(ctx, controlplane.SkillsKind, func(value []byte) error {
+	version, _, err := b.controlPlane.Query(ctx, controlplane.SkillsKind, func(value []byte) error {
 		var collection controlplane.SkillCollection
 		if err := json.Unmarshal(value, &collection); err != nil {
 			return err
@@ -72,8 +81,7 @@ func (b *server) storedSkills(ctx context.Context, have []skill.CatalogEntry) []
 		for _, held := range collection.Skills {
 			entry, err := skill.EntryFromContent([]byte(held.Content))
 			if err != nil {
-				b.log.Warn("stored skill skipped", "skill", held.Name, "err", err)
-				continue
+				return err
 			}
 			if !slices.ContainsFunc(have, func(e skill.CatalogEntry) bool { return e.Name == entry.Name }) {
 				out = append(out, entry)
@@ -84,7 +92,7 @@ func (b *server) storedSkills(ctx context.Context, have []skill.CatalogEntry) []
 	if err != nil {
 		b.log.Warn("skills resource unavailable", "err", err)
 	}
-	return out
+	return out, version, err
 }
 
 func catalogSignature(catalog []skill.CatalogEntry) string {

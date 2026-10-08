@@ -11,6 +11,7 @@ import (
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/agent"
+	"github.com/samcharles93/archie-core/internal/domain/applystatus"
 	"github.com/samcharles93/archie-core/internal/domain/scheduling"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
@@ -20,7 +21,8 @@ import (
 // Service's client and adds resource-specific reads.
 type Client struct {
 	*controlplanerpc.Client
-	rpc pb.ControlPlaneServiceClient
+	rpc         pb.ControlPlaneServiceClient
+	ApplyStatus *applystatus.Reporter
 }
 
 // NewClient dials the control plane over an existing connection.
@@ -36,8 +38,9 @@ func NewRPCClient(client pb.ControlPlaneServiceClient) *Client {
 // WorkflowDefinitionsClient reads and replaces the workflow-definitions
 // resource, resolving step types against the given vocabulary.
 type WorkflowDefinitionsClient struct {
-	rpc   pb.ControlPlaneServiceClient
-	steps workflow.StepRegistry
+	rpc         pb.ControlPlaneServiceClient
+	steps       workflow.StepRegistry
+	ApplyStatus *applystatus.Reporter
 }
 
 func NewWorkflowDefinitionsClient(client pb.ControlPlaneServiceClient, steps *workflow.Manager) (*WorkflowDefinitionsClient, error) {
@@ -59,9 +62,11 @@ func (c *Client) Catalog(ctx context.Context) ([]*pb.ResourceDescriptor, error) 
 func (c *WorkflowDefinitionsClient) WorkflowDefinitions(ctx context.Context) (workflow.WorkflowDefinitionCollection, int64, error) {
 	response, err := c.rpc.Query(ctx, &pb.QueryRequest{Kind: WorkflowDefinitionsKind})
 	if err != nil {
+		c.ApplyStatus.Report(ctx, WorkflowDefinitionsKind, 0, err)
 		return workflow.WorkflowDefinitionCollection{}, 0, controlplanerpc.ClientError(err)
 	}
 	definitions, err := workflow.DecodeDefinitionCollection(response.Resource.ValueJson, c.steps)
+	c.ApplyStatus.Report(ctx, WorkflowDefinitionsKind, response.Resource.Version, err)
 	return definitions, response.Resource.Version, err
 }
 
@@ -238,12 +243,15 @@ func sendUpdate[T any](ctx context.Context, out chan<- T, update T) bool {
 func (c *Client) Schedules(ctx context.Context) ([]scheduling.JobSpec, int64, error) {
 	response, err := c.rpc.Query(ctx, &pb.QueryRequest{Kind: SchedulesKind})
 	if err != nil {
+		c.ApplyStatus.Report(ctx, SchedulesKind, 0, err)
 		return nil, 0, controlplanerpc.ClientError(err)
 	}
 	var jobs []scheduling.JobSpec
 	if err := json.Unmarshal(response.Resource.ValueJson, &jobs); err != nil {
+		c.ApplyStatus.Report(ctx, SchedulesKind, response.Resource.Version, err)
 		return nil, 0, err
 	}
+	c.ApplyStatus.Report(ctx, SchedulesKind, response.Resource.Version, nil)
 	return jobs, response.Resource.Version, nil
 }
 

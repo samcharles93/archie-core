@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ApplyStatusRows from "@/settings/ApplyStatusRows.vue";
 import { computed, ref, watch } from "vue";
 import { Ellipsis, RotateCcw, Trash2, X } from "@lucide/vue";
 
@@ -197,6 +198,7 @@ function syncScroll(event: Event): void {
 
 <template>
   <form class="space-y-4" @submit.prevent="saveDraft">
+    <ApplyStatusRows kind="workflow-definitions" />
     <Tabs v-model="view" class="space-y-1.5">
       <div class="flex items-center gap-2">
         <TabsList>

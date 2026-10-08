@@ -49,17 +49,20 @@ export interface ApplyStatusRecord {
 export interface ApplyStatusResponse {
   records: ApplyStatusRecord[];
   processes: string[];
+  applicability?: Record<string, string[]>;
 }
 
 /** What the settings page says about one process for one resource. */
 export type ApplyState =
-  "running" | "pending-restart" | "failed" | "unknown" | "not-reporting";
+  "running" | "pending-restart" | "failed" | "unknown" | "not-reporting" | "not-applicable";
 
 export interface ApplyStatusRow {
   process: string;
   state: ApplyState;
   version: number;
   error: string;
+  storedVersion?: number;
+  reportedAt?: string;
 }
 
 /** applyStatusForKind reads every known process against the stored version, so
@@ -72,8 +75,11 @@ export function applyStatusForKind(
   processes: string[],
   kind: string,
   storedVersion: number,
+  applicability?: Record<string, string[]>,
 ): ApplyStatusRow[] {
   return processes.map((process) => {
+    if (applicability && !(applicability[kind] ?? []).includes(process))
+      return { process, state: "not-applicable" as const, version: 0, error: "", storedVersion };
     const record = records.find(
       (entry) => entry.process === process && entry.kind === kind,
     );
@@ -82,11 +88,14 @@ export function applyStatusForKind(
         process,
         state: "not-reporting" as const,
         version: 0,
+        storedVersion,
         error: "",
       };
     const row = {
       process,
       version: record.applied_version,
+      storedVersion,
+      reportedAt: record.reported_at,
       error: record.error ?? "",
     };
     if (record.state === "unknown")
@@ -420,6 +429,7 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
       applyStatus.value.processes,
       kind,
       stateFor(kind).resource?.version ?? 0,
+      applyStatus.value.applicability,
     );
   }
 

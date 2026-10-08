@@ -630,7 +630,7 @@ func (b *boot) buildDaemon() {
 		LabelWorkflows:      b.labelWorkflows,
 		WorkflowDefinitions: b.workflowDefinitions,
 		WorkflowEnablement:  b.controlPlane,
-		Playbooks:           controlplane.NewLivePlaybooks(b.controlPlaneRPC, b.log),
+		Playbooks:           b.livePlaybooks(),
 	}
 
 	if identities, ok := b.stateStore.(identity.Repository); ok {
@@ -903,4 +903,10 @@ func (b *boot) startModelCatalogRefresh(ctx context.Context) {
 			b.log.Warn("model catalog refresh failed; keeping the loaded catalog", "err", err)
 		}
 	})
+}
+
+func (b *boot) livePlaybooks() *controlplane.LivePlaybooks {
+	live := controlplane.NewLivePlaybooks(b.controlPlaneRPC, b.log)
+	live.ApplyStatus = b.applyStatus
+	return live
 }

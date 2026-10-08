@@ -38,6 +38,7 @@ const LABELS: Record<ApplyState, string> = {
   failed: "Failed",
   unknown: "Not reporting",
   "not-reporting": "Never reported",
+  "not-applicable": "Does not apply",
 };
 
 /** The wording for one row's state. The derived state is apply-mode-agnostic:
@@ -58,6 +59,7 @@ const TONES: Record<ApplyState, ApplyTone> = {
   failed: "danger",
   unknown: "warn",
   "not-reporting": "idle",
+  "not-applicable": "idle",
 };
 
 /** The badge tone for one row's state. A live kind that is behind is not a

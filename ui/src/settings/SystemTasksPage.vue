@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ApplyStatusRows from "./ApplyStatusRows.vue";
 import { computed, onMounted } from "vue";
 import { storeToRefs } from "pinia";
 
@@ -52,6 +53,7 @@ const taskRuntime = seconds("max_task_runtime_seconds");
     <PageHeader title="Task execution">
       <HistoryLink :kinds="resources.map((r) => r.kind)" />
     </PageHeader>
+    <ApplyStatusRows v-for="resource in resources" :key="resource.kind" :kind="resource.kind" class="mb-4" />
 
     <p v-if="catalogError || error" class="mb-4 text-sm text-danger" role="alert">
       {{ catalogError || error }}

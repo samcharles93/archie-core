@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ApplyStatusRows from "./ApplyStatusRows.vue";
 import { computed, onMounted, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { Plus, Trash2 } from "@lucide/vue";
@@ -123,6 +124,7 @@ const eyebrow = "mb-2 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
     <PageHeader title="Models">
       <HistoryLink :kinds="resources.map((r) => r.kind)" />
     </PageHeader>
+    <ApplyStatusRows v-for="resource in resources" :key="resource.kind" :kind="resource.kind" class="mb-4" />
 
     <p v-for="e in [catalogError, ...errors].filter(Boolean)" :key="String(e)" class="mb-4 text-sm text-danger" role="alert">
       {{ e }}
