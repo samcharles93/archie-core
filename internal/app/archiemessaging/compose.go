@@ -58,7 +58,7 @@ type deps struct {
 }
 
 // channelInstance is one composed channel and what is needed to restart it.
-// mu guards channel and cancel.
+// mu guards every field below.
 type channelInstance struct {
 	name    string
 	rebuild func(ResolvedConfig) (channels.Channel, error)
@@ -68,6 +68,9 @@ type channelInstance struct {
 	cancel         context.CancelFunc
 	supervised     bool
 	restartPending bool
+	// notify wakes a supervisor that is between runs, so an explicit restart
+	// starts the replacement instead of waiting out a backoff or a park.
+	notify chan struct{}
 }
 
 // current returns the channel instance currently serving, under the lock.
@@ -108,6 +111,9 @@ type Service struct {
 	appliedVersion atomic.Int64
 	// reconcileInterval is how often the stored settings are re-read.
 	reconcileInterval time.Duration
+	// retry bounds how a supervisor retries a channel that fails on its own
+	// before parking it for an explicit restart.
+	retry channelRetryPolicy
 
 	mu      sync.Mutex
 	running bool
@@ -135,6 +141,7 @@ func compose(ctx context.Context, d deps) (*Service, error) {
 	if srv.reconcileInterval <= 0 {
 		srv.reconcileInterval = applystatus.RestampInterval
 	}
+	srv.retry = defaultChannelRetry()
 
 	instances, err := composeChannels(ctx, d)
 	if err != nil {
@@ -166,6 +173,9 @@ func composeChannels(ctx context.Context, d deps) ([]*channelInstance, error) {
 			continue
 		}
 		instances = append(instances, instance)
+	}
+	for _, instance := range instances {
+		instance.notify = make(chan struct{}, 1)
 	}
 	return instances, nil
 }
