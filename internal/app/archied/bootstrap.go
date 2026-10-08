@@ -826,6 +826,10 @@ func (b *boot) runLoop(ctx context.Context, once bool) error {
 	b.announceReady()
 	if once {
 		b.d.Cycle(ctx)
+		// A drain pass no longer waits for the tasks it submitted, so a
+		// single-cycle invocation waits for them here: exiting while their
+		// containers still run would kill work this pass accepted.
+		b.d.WaitForTasks()
 		return nil
 	}
 	b.log.Info("archied running", "repos", len(b.cfg.Repos), "poll", b.cfg.PollInterval.Std().String(), "label", b.cfg.Label)
