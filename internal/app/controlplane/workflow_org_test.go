@@ -24,6 +24,7 @@ import (
 	infraaccess "github.com/samcharles93/archie-core/internal/infrastructure/access"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgstore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/pgtest"
+	"github.com/samcharles93/archie-core/internal/infrastructure/rpcidentity"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/workflowsteps"
 	"github.com/samcharles93/archie-core/internal/webui"
@@ -123,7 +124,7 @@ func workflowRPC(t *testing.T, control *controlplane.Server, db *pgstore.TaskDB)
 	}
 	t.Cleanup(func() { _ = listener.Close() })
 	grants := &staterpc.TaskGrants{}
-	callers := staterpc.Callers{Principals: db}
+	callers := rpcidentity.Callers{Principals: db}
 	srv := grpc.NewServer(grpc.ChainUnaryInterceptor(grants.UnaryInterceptor("test-token"), callers.Unary()), grpc.ChainStreamInterceptor(grants.StreamInterceptor("test-token"), callers.Stream()))
 	staterpc.RegisterServer(srv, staterpc.Deps{ControlPlane: control, Tasks: db, Principals: db, Identities: db})
 	t.Cleanup(srv.Stop)

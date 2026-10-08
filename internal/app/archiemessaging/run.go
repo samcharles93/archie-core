@@ -81,7 +81,7 @@ func Run(ctx context.Context, o Options) error {
 			return fmt.Errorf("resolve database telegram token: %w", settingsErr)
 		}
 		extensionChannels = openExtensionChannels(ctx, extensions, secrets, log)
-		settings = messaging.NewSettingsCommand(messagingControlPlane{client: stateStore.ControlPlane()}).WithIdentities(stateStore)
+		settings = messaging.NewSettingsCommand(controlplanerpc.NewSettingsClient(stateStore.ControlPlane())).WithIdentities(stateStore)
 		channelStatusStore, presenceStore = stateStore, stateStore
 		settingsSource, applyReporter, appliedVersion = controlPlaneClient, reporter, channelVersion
 		updates = controlplanerpc.UpdateService(controlPlaneClient, filepath.Join(cfg.WorkDir, "telegram-update-deferrals.json"), cfg.HealthURL)

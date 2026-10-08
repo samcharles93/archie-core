@@ -12,8 +12,10 @@ import (
 	"github.com/samcharles93/archie-core/internal/buildinfo"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/agent"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 	"github.com/samcharles93/archie-core/internal/tools"
 )
@@ -221,6 +223,7 @@ func (b *server) setupGatewayChat(ctx context.Context, actor gateway.ChatTaskAct
 	}
 	cfg := b.cfg
 	router := gateway.NewRouter(b.stateStore, nil, "web")
+	router.Settings = messaging.NewSettingsCommand(controlplanerpc.NewSettingsClient(b.stateStore.ControlPlane())).WithIdentities(b.stateStore)
 	router.Limiter = b.rateLimiter
 	router.Version = fmt.Sprintf("Archie\nGateway: %s\nRuntime: %s", buildinfo.Version, buildinfo.Runtime)
 	router.Models = b.chatModels

@@ -1,4 +1,4 @@
-package archiemessaging
+package controlplanerpc
 
 import (
 	"context"
@@ -13,9 +13,15 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
-type messagingControlPlane struct{ client pb.ControlPlaneServiceClient }
+// SettingsClient adapts control-plane resources for channel settings commands.
+type SettingsClient struct{ client pb.ControlPlaneServiceClient }
 
-func (c messagingControlPlane) Catalog(ctx context.Context) ([]messaging.SettingDescriptor, error) {
+// NewSettingsClient wraps the existing control-plane contract.
+func NewSettingsClient(client pb.ControlPlaneServiceClient) SettingsClient {
+	return SettingsClient{client: client}
+}
+
+func (c SettingsClient) Catalog(ctx context.Context) ([]messaging.SettingDescriptor, error) {
 	response, err := c.client.Catalog(ctx, &pb.CatalogRequest{})
 	if err != nil {
 		return nil, settingsRPCError(err)
@@ -29,7 +35,7 @@ func (c messagingControlPlane) Catalog(ctx context.Context) ([]messaging.Setting
 				WriteOnly bool   `json:"writeOnly"`
 			} `json:"properties"`
 		}
-		if err := json.Unmarshal([]byte(resource.SchemaJson), &schema); err != nil {
+		if err := json.Unmarshal([]byte(resource.SchemaJson), &schema); strings.TrimSpace(resource.SchemaJson) != "" && err != nil {
 			return nil, errors.Join(messaging.ErrSettingsValidation, err)
 		}
 		fields := make(map[string]messaging.SettingField, len(schema.Properties))
@@ -45,7 +51,7 @@ func (c messagingControlPlane) Catalog(ctx context.Context) ([]messaging.Setting
 	return descriptors, nil
 }
 
-func (c messagingControlPlane) Query(ctx context.Context, kind string) (messaging.SettingResource, error) {
+func (c SettingsClient) Query(ctx context.Context, kind string) (messaging.SettingResource, error) {
 	response, err := c.client.Query(ctx, &pb.QueryRequest{Kind: kind})
 	if err != nil {
 		return messaging.SettingResource{}, settingsRPCError(err)
@@ -53,7 +59,7 @@ func (c messagingControlPlane) Query(ctx context.Context, kind string) (messagin
 	return settingResource(response.Resource)
 }
 
-func (c messagingControlPlane) Command(ctx context.Context, command messaging.SettingCommand) (messaging.SettingResource, error) {
+func (c SettingsClient) Command(ctx context.Context, command messaging.SettingCommand) (messaging.SettingResource, error) {
 	input := any(command.Value)
 	if command.RawValue != nil {
 		input = command.RawValue

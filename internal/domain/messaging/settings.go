@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 )
 
@@ -104,6 +105,9 @@ func (c *SettingsCommand) Execute(ctx context.Context, actor, input string) stri
 // recorded against. A sender that does not resolve cannot run a command: the
 // audit record names an identity or the command does not happen.
 func (c *SettingsCommand) resolveActor(ctx context.Context, subject, actor string) (identity.IdentityID, string) {
+	if p, ok := access.PrincipalFromContext(ctx); ok && p.IdentityID != "" {
+		return p.IdentityID, ""
+	}
 	if strings.TrimSpace(actor) == "" {
 		return "", subject + " require an authenticated Archie identity; this channel cannot resolve one."
 	}

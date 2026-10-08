@@ -29,6 +29,7 @@ import (
 	infraaccess "github.com/samcharles93/archie-core/internal/infrastructure/access"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
 	"github.com/samcharles93/archie-core/internal/infrastructure/readiness"
+	"github.com/samcharles93/archie-core/internal/infrastructure/rpcidentity"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	registry "github.com/samcharles93/archie-core/internal/infrastructure/storepkg"
 	"github.com/samcharles93/archie-core/internal/infrastructure/workflowsteps"
@@ -403,9 +404,9 @@ func (b *server) runCredentials(ctx context.Context) (*staterpc.TaskGrants, erro
 
 // callers resolves the service and principal of each call against this
 // store's principals.
-func (b *server) callers() staterpc.Callers {
+func (b *server) callers() rpcidentity.Callers {
 	ps, _ := b.st.(access.PrincipalSource)
-	return staterpc.Callers{Principals: ps}
+	return rpcidentity.Callers{Principals: ps}
 }
 
 // accessDeps wires the policy chain and its denial records from the same
@@ -511,7 +512,7 @@ func (b *server) startOptionalSurfaces(ctx context.Context, options Options) err
 // as a remote one (staterpc.Dial installs the client keepalive on every target,
 // loopback included), and grpc's default policy would answer their idle
 // watches with GOAWAY too_many_pings. See staterpc.ServerKeepaliveOption.
-func stateStoreServerOpts(listen, token string, grants *staterpc.TaskGrants, callers staterpc.Callers) (opts []grpc.ServerOption, loopback bool, err error) {
+func stateStoreServerOpts(listen, token string, grants *staterpc.TaskGrants, callers rpcidentity.Callers) (opts []grpc.ServerOption, loopback bool, err error) {
 	loopback, err = staterpc.TargetIsLoopback(listen)
 	if err != nil {
 		return nil, false, err

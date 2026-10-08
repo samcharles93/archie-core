@@ -219,7 +219,7 @@ func resourceProto(resource storecontract.Resource) *pb.Resource {
 }
 
 // requestOrg is the org a request acts in, derived from the caller's
-// principal when the call carried one (staterpc.Callers).
+// principal when the call carried one (rpcidentity.Callers).
 func requestOrg(ctx context.Context) string {
 	return string(org.OrgFromContext(ctx))
 }

@@ -9,10 +9,12 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
+	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
+	"github.com/samcharles93/archie-core/internal/infrastructure/rpcidentity"
 	"github.com/samcharles93/archie-core/internal/plugin"
 )
 
@@ -98,14 +100,15 @@ const inboundMessageHeadroomBytes = 1 << 20
 // request carries a channel attachment's bytes: the channel frontend
 // downloads the file, and this process -- which runs the turn -- holds no
 // platform credential to fetch it again.
-func gatewayServerOpts(listen, token string) (opts []grpc.ServerOption, loopback bool, err error) {
+func gatewayServerOpts(listen, token string, principals access.PrincipalSource) (opts []grpc.ServerOption, loopback bool, err error) {
+	callers := rpcidentity.Callers{Principals: principals}
 	recv := grpc.MaxRecvMsgSize(messaging.MaxInboundAttachmentBytes + inboundMessageHeadroomBytes)
 	loopback, err = gatewayrpc.TargetIsLoopback(listen)
 	if err != nil {
 		return nil, false, err
 	}
 	if loopback {
-		return []grpc.ServerOption{recv}, true, nil
+		return []grpc.ServerOption{recv, grpc.ChainUnaryInterceptor(callers.Unary()), grpc.ChainStreamInterceptor(callers.Stream())}, true, nil
 	}
 	if token == "" {
 		return nil, false, fmt.Errorf(
@@ -115,8 +118,8 @@ func gatewayServerOpts(listen, token string) (opts []grpc.ServerOption, loopback
 	}
 	return []grpc.ServerOption{
 		recv,
-		grpc.ChainUnaryInterceptor(gatewayrpc.UnaryServerInterceptor(token)),
-		grpc.ChainStreamInterceptor(gatewayrpc.StreamServerInterceptor(token)),
+		grpc.ChainUnaryInterceptor(gatewayrpc.UnaryServerInterceptor(token), callers.Unary()),
+		grpc.ChainStreamInterceptor(gatewayrpc.StreamServerInterceptor(token), callers.Stream()),
 	}, false, nil
 }
 

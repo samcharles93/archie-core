@@ -132,7 +132,7 @@ func Run(ctx context.Context, options Options) error {
 		token = b.cfg.Services.ResolvedToken(config.ServiceNameGateway, b.secrets.Getenv)
 	}
 	//nolint:contextcheck // grpc.StreamServerInterceptor has no context.Context parameter; gatewayrpc.StreamServerInterceptor derives its context from stream.Context() instead
-	opts, loopback, err := gatewayServerOpts(listen, token)
+	opts, loopback, err := gatewayServerOpts(listen, token, b.stateStore)
 	if err != nil {
 		return err
 	}

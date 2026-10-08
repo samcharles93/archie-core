@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/ratelimit"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
@@ -344,7 +345,11 @@ func (r *Router) dispatchLocal(ctx context.Context, msg messaging.Message, platf
 		reply, err := r.handleCancel(ctx, rest)
 		return reply, true, err
 	case "/settings":
-		return r.Settings.Execute(ctx, "", rest), true, nil
+		actor := ""
+		if principal, ok := access.PrincipalFromContext(ctx); ok {
+			actor = string(principal.IdentityID)
+		}
+		return r.Settings.Execute(ctx, actor, rest), true, nil
 	case "/start":
 		reply, err := r.handleStart()
 		return reply, true, err

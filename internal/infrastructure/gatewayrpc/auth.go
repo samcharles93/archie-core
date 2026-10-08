@@ -10,6 +10,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+
+	"github.com/samcharles93/archie-core/internal/infrastructure/rpcidentity"
 )
 
 // tokenMetadataKey is the gRPC metadata key the Gateway Bearer [REDACTED]
@@ -79,7 +81,7 @@ func StreamServerInterceptor(token string) grpc.StreamServerInterceptor {
 // metadata under tokenMetadataKey.
 func UnaryClientTokenInterceptor(token string) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		return invoker(metadata.AppendToOutgoingContext(ctx, tokenMetadataKey, token), method, req, reply, cc, opts...)
+		return invoker(metadata.AppendToOutgoingContext(rpcidentity.Outgoing(ctx, "gateway-client"), tokenMetadataKey, token), method, req, reply, cc, opts...)
 	}
 }
 
@@ -88,6 +90,6 @@ func UnaryClientTokenInterceptor(token string) grpc.UnaryClientInterceptor {
 // see.
 func StreamClientTokenInterceptor(token string) grpc.StreamClientInterceptor {
 	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
-		return streamer(metadata.AppendToOutgoingContext(ctx, tokenMetadataKey, token), desc, cc, method, opts...)
+		return streamer(metadata.AppendToOutgoingContext(rpcidentity.Outgoing(ctx, "gateway-client"), tokenMetadataKey, token), desc, cc, method, opts...)
 	}
 }
