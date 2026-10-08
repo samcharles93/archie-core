@@ -313,17 +313,6 @@ type Config struct {
 	// SkillsDir is an optional directory of */SKILL.md skills. Its workflows
 	// override built-ins, and Kits mount it read-only.
 	SkillsDir string `toml:"skills_dir" yaml:"skills_dir"`
-	// WorkflowRoutingFile is an optional path to a YAML file rebinding which
-	// registered workflow an intake Kind (bug/feature) prefers.
-	WorkflowRoutingFile string `toml:"workflow_routing_file" yaml:"workflow_routing_file"`
-	// WorkflowLabelsFile is an optional path to a YAML file binding forge issue
-	// labels outside the closed bug/feature kind set to registered
-	// workflows (e.g. A label already owned by the kind set, or a duplicate
-	// binding, is a load failure per the design doc's collision rule.
-	WorkflowLabelsFile string `toml:"workflow_labels_file" yaml:"workflow_labels_file"`
-	// PlaybookDirs are optional directories of kind/label-to-workflow binding
-	// files. A key bound in more than one file is a load error.
-	PlaybookDirs []string `toml:"playbook_dirs" yaml:"playbook_dirs"`
 	// MaxRetries caps how many times a parked task is retried before
 	// being permanently parked (status "dead"). Defaults to 3.
 	MaxRetries int `toml:"max_retries" yaml:"max_retries"`

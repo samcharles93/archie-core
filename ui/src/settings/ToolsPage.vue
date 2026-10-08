@@ -27,7 +27,7 @@ const KIND = "tool-settings";
 
 interface ToolSettings {
   mcp_servers: McpServer[];
-  minimax: { enabled: boolean; api_key_ref: { engine: string; key: string }; credential_configured?: boolean };
+  minimax: { base_url?:string; enabled: boolean; api_key_ref: { engine: string; key: string }; credential_configured?: boolean };
   policy: { max_result_chars: number; spill_dir: string };
   web_fetch: { enabled: boolean | null; timeout: string; max_bytes: number; allow_private_networks: boolean };
 }
@@ -132,6 +132,9 @@ const eyebrow = "mb-1 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
         />
       </SettingRow>
 
+      <SettingRow label="MiniMax URL" for="minimax-url">
+        <div class="flex flex-wrap items-center gap-3"><Input id="minimax-url" v-model="tools.minimax.base_url" class="max-w-md font-mono" /><DraftHint :kind="KIND" path="minimax.base_url" /></div>
+      </SettingRow>
       <h2 :class="[eyebrow, 'mt-10']">Web fetch</h2>
       <SettingRow label="Enabled">
         <div class="flex flex-wrap items-center gap-3">

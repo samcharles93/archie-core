@@ -63,15 +63,17 @@ func (b *boot) reloadConfig(ctx context.Context, doc *configuration.Document) er
 	if err != nil {
 		return fmt.Errorf("runtime settings unavailable: %w", err)
 	}
-	doc.Config = cfg
 	old := b.cfgHolder.Get()
+	restartFields := changedNonReloadableFields(old, cfg)
+	cfg = preserveForgeIdentity(old, cfg)
+	doc.Config = cfg
 	b.currentProvenance.Store(&doc.Provenance)
 	b.publishConfig(ctx, cfg)
 	// The container pool reads the published config on every acquire, but the
 	// dispatcher holds its limit; a reloaded containers.max_concurrency must
 	// reach it the same way a control-plane update does.
 	b.resizeTaskDispatcher(cfg.Containers.MaxConcurrency)
-	if fields := changedNonReloadableFields(old, cfg); len(fields) > 0 {
+	if fields := restartFields; len(fields) > 0 {
 		b.log.Warn("config reloaded; some changes require a restart",
 			"fields", fields, "paths", doc.Provenance.Paths())
 	} else {
@@ -260,6 +262,7 @@ func (b *boot) startLiveSettings(ctx context.Context) error {
 // restart-required. Each kind is watched in its own goroutine, exactly the
 // shape the workflow-execution-settings watch established.
 var runtimeResourceKinds = []string{
+	controlplane.TaskPolicyKind,
 	controlplane.ProviderSettingsKind,
 	controlplane.ModelRoleAssignmentsKind,
 	controlplane.RepositoryPoliciesKind,

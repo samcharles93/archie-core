@@ -26,7 +26,16 @@ import VersionsCard from "./VersionsCard.vue";
         <TabsTrigger value="services">Services</TabsTrigger>
         <TabsTrigger value="health">Health</TabsTrigger>
         <TabsTrigger value="versions">Versions</TabsTrigger>
+ <TabsTrigger value="startup">Startup settings</TabsTrigger>
       </TabsList>
+      <TabsContent value="startup">
+        <p class="mb-4 text-sm text-fg-subtle">These settings configure process startup. They are read-only here and require a restart.</p>
+        <dl class="divide-y divide-border rounded-lg border border-border bg-card">
+          <div v-for="(reason,key) in config?.bootstrap" :key="key" class="grid gap-2 px-4 py-3 md:grid-cols-[18rem_1fr]">
+            <dt class="font-mono text-xs">{{ key }}</dt><dd class="text-sm text-fg-subtle">{{ reason }}</dd>
+          </div>
+        </dl>
+      </TabsContent>
       <TabsContent value="services"><ServicesCard /></TabsContent>
       <TabsContent value="health"><HealthStatusCard /></TabsContent>
       <TabsContent value="versions" class="space-y-4">

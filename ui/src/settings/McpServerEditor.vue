@@ -106,7 +106,7 @@ const args = computed({
         Parallel tool calls
       </label>
       <span v-if="server.headers_configured" class="text-xs text-fg-subtle">
-        Headers set in config.toml
+        Headers supplied at startup
       </span>
     </div>
   </div>

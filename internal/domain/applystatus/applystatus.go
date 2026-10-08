@@ -30,7 +30,7 @@ func Processes() []string { return []string{Daemon, Gateway, Messaging} }
 // Applicability names the consumers of each resource, including boot-only settings.
 func Applicability() map[string][]string {
 	kinds := map[string][]string{}
-	for _, kind := range []string{"provider-settings", "model-role-assignments", "repository-policies", "scheduling-policy", "tool-settings", "plugin-settings", "review-settings", "channel-settings", "container-runtime-policies", "credential-bindings", "identity-grants", "agent-profiles", "workflow-execution-settings", "extension-settings", "workflow-definitions", "workflow-enablement", "schedules", "eda-playbooks"} {
+	for _, kind := range []string{"task-policy", "provider-settings", "model-role-assignments", "repository-policies", "scheduling-policy", "tool-settings", "plugin-settings", "review-settings", "channel-settings", "container-runtime-policies", "credential-bindings", "identity-grants", "agent-profiles", "workflow-execution-settings", "extension-settings", "workflow-definitions", "workflow-enablement", "schedules", "eda-playbooks"} {
 		kinds[kind] = []string{Daemon}
 	}
 	for _, kind := range []string{"provider-settings", "model-role-assignments", "tool-settings", "channel-settings", "plugin-settings", "extension-settings", "personas", "soul", "skills", "curators"} {

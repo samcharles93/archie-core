@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/channels/status"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 )
 
 // ChannelView is one conversational front-end as shown on the dashboard's
@@ -193,10 +195,11 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, struct {
-		Catalog []CatalogProviderView `json:"catalog"`
-		Review  ReviewView            `json:"review"`
-		Reload  *config.ReloadStatus  `json:"reload,omitempty"`
-	}{Catalog: view.Catalog, Review: view.Review, Reload: view.Reload})
+		Catalog   []CatalogProviderView `json:"catalog"`
+		Review    ReviewView            `json:"review"`
+		Reload    *config.ReloadStatus  `json:"reload,omitempty"`
+		Bootstrap map[string]string     `json:"bootstrap"`
+	}{Catalog: view.Catalog, Review: view.Review, Reload: view.Reload, Bootstrap: maps.Clone(configuration.DeniedKeys)})
 }
 
 // ConfigViewInput is everything BuildConfigView needs. The configuration

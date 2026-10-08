@@ -25,4 +25,5 @@ export interface ConfigView {
   catalog?: CatalogProvider[];
   review?: ReviewView;
   reload?: ReloadStatus;
+ bootstrap?:Record<string,string>;
 }

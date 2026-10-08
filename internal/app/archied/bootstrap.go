@@ -183,14 +183,6 @@ type boot struct {
 	// schedulingEngine is the cron/scheduling ticker engine (setupScheduling).
 	schedulingEngine *scheduling.Engine
 
-	// kindWorkflows/labelWorkflows are the resolved kind/label -> workflow
-	// routing bindings loaded by loadWorkflowRouting. They are handed to the
-	// daemon so runViaAgent can carry them in taskrun.Request: workflow.Route
-	// runs in the archie-agent process, which never sees the daemon's
-	// package-level workflow state.
-	kindWorkflows  workflow.KindWorkflows
-	labelWorkflows workflow.LabelWorkflows
-
 	// agentStatus records the most recent version/install-type an
 	// archie-agent worker reported about itself. Allocated up front, before
 	// any gateway goroutine (Telegram, webui) that might read it via
@@ -485,52 +477,6 @@ func (b *boot) setupGatewayClient() error {
 	return nil
 }
 
-func (b *boot) loadWorkflows() error {
-	cfg, log := b.cfg, b.log
-	if err := b.loadWorkflowRouting(cfg, log); err != nil {
-		return err
-	}
-
-	log.Info("workflow step registry built", "shipped_workflows", len(workflow.ShippedDefinitions().Definitions))
-	return nil
-}
-
-func (b *boot) loadWorkflowRouting(cfg config.Config, log *slog.Logger) error {
-	kindWorkflows, err := workflow.LoadKindWorkflowsYAML(cfg.WorkflowRoutingFile)
-	if err != nil {
-		log.Error("workflow routing file load failed", "path", cfg.WorkflowRoutingFile, "err", err)
-		return err
-	}
-
-	labelWorkflows, err := workflow.LoadLabelWorkflowsYAML(cfg.WorkflowLabelsFile)
-	if err != nil {
-		log.Error("workflow labels file load failed", "path", cfg.WorkflowLabelsFile, "err", err)
-		return err
-	}
-
-	dirKindWorkflows, dirLabelWorkflows, err := workflow.LoadPlaybookDirs(cfg.PlaybookDirs)
-	if err != nil {
-		log.Error("playbook dirs load failed", "dirs", cfg.PlaybookDirs, "err", err)
-		return err
-	}
-	kindWorkflows, err = workflow.MergeKindWorkflows(kindWorkflows, dirKindWorkflows)
-	if err != nil {
-		log.Error("workflow binding collision between routing file and playbook dir", "err", err)
-		return err
-	}
-	labelWorkflows, err = workflow.MergeLabelWorkflows(labelWorkflows, dirLabelWorkflows)
-	if err != nil {
-		log.Error("workflow binding collision between labels file and playbook dir", "err", err)
-		return err
-	}
-
-	workflow.SetKindWorkflows(kindWorkflows)
-	workflow.SetLabelWorkflows(labelWorkflows)
-	b.kindWorkflows = kindWorkflows
-	b.labelWorkflows = labelWorkflows
-	return nil
-}
-
 func (b *boot) buildWorktreeManager() {
 	cfg := b.cfg
 	b.trees = &worktree.Manager{
@@ -632,8 +578,6 @@ func (b *boot) buildDaemon() {
 		RootIdentityID:      identity.StableID(servicekit.IdentityNames(b.cfg)[0]),
 		TaskLogs:            b.taskLogs,
 		AgentStatus:         b.agentStatus,
-		KindWorkflows:       b.kindWorkflows,
-		LabelWorkflows:      b.labelWorkflows,
 		WorkflowDefinitions: b.workflowDefinitions,
 		WorkflowEnablement:  b.controlPlane,
 		Playbooks:           b.livePlaybooks(),

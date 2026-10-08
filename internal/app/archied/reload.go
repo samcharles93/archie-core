@@ -117,21 +117,8 @@ var reloadableFields = map[string]bool{
 	"ModelLimits":  true,
 	"Notify":       true,
 	"Review":       true,
-	// BotUser/BotEmail used to be poll-path only; ForTask now carries both
-	// into the task snapshot as well, because the sandboxed worker builds
-	// its own worktree.Manager and signs its own commits (agentworker
-	// task_execution.go, config.go ForTask). The commit identity is
-	// therefore per-dispatch and does reload. The startup-built daemon
-	// trees (bootstrap.go:654) still capture both, but only to record
-	// user.name/user.email in the clone's own .git/config
-	// (worktree.go setIdentity) -- cosmetic, not the signature go-git
-	// commits with -- so a reload applies where it counts and this stays
-	// reloadable rather than requires-restart.
-	"BotEmail": true,
-	// cfg.Label additionally feeds IssuesWithLabel per poll cycle
-	// (daemon.go:359,390) and cfg.BotUser feeds AssignedIssues (:364,377).
-	"Label":   true,
-	"BotUser": true,
+	// Poll loops read the dispatch label each cycle.
+	"Label": true,
 	// MaxRetries has two consumers, both re-reading it: the webui maxRetriesFor
 	// handler (api_tasks.go:380,383) reads it per request, and ForTask carries
 	// it into every dispatched TaskConfig, where the container's remediation
@@ -148,7 +135,6 @@ var reloadableSubFields = map[string]map[string]bool{
 		"VolumeTTL": true, "Profiles": true, "Credentials": true,
 		"Image": true, "MaxConcurrency": true, "MaxUptime": true, "PullPolicy": true, "Network": true,
 	},
-	"Forge": {"Host": true},
 	// Policy is carried into TaskConfig by ForTask (config.go); MCPServers,
 	// WebFetch and Minimax are not and stay requires-restart.
 	"Tools": {"Policy": true},
@@ -187,4 +173,10 @@ func changedNonReloadableFields(old, next config.Config) []string {
 		}
 	}
 	return changed
+}
+
+// Account credentials, identity namespaces and forge listeners survive a reload.
+func preserveForgeIdentity(old, next config.Config) config.Config {
+	next.BotUser, next.BotEmail, next.Forge = old.BotUser, old.BotEmail, old.Forge
+	return next
 }

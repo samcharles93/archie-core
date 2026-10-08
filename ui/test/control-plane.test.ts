@@ -36,6 +36,7 @@ test("control-plane commands keep the edited version and typed values", () => {
 test("control-plane resources belong to one settings narrative", () => {
   const catalog = [
     "workflow-execution-settings",
+    "task-policy",
     "provider-settings",
     "model-role-assignments",
     "repository-policies",
@@ -56,7 +57,7 @@ test("control-plane resources belong to one settings narrative", () => {
 
   assert.deepEqual(
     resourcesForPage(catalog, "tasks").map(({ kind }) => kind),
-    ["workflow-execution-settings"],
+    ["workflow-execution-settings", "task-policy"],
   );
   assert.deepEqual(
     resourcesForPage(catalog, "models").map(({ kind }) => kind),

@@ -199,7 +199,7 @@ const PAGE_RESOURCES: Record<ControlPlanePage, string[]> = {
   profiles: ["agent-profiles"],
   credentials: ["credential-bindings"],
   playbooks: ["eda-playbooks"],
-  tasks: ["workflow-execution-settings"],
+  tasks: ["workflow-execution-settings","task-policy"],
   models: ["provider-settings", "model-role-assignments"],
   repositories: ["repository-policies"],
   channels: ["channel-settings"],

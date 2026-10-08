@@ -211,6 +211,13 @@ const eyebrow = "mb-2 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
                 <div class="flex flex-wrap items-center gap-3">
                   <Input :id="`prov-${name}-url`" v-model="provider.base_url" class="max-w-md font-mono" />
                   <DraftHint kind="provider-settings" :path="`${name}.base_url`" />
+
+                </div>
+              </SettingRow>
+              <SettingRow label="API key environment variable" :for="`prov-${name}-env`" hint="Used when no secret reference is set.">
+                <div class="flex flex-wrap items-center gap-3">
+                  <Input :id="`prov-${name}-env`" v-model="provider.api_key_env" aria-label="API key environment variable" placeholder="API key environment variable" class="max-w-md font-mono" />
+                  <DraftHint kind="provider-settings" :path="`${name}.api_key_env`" />
                 </div>
               </SettingRow>
               <SettingRow label="API key">

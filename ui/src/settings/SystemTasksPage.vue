@@ -3,6 +3,7 @@ import ApplyStatusRows from "./ApplyStatusRows.vue";
 import { computed, onMounted } from "vue";
 import { storeToRefs } from "pinia";
 
+import {Input} from "@/components/ui/input";
 import PageHeader from "@/base/PageHeader.vue";
 import { DurationInput, formatGoDuration, parseGoDuration } from "@/components/ui/duration-input";
 import {
@@ -17,6 +18,7 @@ import { resourcesForPage, useControlPlaneStore } from "@/stores/control-plane";
 import DraftHint from "./DraftHint.vue";
 import HistoryLink from "./HistoryLink.vue";
 
+const POLICY="task-policy";
 const KIND = "workflow-execution-settings";
 
 interface ExecutionSettings {
@@ -31,6 +33,7 @@ const { catalog, catalogError } = storeToRefs(store);
 onMounted(store.load);
 
 const resources = computed(() => resourcesForPage(catalog.value, "tasks"));
+const policy=computed(()=>store.drafts[POLICY]?.value as {diff_cap_lines:number;notify_webhook:string}|undefined);
 const limits = computed(() => store.drafts[KIND]?.value as ExecutionSettings | undefined);
 const error = computed(() => store.stateFor(KIND).error);
 
@@ -55,10 +58,18 @@ const taskRuntime = seconds("max_task_runtime_seconds");
     </PageHeader>
     <ApplyStatusRows v-for="resource in resources" :key="resource.kind" :kind="resource.kind" class="mb-4" />
 
-    <p v-if="catalogError || error" class="mb-4 text-sm text-danger" role="alert">
-      {{ catalogError || error }}
+    <p v-if="catalogError || error || store.stateFor(POLICY).error" class="mb-4 text-sm text-danger" role="alert">
+      {{ catalogError || error || store.stateFor(POLICY).error }}
     </p>
 
+    <template v-if="policy">
+      <SettingRow label="Maximum changed lines" hint="Applied to new tasks. 0 disables the limit." for="task-diff-cap">
+        <div class="flex flex-wrap items-center gap-3"><Input id="task-diff-cap" v-model.number="policy.diff_cap_lines" type="number" min="0" class="max-w-40" /><DraftHint :kind="POLICY" path="diff_cap_lines" /></div>
+      </SettingRow>
+      <SettingRow label="Notification webhook" hint="Applied to new tasks. Empty disables notifications." for="task-notify">
+        <div class="flex flex-wrap items-center gap-3"><Input id="task-notify" v-model="policy.notify_webhook" type="url" class="max-w-md" /><DraftHint :kind="POLICY" path="notify_webhook" /></div>
+      </SettingRow>
+    </template>
     <template v-if="limits">
       <SettingRow label="Task time limit" for="te-task" hint="Parked after this. 0 disables.">
         <div class="flex flex-wrap items-center gap-3">

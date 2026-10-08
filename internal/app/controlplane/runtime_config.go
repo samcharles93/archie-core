@@ -140,6 +140,13 @@ func runtimeConfigFrom(ctx context.Context, reader controlplanerpc.ResourceReade
 }
 
 func runtimeToolConfigFrom(ctx context.Context, reader controlplanerpc.ResourceReader, versions map[string]int64, out config.Config) (config.Config, map[string]int64, error) {
+	policy := taskPolicy{DiffCapLines: out.DiffCap(), NotifyWebhook: out.Notify.Webhook}
+	if err := layerResourceJSON(ctx, reader, versions, TaskPolicyKind, &policy); err != nil {
+		return config.Config{}, nil, err
+	}
+	out.DiffCapLines = new(policy.DiffCapLines)
+	out.Notify.Webhook = policy.NotifyWebhook
+
 	if err := layerResource(ctx, reader, versions, ToolSettingsKind, func(value []byte) error {
 		var settings toolSettings
 		if err := json.Unmarshal(value, &settings); err != nil {

@@ -198,9 +198,6 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 	if err := b.buildTreesAndIdentities(ctx); err != nil {
 		return 1
 	}
-	if err := b.loadWorkflows(); err != nil {
-		return 1
-	}
 
 	if err := b.registerNATSRPC(); err != nil {
 		return 1
