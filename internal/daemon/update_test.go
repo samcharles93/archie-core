@@ -14,7 +14,7 @@ func TestDispatcherWaitIncludesQueuedWork(t *testing.T) {
 	release := make(chan struct{})
 	process := func() { started <- struct{}{}; <-release }
 	for range 2 {
-		dispatcher.Submit(t.Context(), &workflow.Task{Owner: "o", Repo: "r"}, func(_ context.Context, _ *workflow.Task) { process() })
+		dispatcher.Submit(t.Context(), &workflow.Task{Owner: "o", Repo: "r"}, func(_ context.Context, _ *workflow.Task, _ *taskHold) { process() })
 	}
 	<-started
 	dispatcher.mu.Lock()

@@ -170,7 +170,7 @@ type Daemon struct {
 	// dispatcher bounds task execution globally across poll passes. Built once,
 	// on first use, so ResizeTaskDispatcher can apply a live
 	// containers.max_concurrency change without a restart; drainNATS submits
-	// each pass through it and waits for that pass.
+	// each pass through it and leaves its tasks running.
 	dispatcherOnce sync.Once
 	dispatcher     *taskDispatcher
 	// Storage is the pluggable storage backend for container mounts.
@@ -345,6 +345,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if len(d.Identities) > 0 {
 		return d.runIdentities(ctx)
 	}
+	// A pass no longer waits for the tasks it submitted, so the run does, once
+	// the ctx is cancelled.
+	defer d.WaitForTasks()
+	d.watchCallWaits(ctx)
 	interval := d.Cfg.Get().PollInterval.Std()
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -370,6 +374,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 func (d *Daemon) runIdentities(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	d.watchCallWaits(ctx)
 
 	var wg sync.WaitGroup
 
@@ -428,6 +433,7 @@ func (d *Daemon) runIdentities(ctx context.Context) error {
 	})
 
 	wg.Wait()
+	d.WaitForTasks()
 	return ctx.Err()
 }
 
@@ -923,7 +929,10 @@ func (d *Daemon) botUserForTask(task *workflowtask.Task) string {
 
 // drainNATS processes tasks from NATS, falling back to the task store's ClaimNext for
 // requeued tasks (waiting_human approval, retry-parked) that didn't come
-// through a NATS publish.
+// through a NATS publish. It returns once the stream and the claim fallback
+// are both empty: in-flight tasks keep running, so a task waiting on a callee
+// does not hold up the pass that would claim it. Shutdown waits for them
+// through WaitForTasks.
 func (d *Daemon) drainNATS(ctx context.Context) {
 	dispatcher := d.taskDispatcher()
 	for ctx.Err() == nil {
@@ -951,18 +960,23 @@ func (d *Daemon) drainNATS(ctx context.Context) {
 		}
 		dispatcher.Submit(ctx, task, d.process)
 	}
-	dispatcher.Wait()
 }
 
 // taskDispatcher returns the daemon's long-lived global dispatcher, building
 // it from the running config on first use. It outlives a single drain pass so
-// ResizeTaskDispatcher can resize the running dispatcher; drainNATS still
-// waits for each pass's work before returning.
+// ResizeTaskDispatcher can resize the running dispatcher.
 func (d *Daemon) taskDispatcher() *taskDispatcher {
 	d.dispatcherOnce.Do(func() {
 		d.dispatcher = newTaskDispatcher(d.Cfg.Get().Containers.MaxConcurrency, d.allowConcurrentForTask)
 	})
 	return d.dispatcher
+}
+
+// WaitForTasks blocks until every submitted task's process has returned. A
+// drain pass no longer waits for its own tasks, so shutdown is where in-flight
+// work is waited for.
+func (d *Daemon) WaitForTasks() {
+	d.taskDispatcher().Wait()
 }
 
 // ResizeTaskDispatcher applies a new containers.max_concurrency to the
@@ -984,8 +998,8 @@ func (d *Daemon) submitNATSTask(ctx context.Context, dispatcher *taskDispatcher,
 		return
 	}
 	task := &workflow.Task{Owner: envelope.Owner, Repo: envelope.Repo, Identity: envelope.Identity}
-	dispatcher.Submit(ctx, task, func(ctx context.Context, _ *workflow.Task) {
-		d.processNATSTask(ctx, msg)
+	dispatcher.Submit(ctx, task, func(ctx context.Context, _ *workflow.Task, hold *taskHold) {
+		d.processNATSTask(ctx, msg, hold)
 	})
 }
 
@@ -1000,6 +1014,47 @@ type taskDispatcher struct {
 	slotsFree *sync.Cond
 	repoTail  map[string]chan struct{}
 	pending   int
+	// holds maps a task id to the capacity its run holds, so a run waiting on
+	// a callee can give that capacity back and take it again by task id.
+	holds map[int64]*taskHold
+}
+
+// taskHold is one submitted task's claim on execution capacity: its slot under
+// the global limit, and its place at the tail of its repo's chain, which the
+// next task for that repo is blocked on. A run that waits on a callee gives
+// both back so the callee can run, and takes them again when the wait ends.
+type taskHold struct {
+	dispatcher *taskDispatcher
+	repo       string
+	// chain is true when the repo runs one task at a time, so the run holds a
+	// place in that repo's chain.
+	chain bool
+	// baton is the run's place in its repo's chain, closed when it gives that
+	// place up; nil while it holds none.
+	baton chan struct{}
+	// slot is true while the run counts against the global limit.
+	slot bool
+	// waits counts the callees the run is waiting on: the first Suspend gives
+	// capacity back and the last Resume takes it again.
+	waits int
+	// finished is true once the run's process returned.
+	finished bool
+	// id is the task this hold belongs to, named by the run once it knows the
+	// task's id.
+	id int64
+}
+
+// name records which task's capacity this hold is, so a wait on a callee can
+// give it back by task id. Zero names nothing: a task arriving on the NATS
+// stream has no id until the store claims its row inside the run.
+func (h *taskHold) name(id int64) {
+	if id == 0 {
+		return
+	}
+	h.dispatcher.mu.Lock()
+	h.id = id
+	h.dispatcher.holds[id] = h
+	h.dispatcher.mu.Unlock()
 }
 
 // SetMaxConcurrency accepts a new global limit without a restart. Running
@@ -1020,42 +1075,176 @@ func newTaskDispatcher(maxConcurrency int, allowConcurrent func(task *workflow.T
 		limit:           maxConcurrency,
 		allowConcurrent: allowConcurrent,
 		repoTail:        make(map[string]chan struct{}),
+		holds:           make(map[int64]*taskHold),
 	}
 	d.slotsFree = sync.NewCond(&d.mu)
 	return d
 }
 
-// acquireSlot blocks until the global limit has room and returns the release
-// function. limit <= 0 means unlimited. The limit is re-read on every wake, so
+// joinRepoLocked appends baton to the tail of repo's chain and returns the
+// baton ahead of it, which the joining task is blocked on. Callers hold d.mu.
+func (d *taskDispatcher) joinRepoLocked(repo string, baton chan struct{}) chan struct{} {
+	previous := d.repoTail[repo]
+	d.repoTail[repo] = baton
+	return previous
+}
+
+// takeSlotLocked blocks until the global limit has room, then counts the run
+// in. limit <= 0 means unlimited. The limit is re-read on every wake, so
 // SetMaxConcurrency reaches waiting tasks without recreating the dispatcher.
-func (d *taskDispatcher) acquireSlot() func() {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+// Callers hold d.mu.
+func (d *taskDispatcher) takeSlotLocked() {
 	for d.limit > 0 && d.active >= d.limit {
 		d.slotsFree.Wait()
 	}
 	d.active++
-	return func() {
-		d.mu.Lock()
+}
+
+// giveBackLocked gives back everything the run holds: its slot under the
+// global limit, and its place in its repo's chain, which releases the task
+// queued behind it. Callers hold d.mu.
+func (d *taskDispatcher) giveBackLocked(hold *taskHold) {
+	if hold.slot {
+		d.active--
+		hold.slot = false
+	}
+	if hold.baton == nil {
+		return
+	}
+	close(hold.baton)
+	if d.repoTail[hold.repo] == hold.baton {
+		delete(d.repoTail, hold.repo)
+	}
+	hold.baton = nil
+}
+
+// finishRun retires a returned run: it holds no capacity any more, and no
+// Resume may take any for it. Whatever an in-flight resume takes later is
+// given back by reacquire, which sees finished.
+func (d *taskDispatcher) finishRun(hold *taskHold) {
+	d.mu.Lock()
+	hold.finished = true
+	if hold.id != 0 && d.holds[hold.id] == hold {
+		delete(d.holds, hold.id)
+	}
+	d.giveBackLocked(hold)
+	d.pending--
+	d.mu.Unlock()
+	d.slotsFree.Broadcast()
+}
+
+// Suspend gives a run's capacity back while it waits on a callee, so the
+// callee can start. Calls are refcounted per task: a run waiting on callees
+// from parallel branches releases once. An unknown task, or one whose run has
+// already returned, is a no-op.
+func (d *taskDispatcher) Suspend(id int64) {
+	d.mu.Lock()
+	hold := d.holds[id]
+	if hold == nil || hold.finished {
+		d.mu.Unlock()
+		return
+	}
+	hold.waits++
+	if hold.waits == 1 {
+		d.giveBackLocked(hold)
+	}
+	d.mu.Unlock()
+	d.slotsFree.Broadcast()
+}
+
+// Resume takes a run's capacity back when one of its waits ends. Only the last
+// wait does: a run waiting on callees from parallel branches keeps nothing
+// until all of them are done. An unknown task, one whose run has returned, and
+// one that never suspended are all no-ops.
+func (d *taskDispatcher) Resume(id int64) {
+	d.mu.Lock()
+	hold := d.holds[id]
+	if hold == nil || hold.finished || hold.waits == 0 {
+		d.mu.Unlock()
+		return
+	}
+	hold.waits--
+	if hold.waits > 0 {
+		d.mu.Unlock()
+		return
+	}
+	d.mu.Unlock()
+	// The two waits below can block, and neither may hold up the bus
+	// subscriber calling this or the resumed run, which is already executing
+	// inside its container: the execution cap can be exceeded by at most the
+	// number of simultaneous resumes, and re-converges as tasks finish.
+	go d.reacquire(hold)
+}
+
+// reacquire returns a resumed run's capacity: its place in its repo's chain
+// and a slot under the global limit. The run keeps executing meanwhile -- a
+// wait on a callee is not a pause. A hold records one slot and one place, so a
+// re-acquire queued while another is still waiting gives back whichever of the
+// two it finds already recorded instead of taking a second.
+func (d *taskDispatcher) reacquire(hold *taskHold) {
+	d.mu.Lock()
+	if hold.finished || hold.waits > 0 {
+		// The run returned, or started waiting again, after the Resume that
+		// queued this: it needs no capacity.
+		d.mu.Unlock()
+		return
+	}
+	var previous chan struct{}
+	// A place another re-acquire already queued is the run's one place; joining
+	// behind it would queue a second, which the task behind it would wait on
+	// forever.
+	if hold.chain && hold.baton == nil {
+		hold.baton = make(chan struct{})
+		previous = d.joinRepoLocked(hold.repo, hold.baton)
+	}
+	d.mu.Unlock()
+
+	if previous != nil {
+		<-previous
+	}
+
+	d.mu.Lock()
+	d.takeSlotLocked()
+	if hold.slot {
+		// Another re-acquire took the run's one slot while this waited: give
+		// back the slot this one just took. The place is the other's, so it is
+		// left alone.
 		d.active--
 		d.mu.Unlock()
 		d.slotsFree.Broadcast()
+		return
 	}
+	hold.slot = true
+	if hold.finished || hold.waits > 0 {
+		// The run ended, or started waiting again, while this was queued for
+		// capacity: give back what it took, so no slot or place in the repo
+		// chain leaks.
+		d.giveBackLocked(hold)
+		d.mu.Unlock()
+		d.slotsFree.Broadcast()
+		return
+	}
+	d.mu.Unlock()
 }
 
+// Submit queues a task's process behind the global limit and, unless the repo
+// allows concurrency, behind the task already holding that repo. process is
+// handed the run's capacity so it can name it once it knows the task's id and
+// give it back while it waits on a callee.
 func (d *taskDispatcher) Submit(
 	ctx context.Context,
 	task *workflow.Task,
-	process func(context.Context, *workflow.Task),
+	process func(context.Context, *workflow.Task, *taskHold),
 ) {
 	repo := task.Owner + "/" + task.Repo
+	hold := &taskHold{dispatcher: d, repo: repo}
 
-	var previous, done chan struct{}
+	var previous chan struct{}
 	if !d.allowConcurrent(task) {
-		done = make(chan struct{})
+		hold.chain = true
+		hold.baton = make(chan struct{})
 		d.mu.Lock()
-		previous = d.repoTail[repo]
-		d.repoTail[repo] = done
+		previous = d.joinRepoLocked(repo, hold.baton)
 		d.mu.Unlock()
 	}
 
@@ -1063,28 +1252,15 @@ func (d *taskDispatcher) Submit(
 	d.pending++
 	d.mu.Unlock()
 	go func() {
-		defer func() {
-			d.mu.Lock()
-			d.pending--
-			d.mu.Unlock()
-			d.slotsFree.Broadcast()
-		}()
+		defer d.finishRun(hold)
 		if previous != nil {
 			<-previous
 		}
-		releaseSlot := d.acquireSlot()
-		defer releaseSlot()
-		if done != nil {
-			defer func() {
-				close(done)
-				d.mu.Lock()
-				if d.repoTail[repo] == done {
-					delete(d.repoTail, repo)
-				}
-				d.mu.Unlock()
-			}()
-		}
-		process(ctx, task)
+		d.mu.Lock()
+		d.takeSlotLocked()
+		hold.slot = true
+		d.mu.Unlock()
+		process(ctx, task, hold)
 	}()
 }
 
@@ -1298,7 +1474,7 @@ func (d *Daemon) acknowledge(ctx context.Context, fg forge.Forge, cfg config.Con
 // processNATSTask decodes a NATS message, writes it to SQLite, claims it,
 // and runs the workflow. The message is ack'd on terminal (park is a valid
 // outcome). Nak on transient errors so NATS redelivers.
-func (d *Daemon) processNATSTask(ctx context.Context, msg eventbus.Message) {
+func (d *Daemon) processNATSTask(ctx context.Context, msg eventbus.Message, hold *taskHold) {
 	tm, err := workintake.DecodeTask(msg.Data())
 	if err != nil {
 		d.Log.Error("nats decode failed", "err", err)
@@ -1349,7 +1525,7 @@ func (d *Daemon) processNATSTask(ctx context.Context, msg eventbus.Message) {
 		return
 	}
 
-	d.process(ctx, task)
+	d.process(ctx, task, hold)
 	if err := msg.Ack(); err != nil {
 		d.Log.Warn("ack failed", "err", err)
 	}
@@ -1422,7 +1598,10 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 	}
 }
 
-func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
+func (d *Daemon) process(ctx context.Context, task *workflow.Task, hold *taskHold) {
+	// A task off the NATS stream only has an id once the store has claimed its
+	// row, inside this call, so its capacity is named here.
+	hold.name(task.ID)
 	// The workflow may name the identity the run acts as, which everything
 	// below is chosen by, so it is settled before anything else.
 	if !d.adoptWorkflowIdentity(ctx, task) {
