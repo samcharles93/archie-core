@@ -72,18 +72,7 @@ func (b *boot) startWatchdog(ctx context.Context) {
 // beginning a fresh poll pass, and therefore how stale the progress marker may
 // be before the loop counts as stalled.
 //
-// It is the root poll interval, or the slowest configured identity in
-// multi-identity mode: each identity polls its own repos, identity poll
-// intervals are frozen at boot, and the marker is stamped by whichever identity
-// polled most recently -- so the worst case between stamps is the slowest
-// identity, not the fastest. The root value is re-read per sample, so a
-// reloaded poll_interval is honoured.
+// The shared interval is re-read so live polling changes are honoured.
 func (b *boot) loopCadence() time.Duration {
-	cadence := b.cfgHolder.Get().PollInterval.Std()
-	for _, id := range b.d.Identities {
-		if override := id.Cfg.PollInterval.Std(); override > cadence {
-			cadence = override
-		}
-	}
-	return cadence
+	return b.cfgHolder.Get().PollInterval.Std()
 }

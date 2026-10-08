@@ -241,8 +241,7 @@ type IdentityRunner struct {
 	Forge forge.Forge
 	Trees *worktree.Manager
 	Repos []config.Repo
-	// Cfg is the identity-scoped config subset (forge, models, dispatch,
-	// budgets, etc.).
+	// Cfg holds the identity's forge account and repository membership.
 	Cfg config.IdentityConfig
 	Log *slog.Logger
 }
@@ -385,9 +384,6 @@ func (d *Daemon) runIdentities(ctx context.Context) error {
 		go func(id *IdentityRunner) {
 			defer wg.Done()
 			interval := d.Cfg.Get().PollInterval.Std()
-			if id.Cfg.PollInterval > 0 {
-				interval = id.Cfg.PollInterval.Std()
-			}
 			ticker := time.NewTicker(interval)
 			defer ticker.Stop()
 			for {
@@ -396,12 +392,8 @@ func (d *Daemon) runIdentities(ctx context.Context) error {
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					// The identity's own override is frozen (identity config is
-					// startup-built); the root fallback may have been reloaded.
+					// Pick up the current shared polling interval.
 					iv := d.Cfg.Get().PollInterval.Std()
-					if id.Cfg.PollInterval > 0 {
-						iv = id.Cfg.PollInterval.Std()
-					}
 					if iv != interval {
 						interval = iv
 						ticker.Reset(iv)
@@ -447,7 +439,7 @@ func (d *Daemon) pollForIdentity(ctx context.Context, id *IdentityRunner) {
 	}
 	d.markPoll()
 	cfg := configForIdentity(d.Cfg.Get(), id.Cfg)
-	for _, repo := range id.Repos {
+	for _, repo := range identityRepositories(cfg.Repos, id.Repos) {
 		issues, complete := d.pollIssuesWithConfig(ctx, id.Forge, cfg, repo)
 		if complete {
 			d.withdrawUnpolled(ctx, repo, string(id.ID), dispatchRule(cfg), issues)
@@ -479,8 +471,8 @@ func (d *Daemon) maintainAndDrain(ctx context.Context) {
 // pollIssuesWithConfig returns the repo's issues the dispatch rule makes
 // work, using the given forge client and dispatch config: single-identity
 // mode passes d.Forge/d.Cfg, identity poll loops their own forge and
-// configForIdentity, so each identity polls with its own bot user, label and
-// trigger. complete is false when any part of the poll failed or was skipped, so
+// configForIdentity, so each identity uses its own bot user with the shared
+// dispatch settings. complete is false when any part of the poll failed or was skipped, so
 // the result must not be read as the whole eligible set.
 func (d *Daemon) pollIssuesWithConfig(ctx context.Context, fg forge.Forge, cfg config.Config, repo config.Repo) (issues []forge.Issue, complete bool) {
 	// Webhook intake hears about issues as they change; polling as well would
@@ -2365,22 +2357,9 @@ func (d *Daemon) captureAttemptConfig(ctx context.Context, task *workflow.Task, 
 }
 
 func configForIdentity(root config.Config, identity config.IdentityConfig) config.Config {
-	root.BotUser = identity.BotUser
-	root.BotEmail = identity.BotEmail
-	// Only an identity that set the cap overrides the shared one. Assigning
-	// unconditionally made an identity that omits the key inherit a nil cap,
-	// which reads as "no cap" and silently disabled the safety rail.
-	if identity.DiffCapLines != nil {
-		root.DiffCapLines = identity.DiffCapLines
-	}
+	root.BotUser, root.BotEmail = identity.BotUser, identity.BotEmail
 	root.Org, root.GrantedCredentials = root.CredentialAccess(identity.Name)
 	root.Forge = identity.Forge
-	root.Dispatch = identity.Dispatch
-	root.Models = identity.Models
-	root.Providers = identity.Providers
-	root.Budgets = identity.Budgets
-	root.Notify = identity.Notify
-	root.Repos = identity.Repos
 	return root
 }
 
@@ -2469,7 +2448,7 @@ func (d *Daemon) treesFor(task *workflow.Task) *worktree.Manager {
 func (d *Daemon) repoFor(t *workflow.Task) (config.Repo, bool) {
 	repos := d.Cfg.Get().Repos
 	if id := d.identityFor(t); id != nil {
-		repos = id.Repos
+		repos = identityRepositories(repos, id.Repos)
 	}
 	for _, r := range repos {
 		if r.Owner == t.Owner && r.Name == t.Repo {
@@ -2554,4 +2533,19 @@ func (d *Daemon) InFlight() int {
 	dispatcher.mu.Lock()
 	defer dispatcher.mu.Unlock()
 	return dispatcher.pending
+}
+
+// identityRepositories keeps account membership while taking live settings
+// for repositories present in the shared control-plane configuration.
+func identityRepositories(shared, owned []config.Repo) []config.Repo {
+	repos := append([]config.Repo(nil), owned...)
+	for i, repo := range repos {
+		for _, current := range shared {
+			if current.Owner == repo.Owner && current.Name == repo.Name {
+				repos[i] = current
+				break
+			}
+		}
+	}
+	return repos
 }

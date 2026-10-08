@@ -82,9 +82,7 @@ func Apply(cfg *config.Config, snapshot Snapshot) []string {
 	}
 	cfg.ModelLimits = limits
 	cfg.Providers = mergeProviders(discovered, cfg.Providers)
-	for i := range cfg.Identities {
-		cfg.Identities[i].Providers = mergeProviders(discovered, cfg.Identities[i].Providers)
-	}
+
 	slices.Sort(models)
 	return models
 }

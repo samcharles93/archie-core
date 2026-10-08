@@ -210,9 +210,6 @@ func applyExecutionBudgets(cfg *config.Config, settings workflow.ExecutionSettin
 		MaxSteps: settings.MaxModelToolSteps, WallClock: config.Duration(settings.MaxRuntime), GateMaxFailures: settings.MaxConsecutiveGateFailures,
 		TaskWallClock: config.Duration(settings.MaxTaskRuntime),
 	}
-	for i := range cfg.Identities {
-		cfg.Identities[i].Budgets = cfg.Budgets
-	}
 }
 
 // startLiveSettings starts everything a live control-plane update needs

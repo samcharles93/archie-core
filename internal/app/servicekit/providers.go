@@ -15,11 +15,6 @@ func ResolveProviderSecrets(cfg *config.Config, registry *secret.Registry, log *
 	if err := resolveProviderMap("root", cfg.Providers, registry, log); err != nil {
 		return err
 	}
-	for i := range cfg.Identities {
-		if err := resolveProviderMap(cfg.Identities[i].Name, cfg.Identities[i].Providers, registry, log); err != nil {
-			return fmt.Errorf("identity %q: %w", cfg.Identities[i].Name, err)
-		}
-	}
 	return nil
 }
 

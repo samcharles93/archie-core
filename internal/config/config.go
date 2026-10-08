@@ -396,8 +396,8 @@ type Config struct {
 }
 
 // IdentityConfig is a per-identity configuration subset. Each identity
-// gets its own poll loop goroutine with isolated forge, repo, model,
-// and dispatch configuration.
+// gets its own forge account and repository membership. Runtime settings
+// come from the shared control plane.
 type IdentityConfig struct {
 	// Name identifies this identity in logs, events, and NATS subject
 	// namespaces (archie.<name>.task.<type>). Required when Identities
@@ -413,22 +413,11 @@ type IdentityConfig struct {
 	Org string `toml:"org" yaml:"org"`
 	// GrantedCredentials overrides the shared GrantedCredentials for this
 	// identity. Nil (absent) inherits it; a present, empty list grants none
-	// -- the same explicit-empty-means-off shape DiffCapLines uses, needed
+	// -- an explicit empty list turns grants off, needed
 	// because a plain nil already means "not set" here.
 	GrantedCredentials *[]string `toml:"granted_credentials" yaml:"granted_credentials"`
-	// DiffCapLines overrides the shared cap for this identity. Nil (absent)
-	// inherits it; an explicit 0 switches the cap off for this identity only.
-	DiffCapLines *int `toml:"diff_cap_lines" yaml:"diff_cap_lines"`
-	// PollInterval overrides the shared PollInterval. When 0, the shared
-	// interval is used.
-	PollInterval Duration            `toml:"poll_interval" yaml:"poll_interval"`
-	Forge        Forge               `toml:"forge" yaml:"forge"`
-	Dispatch     Dispatch            `toml:"dispatch" yaml:"dispatch"`
-	Models       map[string]string   `toml:"models" yaml:"models"`
-	Providers    map[string]Provider `toml:"providers" yaml:"providers"`
-	Budgets      Budgets             `toml:"budgets" yaml:"budgets"`
-	Notify       Notify              `toml:"notify" yaml:"notify"`
-	Repos        []Repo              `toml:"repos" yaml:"repos"`
+	Forge              Forge     `toml:"forge" yaml:"forge"`
+	Repos              []Repo    `toml:"repos" yaml:"repos"`
 }
 
 type ModelLimits struct {
@@ -587,10 +576,7 @@ func cloneIdentities(ids []IdentityConfig) []IdentityConfig {
 	}
 	out := make([]IdentityConfig, len(ids))
 	for i, id := range ids {
-		id.Models = cloneStringMap(id.Models)
-		id.Providers = maps.Clone(id.Providers)
 		id.Repos = cloneRepos(id.Repos)
-		id.DiffCapLines = cloneIntPtr(id.DiffCapLines)
 		out[i] = id
 	}
 	return out

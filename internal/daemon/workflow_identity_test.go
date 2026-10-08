@@ -3,8 +3,10 @@ package daemon
 import (
 	"context"
 	"log/slog"
+	"reflect"
 	"testing"
 
+	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
@@ -91,5 +93,30 @@ func TestWorkflowIdentity(t *testing.T) {
 				t.Fatalf("ok %v parked %v identity %q, want parked %v identity %q", ok, store.parked, task.Identity, tt.wantParked, tt.wantIdentity)
 			}
 		})
+	}
+}
+
+func TestIdentityTasksUseLiveSettings(t *testing.T) {
+	root := config.Config{Models: map[string]string{"builder": "old/model"}, Providers: map[string]config.Provider{"old": {}}, Repos: []config.Repo{{Owner: "acme", Name: "app", Base: "main"}}}
+	id := config.IdentityConfig{Name: "bot", BotUser: "bot", BotEmail: "bot@example.test", Forge: config.Forge{Type: "github"}, Repos: []config.Repo{{Owner: "acme", Name: "app", Base: "stale"}}}
+	d := &Daemon{Cfg: config.NewHolder(root), Identities: []*IdentityRunner{{Name: "bot", Cfg: id, Repos: id.Repos}}}
+	task := &workflow.Task{Identity: "bot", Owner: "acme", Repo: "app"}
+	for _, model := range []string{"old/model", "new/model"} {
+		root.Models = map[string]string{"builder": model}
+		root.Budgets.MaxSteps++
+		root.Dispatch.Trigger = "label"
+		root.Notify.Webhook = "https://example.test/notify"
+		d.Cfg.Set(root)
+		got := d.configFor(task)
+		if !reflect.DeepEqual(got.Models, root.Models) || !reflect.DeepEqual(got.Providers, root.Providers) || got.Budgets != root.Budgets || got.Dispatch != root.Dispatch || got.Notify != root.Notify {
+			t.Fatalf("identity settings replaced the current runtime settings: %+v", got)
+		}
+		repo, ok := d.repoFor(task)
+		if !ok || repo.Base != "main" {
+			t.Fatalf("repository = %+v, found %v; want current base main", repo, ok)
+		}
+		if got.BotUser != id.BotUser || got.Forge != id.Forge {
+			t.Fatal("identity lost its forge account")
+		}
 	}
 }

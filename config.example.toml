@@ -63,7 +63,8 @@ token = { engine = "env", key = "ARCHIE_GITHUB_TOKEN" }
 # intake per identity is a pending migration, not a setting.
 
 # [[identities]] runs more than one bot identity from a single daemon, each
-# with its own forge/dispatch/models/providers/budgets/notify. Intake
+# with its own forge account and repository membership. Runtime settings
+# are shared and edited through the control plane. Intake
 # settings are rejected per identity, and [forge].intake = "webhook"/"both"
 # is rejected alongside [[identities]]. Minimal shape:
 # [[identities]]
