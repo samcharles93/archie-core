@@ -12,12 +12,11 @@ import (
 const confDirName = "conf.d"
 
 // fileSet is the result of scanning a configuration directory: the main
-// file, feature files and extras.
+// file and feature files.
 type fileSet struct {
 	mainYAML string
 	mainTOML string
 	features map[Feature]string
-	extras   map[string]string
 }
 
 // main returns the daemon-level config file and its format. YAML wins when
@@ -44,16 +43,6 @@ func (fs fileSet) sortedFeatures() []Feature {
 	return names
 }
 
-// sortedExtras returns extra names in a stable order.
-func (fs fileSet) sortedExtras() []string {
-	names := make([]string, 0, len(fs.extras))
-	for n := range fs.extras {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	return names
-}
-
 // discover scans dir and classifies its entries.
 func discover(dir string) (fileSet, error) {
 	entries, err := os.ReadDir(dir)
@@ -63,7 +52,6 @@ func discover(dir string) (fileSet, error) {
 
 	fs := fileSet{
 		features: map[Feature]string{},
-		extras:   map[string]string{},
 	}
 	var unknown []string
 
@@ -111,8 +99,7 @@ func (fs fileSet) classify(dir, name string, unknown *[]string) error {
 	return fs.addFeature(feature, filepath.Join(dir, name))
 }
 
-// scanConfDir reads dir/conf.d/, routing recognised names to features and
-// the rest to extras.
+// scanConfDir reads dir/conf.d/ and refuses files without a known consumer.
 func (fs fileSet) scanConfDir(dir string) error {
 	confDir := filepath.Join(dir, confDirName)
 	entries, err := os.ReadDir(confDir)
@@ -124,14 +111,13 @@ func (fs fileSet) scanConfDir(dir string) error {
 	}
 	for _, e := range entries {
 		name := e.Name()
-		if e.IsDir() || !isYAML(name) {
+		if e.IsDir() {
 			continue
 		}
 		path := filepath.Join(confDir, name)
 		feature := Feature(trimYAMLSuffix(name))
 		if !feature.known() {
-			fs.extras[string(feature)] = path
-			continue
+			return fmt.Errorf("%w: unknown configuration file %s", ErrUnreadable, path)
 		}
 		if err := fs.addFeature(feature, path); err != nil {
 			return err

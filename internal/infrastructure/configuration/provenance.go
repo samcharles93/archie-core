@@ -12,7 +12,6 @@ type Role string
 const (
 	RoleMain    Role = "main"    // config.yaml / config.toml
 	RoleFeature Role = "feature" // config.<feature>.yaml or conf.d/<feature>.yaml
-	RoleExtra   Role = "extra"   // conf.d/*.yaml for an unrecognised name
 )
 
 // Layer distinguishes the base configuration from an overlay applied on top.
@@ -28,7 +27,7 @@ type Origin struct {
 	Path    string
 	Role    Role
 	Layer   Layer
-	Feature Feature // set when Role is RoleFeature or RoleExtra
+	Feature Feature // set when Role is RoleFeature
 }
 
 // String renders an origin for logs and error messages.

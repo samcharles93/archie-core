@@ -331,14 +331,6 @@ func (l *Loader) loadDir(doc *Document, dir string, layer Layer) error {
 		doc.Provenance.record(Origin{Path: path, Role: RoleFeature, Layer: layer, Feature: feature})
 	}
 
-	for _, name := range files.sortedExtras() {
-		path := files.extras[name]
-		if err := decodeExtra(&doc.Config, name, path); err != nil {
-			return err
-		}
-		doc.Provenance.record(Origin{Path: path, Role: RoleExtra, Layer: layer, Feature: Feature(name)})
-	}
-
 	return nil
 }
 

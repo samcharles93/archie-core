@@ -93,16 +93,3 @@ func decodeFeature(cfg *config.Config, feature Feature, path string, layer Layer
 	}
 	return decodeYAML(path, target)
 }
-
-// decodeExtra decodes an unrecognised conf.d/ file into cfg.Extra[name].
-func decodeExtra(cfg *config.Config, name, path string) error {
-	var value any
-	if err := decodeYAML(path, &value); err != nil {
-		return err
-	}
-	if cfg.Extra == nil {
-		cfg.Extra = make(map[string]any)
-	}
-	cfg.Extra[name] = value
-	return nil
-}

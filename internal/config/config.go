@@ -388,11 +388,6 @@ type Config struct {
 
 	// Curators are curator definitions seeded from [[curators]].
 	Curators []CuratorDefinition `toml:"curators" yaml:"curators" json:"curators,omitempty"`
-
-	// Extra holds additional feature configuration from conf.d/ files that
-	// don't match a known feature name. Keys are the filename stem (e.g.
-	// "custom-tool" for conf.d/custom-tool.yaml).
-	Extra map[string]any `toml:"-" yaml:"-" json:"extra,omitempty"`
 }
 
 // IdentityConfig is a per-identity configuration subset. Each identity
@@ -541,7 +536,6 @@ func (c Config) Clone() Config {
 		c.Tools.WebFetch.Enabled = &v
 	}
 	c.DiffCapLines = cloneIntPtr(c.DiffCapLines)
-	c.Extra = maps.Clone(c.Extra)
 	return c
 }
 
