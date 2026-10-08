@@ -188,9 +188,15 @@ export type ControlPlanePage =
   | "extensions"
   | "containers"
   | "review"
-  | "workflows";
+  | "workflows"
+  | "profiles"
+  | "credentials"
+  | "playbooks";
 
 const PAGE_RESOURCES: Record<ControlPlanePage, string[]> = {
+  profiles: ["agent-profiles"],
+  credentials: ["credential-bindings"],
+  playbooks: ["eda-playbooks"],
   tasks: ["workflow-execution-settings"],
   models: ["provider-settings", "model-role-assignments"],
   repositories: ["repository-policies"],

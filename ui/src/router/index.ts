@@ -345,6 +345,24 @@ const routes = [
     },
   },
   {
+    path: "/settings/agent-profiles",
+    name: "settings-agent-profiles",
+    component: () => import("@/settings/AgentProfilesPage.vue"),
+    meta: { navPath: "/settings", settings: true, label: "Agent profiles", section: "settings" },
+  },
+  {
+    path: "/settings/credential-bindings",
+    name: "settings-credential-bindings",
+    component: () => import("@/settings/CredentialBindingsPage.vue"),
+    meta: { navPath: "/settings", settings: true, label: "Credential bindings", section: "settings" },
+  },
+  {
+    path: "/settings/playbooks",
+    name: "settings-playbooks",
+    component: () => import("@/settings/PlaybooksPage.vue"),
+    meta: { navPath: "/settings", settings: true, label: "Playbooks", section: "settings" },
+  },
+  {
     path: "/settings/harness",
     name: "settings-harness",
     // Lazy so xterm.js stays out of the shell every page loads.

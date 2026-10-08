@@ -25,6 +25,7 @@ onMounted(loadMappings);
   <div>
     <!-- The tab owns its own action row; the page header names the page. -->
     <div class="mb-4 flex flex-wrap items-center justify-end gap-2">
+      <RouterLink to="/settings/playbooks" class="text-sm underline">Installed playbooks</RouterLink>
       <Button @click="startCreate">
         <Plus data-icon="inline-start" />
         New mapping
