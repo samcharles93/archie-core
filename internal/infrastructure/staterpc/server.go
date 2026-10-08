@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
@@ -596,7 +597,15 @@ func (s *server) PutPresence(ctx context.Context, r *pb.PutPresenceRequest) (*pb
 	if err != nil {
 		return nil, err
 	}
-	if err := ps.PutPresence(ctx, presenceValue(r.Presence)); err != nil {
+	record := presenceValue(r.Presence)
+	if strings.HasPrefix(access.ActorFromContext(ctx), "task/") {
+		// A worker's clock cannot expire other services' retained records.
+		record.ReportedAt = time.Now().UTC()
+		if record.StartedAt.IsZero() || record.StartedAt.After(record.ReportedAt) {
+			record.StartedAt = record.ReportedAt
+		}
+	}
+	if err := ps.PutPresence(ctx, record); err != nil {
 		return nil, s.logErr("PutPresence", err)
 	}
 	return &pb.PutPresenceResponse{}, nil

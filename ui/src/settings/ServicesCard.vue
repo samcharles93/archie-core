@@ -22,6 +22,7 @@ interface AppliedRecord {
 
 interface Service {
   service: string;
+  instance_id: string;
   state: "up" | "degraded" | "down" | "unknown";
   version: string;
   install_type: string;
@@ -81,14 +82,16 @@ onUnmounted(() => clearInterval(timer));
             <TableHead>Service</TableHead>
             <TableHead>Version</TableHead>
             <TableHead>Uptime</TableHead>
+            <TableHead>Last seen</TableHead>
             <TableHead>Applied</TableHead>
             <TableHead class="w-px text-right">State</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          <TableRow v-for="service in services" :key="service.service">
+          <TableRow v-for="service in services" :key="`${service.service}/${service.instance_id}`">
             <TableCell>
               <span class="font-mono font-medium">{{ service.service }}</span>
+              <span v-if="service.service === 'archie-agent'" class="ml-2 text-sm text-fg-muted">task {{ service.instance_id }}</span>
               <span v-if="service.detail" class="ml-2 text-sm text-fg-muted"
                 >{{ service.state }}: {{ service.detail }}</span
               >
@@ -105,6 +108,7 @@ onUnmounted(() => clearInterval(timer));
               </template>
             </TableCell>
             <TableCell class="text-sm">{{ uptime(service) }}</TableCell>
+            <TableCell class="text-xs">{{ service.reported_at && new Date(service.reported_at).getFullYear() > 1 ? new Date(service.reported_at).toLocaleString() : "" }}</TableCell>
             <TableCell class="text-xs">
               <div v-for="record in service.applied" :key="record.kind">
                 <span class="font-mono">{{ record.kind }}</span>
@@ -115,7 +119,7 @@ onUnmounted(() => clearInterval(timer));
               </div>
             </TableCell>
             <TableCell class="w-px text-right">
-              <Badge :variant="tone[service.state]">{{ service.state }}</Badge>
+              <Badge :variant="tone[service.state]">{{ service.service === "archie-agent" && service.state === "down" ? "stale" : service.state }}</Badge>
             </TableCell>
           </TableRow>
         </TableBody>

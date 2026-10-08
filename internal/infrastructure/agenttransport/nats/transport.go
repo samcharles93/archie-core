@@ -14,6 +14,7 @@ import (
 	natsio "github.com/nats-io/nats.go"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -345,3 +346,12 @@ func (*Transport) respondTask(msg *natsio.Msg, response *taskrun.Response, runEr
 		log.Error("taskrun respond failed", "err", err)
 	}
 }
+
+// PutPresence publishes the worker's task-scoped record.
+func (t *Transport) PutPresence(ctx context.Context, record storecontract.Presence) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return t.state.PutPresence(ctx, record)
+}
+
+func (t *Transport) BrokerReady() bool { return t.conn.IsConnected() }

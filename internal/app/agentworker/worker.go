@@ -3,16 +3,23 @@ package agentworker
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/domain/health"
+	"github.com/samcharles93/archie-core/internal/domain/presence"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/infrastructure/agentboot"
 	"github.com/samcharles93/archie-core/internal/infrastructure/agentgit"
 	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
+	"github.com/samcharles93/archie-core/internal/infrastructure/readiness"
 	"github.com/samcharles93/archie-core/internal/infrastructure/workflowsteps"
+	"github.com/samcharles93/archie-core/internal/installtype"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/tools"
@@ -44,14 +51,12 @@ type Settings struct {
 }
 
 type workerTransport interface {
+	taskServiceTransport
 	Close()
 	LogPublisher() agentexec.LogPublisher
-	EventPublisher() agentexec.EventPublisher
 	SubscribeTasks(context.Context, int64, agentnats.TaskHandler, *slog.Logger) (agentnats.Subscription, error)
-	Forger(identity, credential string, timeout time.Duration) workflow.Forger
-	Store(time.Duration) workflow.Store
-	Calls(time.Duration) task.Caller
-	Trees(string, string, time.Duration) agentnats.RemoteTrees
+	PutPresence(context.Context, storecontract.Presence) error
+	BrokerReady() bool
 }
 
 type workerDependencies struct {
@@ -148,6 +153,13 @@ func run(ctx context.Context, settings Settings, log *slog.Logger, dependencies 
 		}
 	}()
 
+	registry := health.NewRegistry(readiness.NewContractProbe("nats", 0, func(context.Context) error {
+		if !transport.BrokerReady() {
+			return errors.New("broker disconnected")
+		}
+		return nil
+	}))
+	go presence.Run(ctx, presence.Agent, presence.Build{InstanceID: strconv.FormatInt(taskID, 10), Version: Version(), InstallType: installtype.Type()}, transport, registry, log)
 	log.Info("archie-agent ready", "nats", settings.NATSURL)
 	dependencies.wait(ctx, log)
 	return nil

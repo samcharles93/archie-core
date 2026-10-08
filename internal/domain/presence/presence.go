@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -23,16 +24,19 @@ const (
 	Messaging  = applystatus.Messaging
 	UI         = "archie-ui"
 	StateStore = "archie-state-store"
+	Agent      = "archie-agent"
+	Broker     = "nats"
 )
 
 // Services is every service expected to report.
-func Services() []string { return []string{Daemon, Gateway, Messaging, UI, StateStore} }
+func Services() []string { return []string{Daemon, Gateway, Messaging, UI, StateStore, Broker} }
 
 // Stale reports whether a record's instance has stopped re-stamping it.
 func Stale(reportedAt, now time.Time) bool { return applystatus.Stale(reportedAt, now) }
 
 // Build is what the binary was compiled as.
 type Build struct {
+	InstanceID  string
 	Version     string
 	InstallType string
 }
@@ -40,13 +44,19 @@ type Build struct {
 // Run publishes this instance's record immediately and then on every restamp
 // interval until ctx ends. A nil registry reports ready with no probes.
 // Write failures are logged: the next tick retries.
-func Run(ctx context.Context, service string, build Build, store storecontract.PresenceStore, registry *health.Registry, log *slog.Logger) {
+func Run(ctx context.Context, service string, build Build, store interface {
+	PutPresence(context.Context, storecontract.Presence) error
+}, registry *health.Registry, log *slog.Logger,
+) {
 	if store == nil {
 		return
 	}
 	record := storecontract.Presence{
 		Service: service, InstanceID: instanceID(), Version: build.Version,
 		InstallType: build.InstallType, StartedAt: time.Now().UTC(),
+	}
+	if build.InstanceID != "" {
+		record.InstanceID = build.InstanceID
 	}
 	ticker := time.NewTicker(applystatus.RestampInterval)
 	defer ticker.Stop()
@@ -124,7 +134,20 @@ func Mesh(records []storecontract.Presence, now time.Time) []Service {
 		}
 		services = append(services, service)
 	}
-	return services
+	var workers []Service
+	for _, record := range records {
+		if record.Service != Agent {
+			continue
+		}
+		worker := Service{Presence: record, State: state(record, true, now)}
+		if worker.State == StateDown {
+			worker.Detail = ""
+			worker.Checks = nil
+		}
+		workers = append(workers, worker)
+	}
+	sort.Slice(workers, func(i, j int) bool { return workers[i].InstanceID < workers[j].InstanceID })
+	return append(services, workers...)
 }
 
 // Unreachable is the mesh view when the State Store cannot be read: the store

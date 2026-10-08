@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"google.golang.org/grpc"
@@ -18,6 +19,7 @@ import (
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
 	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
+	"github.com/samcharles93/archie-core/internal/domain/presence"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -87,6 +89,17 @@ func authorizesTaskScopedCall(fullMethod string, req any, taskID int64) bool {
 // taskScopedTargets maps each RPC a task grant may call to the task ID its
 // request targets.
 var taskScopedTargets = map[string]func(any) int64{
+	pb.StateStoreService_PutPresence_FullMethodName: func(req any) int64 {
+		r, ok := req.(*pb.PutPresenceRequest)
+		if !ok || r.Presence == nil || r.Presence.Service != presence.Agent {
+			return 0
+		}
+		id, err := strconv.ParseInt(r.Presence.InstanceId, 10, 64)
+		if err != nil || id <= 0 || strconv.FormatInt(id, 10) != r.Presence.InstanceId {
+			return 0
+		}
+		return id
+	},
 	pb.StateStoreService_Update_FullMethodName: func(req any) int64 {
 		r, ok := req.(*pb.UpdateRequest)
 		if !ok || r.Task == nil {

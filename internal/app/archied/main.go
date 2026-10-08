@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -29,6 +30,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/domain/applystatus"
+	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/presence"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
@@ -36,6 +38,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
+	"github.com/samcharles93/archie-core/internal/infrastructure/readiness"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/storage"
@@ -187,6 +190,7 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 	}
 	if ps, ok := b.stateStore.(storecontract.PresenceStore); ok {
 		go presence.Run(ctx, b.processName, servicekit.Build(), ps, b.healthRegistry, b.log)
+		b.reportBrokerPresence(ctx, ps)
 	}
 	// The daemon publishes the configuration view, which carries the catalog's
 	// model limits.
@@ -525,4 +529,16 @@ func resolveRegistryAuth(ref secret.SecretRef, secrets *secret.Registry, log *sl
 		return ""
 	}
 	return value
+}
+
+func (b *boot) reportBrokerPresence(ctx context.Context, ps storecontract.PresenceStore) {
+	if conn, err := b.natsClient.CoreConn(); err == nil {
+		registry := health.NewRegistry(readiness.NewContractProbe("connection", 0, func(context.Context) error {
+			if !conn.IsConnected() {
+				return errors.New("broker disconnected")
+			}
+			return nil
+		}))
+		go presence.Run(ctx, presence.Broker, presence.Build{Version: conn.ConnectedServerVersion(), InstallType: b.cfg.NATS.Mode}, ps, registry, b.log)
+	}
 }
