@@ -783,8 +783,9 @@ func (s *Store) TaskByID(ctx context.Context, taskID int64) (*workflow.Task, err
 
 // StartCall enqueues a workflow.call callee inheriting the caller's org,
 // workspace, identity and repo, and returns the callee already started under
-// callerTaskID and callKey when there is one. The caller must be running and
-// within workflow.MaxCallDepth.
+// callerTaskID and callKey when there is one. A child that ended dead or
+// declined freed its key, so such a call starts a fresh child. The caller must
+// be running and within workflow.MaxCallDepth.
 func (s *Store) StartCall(ctx context.Context, callerTaskID int64, callKey string, wf string, inputs map[string]any) (*workflow.Task, error) {
 	encoded, err := task.EncodeInputs(inputs)
 	if err != nil {

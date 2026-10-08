@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
+	"github.com/samcharles93/archie-core/internal/events"
 )
 
 // callSpy records the key every call site started its child under, and models
@@ -42,26 +43,33 @@ func (c *callSpy) startedKeys() []string {
 	return slices.Clone(c.keys)
 }
 
-// TestWorkflowCallKeyIsTheDeclaredPath pins the call's durable identity: two
-// runs of one call site -- a retry of the stage, a lost EnqueueCallTask reply
-// -- key on the same declared path and start one child, and two call sites in
-// one run key on different paths so neither returns the other's child.
+// TestWorkflowCallKeyIsTheDeclaredPath pins the call's durable identity: the
+// step's declared path plus the callee it starts. Two runs of one call site --
+// a retry of the stage, a lost EnqueueCallTask reply -- key on the same value
+// and start one child, and neither a sibling call site nor the same path under
+// a re-pinned definition reuses another call's child.
 func TestWorkflowCallKeyIsTheDeclaredPath(t *testing.T) {
 	registry := StepRegistry{WorkflowCallStepName: newWorkflowCallStage}
 	tests := []struct {
-		name     string
-		def      string
-		wantKeys []string
-		wantErr  string
+		name string
+		def  string
+		// repin is the definition a later run compiles instead. One task can
+		// run a second definition -- workflow.handoff and human.approve set the
+		// task's workflow, and the daemon re-pins when the pin's id differs --
+		// so a call path that collides there must not reuse the first callee.
+		repin     string
+		wantKeys  []string
+		wantRepin []string
+		wantErr   string
 	}{
 		{
-			name: "a call step keys on its declared id",
+			name: "a call step keys on its declared id and the callee it starts",
 			def: `id: caller
 repository: none
 steps:
   - {id: check, type: workflow.call, settings: {workflow: callee}}
 `,
-			wantKeys: []string{"check"},
+			wantKeys: []string{"check@callee"},
 		},
 		{
 			name: "a call in a parallel branch keys on its path within the run",
@@ -73,60 +81,141 @@ steps:
       a: [{id: check, type: workflow.call, settings: {workflow: callee}}]
       b: [{id: verify, type: workflow.call, settings: {workflow: callee}}]
 `,
-			wantKeys: []string{"fanout/a/check", "fanout/b/verify"},
+			wantKeys: []string{"fanout/a/check@callee", "fanout/b/verify@callee"},
 		},
 		{
-			// A definition pinned before the rule that a call declares an id
-			// compiles and runs: were its path the bare step type, every call
-			// site in the run would share one key and the second would return
-			// the first's child.
-			name: "a call step with no id is refused, not keyed on its type",
+			name: "the same path under a re-pinned definition keys on its callee",
+			def: `id: caller
+repository: none
+steps:
+  - {id: classify, type: workflow.call, settings: {workflow: callee-a}}
+`,
+			repin: `id: caller
+repository: none
+steps:
+  - {id: classify, type: workflow.call, settings: {workflow: callee-b}}
+`,
+			wantKeys:  []string{"classify@callee-a"},
+			wantRepin: []string{"classify@callee-b"},
+		},
+		{
+			// A step id may spell a step type: it is a stable identifier like
+			// any other, and the path it declares is the call's identity.
+			name: "a step id that spells the step type is accepted",
+			def: `id: caller
+repository: none
+steps:
+  - {id: workflow.call, type: workflow.call, settings: {workflow: callee}}
+`,
+			wantKeys: []string{"workflow.call@callee"},
+		},
+		{
+			// The step's id is the call's identity, so an id-less call step is
+			// refused where its definition is compiled -- which is also the path
+			// a pinned definition takes.
+			name: "a call step with no id is refused",
 			def: `id: caller
 repository: none
 steps:
   - type: workflow.call
     settings: {workflow: callee}
 `,
-			wantErr: "declares no id",
+			wantErr: "needs an id",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			wf, err := ParseAndCompile(tt.def, registry)
-			if err != nil {
-				t.Fatalf("compile: %v", err)
-			}
 			spy := &callSpy{children: map[string]*task.Task{}}
 			tc := &TaskContext{Task: &task.Task{ID: 7}, Calls: spy, Log: slog.Default()}
-			stage := wf.Stages[0]
-			// The same stage twice: a requeued attempt re-runs the call site.
-			for range 2 {
-				if err := stage.Run(context.Background(), tc); err != nil {
-					if tt.wantErr == "" || !strings.Contains(err.Error(), tt.wantErr) {
-						t.Fatalf("err = %v, want %q", err, tt.wantErr)
-					}
-					if keys := spy.startedKeys(); len(keys) != 0 {
-						t.Fatalf("started %q, want no call", keys)
-					}
-					return
-				}
+			// Twice: a requeued attempt re-runs the call site.
+			second := tt.def
+			if tt.repin != "" {
+				second = tt.repin
+			}
+			for i, def := range []string{tt.def, second} {
+				wf, err := ParseAndCompile(def, registry)
 				if tt.wantErr != "" {
-					t.Fatalf("err = nil, want %q", tt.wantErr)
+					if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+						t.Fatalf("compile err = %v, want %q", err, tt.wantErr)
+					}
+					continue
+				}
+				if err != nil {
+					t.Fatalf("compile: %v", err)
+				}
+				before := len(spy.startedKeys())
+				if err := wf.Stages[0].Run(context.Background(), tc); err != nil {
+					t.Fatalf("run: %v", err)
+				}
+				want := tt.wantKeys
+				if i == 1 && tt.repin != "" {
+					want = tt.wantRepin
+				}
+				got := spy.startedKeys()[before:]
+				// Branches finish in whatever order; the keys a run used, not
+				// their order, are the behaviour.
+				slices.Sort(got)
+				if !slices.Equal(got, want) {
+					t.Fatalf("run %d keys = %q, want %q", i+1, got, want)
 				}
 			}
-			keys := spy.startedKeys()
-			first, second := keys[:len(keys)/2], keys[len(keys)/2:]
-			// Branches finish in whatever order; the keys a run used, not their
-			// order, are the behaviour.
-			slices.Sort(first)
-			slices.Sort(second)
-			if !slices.Equal(first, tt.wantKeys) || !slices.Equal(second, tt.wantKeys) {
-				t.Fatalf("keys = %q then %q, want %q both times", first, second, tt.wantKeys)
+			if tt.wantErr != "" {
+				if keys := spy.startedKeys(); len(keys) != 0 {
+					t.Fatalf("started %q, want no call", keys)
+				}
+				return
 			}
-			if len(spy.children) != len(tt.wantKeys) {
-				t.Fatalf("started %d children, want %d", len(spy.children), len(tt.wantKeys))
+			if want := len(tt.wantKeys) + len(tt.wantRepin); len(spy.children) != want {
+				t.Fatalf("started %d children, want %d", len(spy.children), want)
 			}
 		})
+	}
+}
+
+// TestWorkflowCallWithoutADeclaredPathRefuses pins the one state a call cannot
+// key on: a step run with no declared path. The store's unique index ignores
+// an empty key, so without the refusal every attempt would start a fresh child
+// -- the duplicate the key exists to prevent.
+func TestWorkflowCallWithoutADeclaredPathRefuses(t *testing.T) {
+	spy := &callSpy{children: map[string]*task.Task{}}
+	tc := &TaskContext{Task: &task.Task{ID: 7}, Calls: spy, Log: slog.Default()}
+	err := runWorkflowCall(context.Background(), workflowCallSettings{Workflow: "callee"}, tc)
+	if err == nil || !strings.Contains(err.Error(), "no declared path") {
+		t.Fatalf("err = %v, want a refusal naming the missing path", err)
+	}
+	if keys := spy.startedKeys(); len(keys) != 0 {
+		t.Fatalf("started %q, want no call", keys)
+	}
+}
+
+// TestWorkflowCallRecordsTheSiteNotTheKey pins the two values apart: the key
+// that identifies the child carries the callee, while the step row and the
+// call's events are named and staged for the call site, so a rail pairing an
+// event with its step by stage can still attach them.
+func TestWorkflowCallRecordsTheSiteNotTheKey(t *testing.T) {
+	registry := StepRegistry{WorkflowCallStepName: newWorkflowCallStage}
+	wf, err := ParseAndCompile(`id: caller
+repository: none
+steps:
+  - {id: check, type: workflow.call, settings: {workflow: callee}}
+`, registry)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	store := &fakeStepStore{}
+	spy := &callSpy{children: map[string]*task.Task{}}
+	tc := &TaskContext{Task: &task.Task{ID: 7, Attempt: 1}, Store: store, StepID: 3, Calls: spy, Log: slog.Default()}
+	if err := wf.Stages[0].Run(context.Background(), tc); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if keys := spy.startedKeys(); !slices.Equal(keys, []string{"check@callee"}) {
+		t.Fatalf("keys = %q, want [check@callee]", keys)
+	}
+	if len(store.started) != 1 || store.started[0].Kind != task.StepKindCall || store.started[0].Name != "check" {
+		t.Fatalf("started = %#v, want one call step named check", store.started)
+	}
+	if len(store.events) != 1 || store.events[0].Kind != events.KindWorkflowCallStarted || store.events[0].Stage != "check" {
+		t.Fatalf("events = %#v, want one %s staged check", store.events, events.KindWorkflowCallStarted)
 	}
 }
 
@@ -185,7 +274,7 @@ steps:
   - type: workflow.finish
 `,
 			},
-			wantErr: `workflow "caller" step 1: workflow.call declares no id`,
+			wantErr: `workflow "caller" step 1: "workflow.call" needs an id`,
 		},
 		{
 			name: "a cycle through branch calls is refused",

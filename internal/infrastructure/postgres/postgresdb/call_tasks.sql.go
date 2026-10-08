@@ -41,7 +41,7 @@ SELECT
     caller.id, caller.call_depth + 1, $7
 FROM caller
 WHERE caller.status = 'running' AND caller.call_depth + 1 <= $8::int
-ON CONFLICT (call_parent_task_id, call_key) WHERE call_key <> '' DO UPDATE SET call_key = EXCLUDED.call_key
+ON CONFLICT (call_parent_task_id, call_key) WHERE call_key <> '' AND status NOT IN ('dead', 'closed_wont_do') DO UPDATE SET call_key = EXCLUDED.call_key
 RETURNING id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth, outputs, review_gate, rereview_rounds, retry_mode, resume_from, resume_results, pending_reviews, origin, call_key
 `
 
@@ -60,9 +60,11 @@ type EnqueueCallTaskParams struct {
 //
 // The call key makes this the one write that can be retried: a call site that
 // already started its child gets that child back rather than a second one. The
-// upsert only fires for a keyed callee, and the WHERE below still decides
-// whether the caller may call at all -- a caller that is missing, not running
-// or past the depth limit inserts nothing and returns no row, conflict or not.
+// upsert only fires for a keyed callee whose child can still do the work -- a
+// child that ended dead or closed_wont_do freed its key -- and the WHERE below
+// still decides whether the caller may call at all: a caller that is missing,
+// not running or past the depth limit inserts nothing and returns no row,
+// conflict or not.
 func (q *Queries) EnqueueCallTask(ctx context.Context, arg EnqueueCallTaskParams) (Task, error) {
 	row := q.db.QueryRow(ctx, enqueueCallTask,
 		arg.ID,

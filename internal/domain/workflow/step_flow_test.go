@@ -15,6 +15,7 @@ import (
 type fakeStepStore struct {
 	started  []task.StepStart
 	finished []task.StepFinish
+	events   []events.Event
 	nextID   int64
 }
 
@@ -24,7 +25,10 @@ func (f *fakeStepStore) Transition(context.Context, int64, string, string, strin
 	return nil
 }
 
-func (f *fakeStepStore) InsertEvent(context.Context, events.Event) (int64, error) { return 0, nil }
+func (f *fakeStepStore) InsertEvent(_ context.Context, e events.Event) (int64, error) {
+	f.events = append(f.events, e)
+	return 0, nil
+}
 
 func (f *fakeStepStore) StartStep(_ context.Context, s task.StepStart) (int64, events.Event, error) {
 	f.nextID++

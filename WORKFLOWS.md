@@ -252,6 +252,10 @@ _runs without a repository._
 | `wait` | bool | Wait for the child run to finish before continuing. |
 | `workflow` | text | The workflow to start as a child run. |
 
+The step must declare an `id`: the step's id is the key of the call it starts,
+so a retry of that call site returns the child already started instead of
+starting a second one.
+
 ### `workflow.finish`
 
 _runs without a repository._

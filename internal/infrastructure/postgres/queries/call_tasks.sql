@@ -3,9 +3,11 @@
 --
 -- The call key makes this the one write that can be retried: a call site that
 -- already started its child gets that child back rather than a second one. The
--- upsert only fires for a keyed callee, and the WHERE below still decides
--- whether the caller may call at all -- a caller that is missing, not running
--- or past the depth limit inserts nothing and returns no row, conflict or not.
+-- upsert only fires for a keyed callee whose child can still do the work -- a
+-- child that ended dead or closed_wont_do freed its key -- and the WHERE below
+-- still decides whether the caller may call at all: a caller that is missing,
+-- not running or past the depth limit inserts nothing and returns no row,
+-- conflict or not.
 WITH caller AS (
     SELECT t.* FROM tasks t WHERE t.id = $1 FOR UPDATE
 )
@@ -24,7 +26,7 @@ SELECT
     caller.id, caller.call_depth + 1, sqlc.arg('call_key')
 FROM caller
 WHERE caller.status = 'running' AND caller.call_depth + 1 <= sqlc.arg('max_depth')::int
-ON CONFLICT (call_parent_task_id, call_key) WHERE call_key <> '' DO UPDATE SET call_key = EXCLUDED.call_key
+ON CONFLICT (call_parent_task_id, call_key) WHERE call_key <> '' AND status NOT IN ('dead', 'closed_wont_do') DO UPDATE SET call_key = EXCLUDED.call_key
 RETURNING *;
 
 -- name: CallStatusDetail :one

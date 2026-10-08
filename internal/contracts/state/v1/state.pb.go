@@ -12114,10 +12114,12 @@ type EnqueueCallTaskRequest struct {
 	Workflow     string                 `protobuf:"bytes,2,opt,name=workflow,proto3" json:"workflow,omitempty"`
 	InputsJson   string                 `protobuf:"bytes,3,opt,name=inputs_json,json=inputsJson,proto3" json:"inputs_json,omitempty"`
 	// call_key is the call site's durable identity: the call step's declared
-	// path within the run. The store stamps it on the child and, when the
-	// caller already started a child under it, returns that child instead of
-	// starting a second one. Required: a retry of one call site carries the
-	// same key, so the retry cannot duplicate the child's work.
+	// path within the run, plus the workflow it starts (so one task running a
+	// second definition at a colliding path does not reuse the first callee's
+	// child). The store stamps it on the child and, when the caller already
+	// started a child under it, returns that child instead of starting a second
+	// one. Required: a retry of one call site carries the same key, so the retry
+	// cannot duplicate the child's work.
 	CallKey       string `protobuf:"bytes,4,opt,name=call_key,json=callKey,proto3" json:"call_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

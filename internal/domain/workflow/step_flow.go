@@ -72,6 +72,14 @@ func checkTypedStep(step StepRecord, mode task.RepositoryMode, earlier *refScope
 	if !ok {
 		return fmt.Errorf("unknown type %q", step.Type)
 	}
+	// A workflow.call's step id is the identity of the call it starts -- it
+	// keys the callee, so a retry of the call site returns the child already
+	// started rather than a second one. It is refused here rather than in
+	// validateWorkflowCalls because a pinned definition is compiled on its own
+	// (ParseAndCompile), never through the collection.
+	if step.Type == WorkflowCallStepName && step.ID == "" {
+		return fmt.Errorf("%q needs an id: the step's id is the key of the call it starts", step.Type)
+	}
 	if mode != task.RepositoryRequired && NeedsRepository(step.Type) {
 		return fmt.Errorf("%q needs a repository, but the workflow's repository is %s", step.Type, mode)
 	}
