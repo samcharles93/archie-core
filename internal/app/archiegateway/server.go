@@ -21,6 +21,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/applystatus"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
+	"github.com/samcharles93/archie-core/internal/domain/health"
 	domainmemory "github.com/samcharles93/archie-core/internal/domain/memory"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/presence"
@@ -28,6 +29,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
+	"github.com/samcharles93/archie-core/internal/infrastructure/readiness"
 	"github.com/samcharles93/archie-core/internal/infrastructure/secretengine"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
@@ -201,7 +203,7 @@ func (b *server) openState(ctx context.Context) error {
 	b.cfg, b.runtimeVersions = cfg, versions
 	b.cfgHolder.Set(cfg)
 	go b.applyStatus.Run(ctx)
-	go presence.Run(ctx, presence.Gateway, servicekit.Build(), client, nil, b.log)
+
 	return nil
 }
 
@@ -232,6 +234,16 @@ func (b *server) connectNATS(ctx context.Context) (*natsio.Conn, error) {
 	}
 	b.addCleanup(nc.Close)
 	b.taskActionsConn = nc
+	registry := health.NewRegistry(
+		readiness.NewContractProbe("state_store", b.cfg.Health.DependencyTimeout.Std(), func(ctx context.Context) error { _, err := b.stateStore.StatusCounts(ctx); return err }),
+		readiness.NewContractProbe("nats", b.cfg.Health.DependencyTimeout.Std(), func(context.Context) error {
+			if !nc.IsConnected() {
+				return fmt.Errorf("broker disconnected")
+			}
+			return nil
+		}),
+	)
+	go presence.Run(ctx, presence.Gateway, servicekit.Build(), b.stateStore, registry, b.log)
 	return nc, nil
 }
 

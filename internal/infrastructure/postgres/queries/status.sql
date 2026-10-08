@@ -44,19 +44,20 @@ SELECT process, kind, applied_version, error, reported_at
 FROM apply_status ORDER BY process, kind;
 
 -- name: UpsertPresence :exec
-INSERT INTO presence (service, instance_id, version, install_type, started_at, reported_at, ready, detail)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO presence (service, instance_id, version, install_type, started_at, reported_at, ready, detail, checks)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 ON CONFLICT (service, instance_id) DO UPDATE SET
     version = excluded.version,
     install_type = excluded.install_type,
     started_at = excluded.started_at,
     reported_at = excluded.reported_at,
     ready = excluded.ready,
-    detail = excluded.detail;
+    detail = excluded.detail,
+    checks = excluded.checks;
 
 -- name: DeletePresenceBefore :exec
 DELETE FROM presence WHERE reported_at < $1;
 
 -- name: ListPresence :many
-SELECT service, instance_id, version, install_type, started_at, reported_at, ready, detail
+SELECT service, instance_id, version, install_type, started_at, reported_at, ready, detail, checks
 FROM presence ORDER BY service, instance_id;

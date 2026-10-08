@@ -973,6 +973,12 @@ message ListApplyStatusResponse { repeated ApplyStatus statuses = 1; }
 
 // Presence is one running service instance. ready and detail summarise its
 // readiness probes; detail names the degraded ones.
+message DependencyCheck {
+ string name = 1;
+ string status = 2;
+ bool ready = 3;
+ string detail = 4;
+}
 message Presence {
   string service = 1;
   string instance_id = 2;
@@ -982,6 +988,7 @@ message Presence {
   google.protobuf.Timestamp reported_at = 6;
   bool ready = 7;
   string detail = 8;
+  repeated DependencyCheck checks = 9;
 }
 message RecordCaptureRefusalRequest {
   string source = 1;

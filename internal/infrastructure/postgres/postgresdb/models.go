@@ -295,6 +295,7 @@ type Presence struct {
 	ReportedAt  time.Time
 	Ready       bool
 	Detail      string
+	Checks      []byte
 }
 
 type Resource struct {

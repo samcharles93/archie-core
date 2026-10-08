@@ -2,12 +2,14 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/postgresdb"
 )
@@ -127,6 +129,14 @@ func (s *Store) ListApplyStatus(ctx context.Context) ([]storecontract.ApplyStatu
 // PutPresence replaces one instance's record and drops records whose
 // instance stopped re-stamping long ago, so restarts do not accumulate rows.
 func (s *Store) PutPresence(ctx context.Context, presence storecontract.Presence) error {
+	checks := presence.Checks
+	if checks == nil {
+		checks = []health.Component{}
+	}
+	raw, err := json.Marshal(checks)
+	if err != nil {
+		return fmt.Errorf("store: encode presence checks: %w", err)
+	}
 	reported := presence.ReportedAt
 	if reported.IsZero() {
 		reported = time.Now()
@@ -135,7 +145,7 @@ func (s *Store) PutPresence(ctx context.Context, presence storecontract.Presence
 	if err := q.UpsertPresence(ctx, postgresdb.UpsertPresenceParams{
 		Service: presence.Service, InstanceID: presence.InstanceID, Version: presence.Version,
 		InstallType: presence.InstallType, StartedAt: presence.StartedAt.UTC(), ReportedAt: reported.UTC(),
-		Ready: presence.Ready, Detail: presence.Detail,
+		Ready: presence.Ready, Detail: presence.Detail, Checks: raw,
 	}); err != nil {
 		return fmt.Errorf("store: put presence: %w", err)
 	}
@@ -156,9 +166,13 @@ func (s *Store) ListPresence(ctx context.Context) ([]storecontract.Presence, err
 	}
 	out := make([]storecontract.Presence, 0, len(rows))
 	for _, r := range rows {
+		var checks []health.Component
+		if err := json.Unmarshal(r.Checks, &checks); err != nil {
+			return nil, fmt.Errorf("store: decode presence checks: %w", err)
+		}
 		out = append(out, storecontract.Presence{
 			Service: r.Service, InstanceID: r.InstanceID, Version: r.Version, InstallType: r.InstallType,
-			StartedAt: r.StartedAt, ReportedAt: r.ReportedAt, Ready: r.Ready, Detail: r.Detail,
+			StartedAt: r.StartedAt, ReportedAt: r.ReportedAt, Ready: r.Ready, Detail: r.Detail, Checks: checks,
 		})
 	}
 	return out, nil

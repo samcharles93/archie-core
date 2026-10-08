@@ -110,7 +110,7 @@ func (q *Queries) ListChannelStatus(ctx context.Context) ([]ChannelStatus, error
 }
 
 const listPresence = `-- name: ListPresence :many
-SELECT service, instance_id, version, install_type, started_at, reported_at, ready, detail
+SELECT service, instance_id, version, install_type, started_at, reported_at, ready, detail, checks
 FROM presence ORDER BY service, instance_id
 `
 
@@ -132,6 +132,7 @@ func (q *Queries) ListPresence(ctx context.Context) ([]Presence, error) {
 			&i.ReportedAt,
 			&i.Ready,
 			&i.Detail,
+			&i.Checks,
 		); err != nil {
 			return nil, err
 		}
@@ -231,15 +232,16 @@ func (q *Queries) UpsertConfigSnapshot(ctx context.Context, arg UpsertConfigSnap
 }
 
 const upsertPresence = `-- name: UpsertPresence :exec
-INSERT INTO presence (service, instance_id, version, install_type, started_at, reported_at, ready, detail)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO presence (service, instance_id, version, install_type, started_at, reported_at, ready, detail, checks)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 ON CONFLICT (service, instance_id) DO UPDATE SET
     version = excluded.version,
     install_type = excluded.install_type,
     started_at = excluded.started_at,
     reported_at = excluded.reported_at,
     ready = excluded.ready,
-    detail = excluded.detail
+    detail = excluded.detail,
+    checks = excluded.checks
 `
 
 type UpsertPresenceParams struct {
@@ -251,6 +253,7 @@ type UpsertPresenceParams struct {
 	ReportedAt  time.Time
 	Ready       bool
 	Detail      string
+	Checks      []byte
 }
 
 func (q *Queries) UpsertPresence(ctx context.Context, arg UpsertPresenceParams) error {
@@ -263,6 +266,7 @@ func (q *Queries) UpsertPresence(ctx context.Context, arg UpsertPresenceParams) 
 		arg.ReportedAt,
 		arg.Ready,
 		arg.Detail,
+		arg.Checks,
 	)
 	return err
 }

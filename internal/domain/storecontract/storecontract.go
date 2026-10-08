@@ -11,6 +11,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/eventtype"
 	"github.com/samcharles93/archie-core/internal/domain/harnesssecret"
+	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/source"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
@@ -416,14 +417,15 @@ type ApplyStatus struct {
 // Presence is one running service instance. Ready and Detail summarise its
 // readiness probes; Detail names the degraded ones.
 type Presence struct {
-	Service     string    `json:"service"`
-	InstanceID  string    `json:"instance_id"`
-	Version     string    `json:"version"`
-	InstallType string    `json:"install_type"`
-	StartedAt   time.Time `json:"started_at"`
-	ReportedAt  time.Time `json:"reported_at"`
-	Ready       bool      `json:"ready"`
-	Detail      string    `json:"detail,omitempty"`
+	Checks      []health.Component `json:"checks"`
+	Service     string             `json:"service"`
+	InstanceID  string             `json:"instance_id"`
+	Version     string             `json:"version"`
+	InstallType string             `json:"install_type"`
+	StartedAt   time.Time          `json:"started_at"`
+	ReportedAt  time.Time          `json:"reported_at"`
+	Ready       bool               `json:"ready"`
+	Detail      string             `json:"detail,omitempty"`
 }
 
 // WorkflowStat is one row of the per-workflow metrics table.

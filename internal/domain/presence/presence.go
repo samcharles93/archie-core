@@ -51,7 +51,7 @@ func Run(ctx context.Context, service string, build Build, store storecontract.P
 	ticker := time.NewTicker(applystatus.RestampInterval)
 	defer ticker.Stop()
 	for {
-		record.Ready, record.Detail = summarise(ctx, registry)
+		record.Ready, record.Detail, record.Checks = summarise(ctx, registry)
 		record.ReportedAt = time.Now().UTC()
 		if err := store.PutPresence(ctx, record); err != nil && ctx.Err() == nil {
 			log.Warn("presence not reported", "service", service, "err", err)
@@ -64,9 +64,9 @@ func Run(ctx context.Context, service string, build Build, store storecontract.P
 	}
 }
 
-func summarise(ctx context.Context, registry *health.Registry) (bool, string) {
+func summarise(ctx context.Context, registry *health.Registry) (bool, string, []health.Component) {
 	if registry == nil {
-		return true, ""
+		return true, "", []health.Component{}
 	}
 	report := registry.Run(ctx)
 	var degraded []string
@@ -75,7 +75,7 @@ func summarise(ctx context.Context, registry *health.Registry) (bool, string) {
 			degraded = append(degraded, c.Name)
 		}
 	}
-	return report.Status == health.StatusOK, strings.Join(degraded, ", ")
+	return report.Status == health.StatusOK, strings.Join(degraded, ", "), report.Components
 }
 
 func instanceID() string {
@@ -120,6 +120,7 @@ func Mesh(records []storecontract.Presence, now time.Time) []Service {
 		if service.State == StateDown {
 			// The last probe result describes a process that is gone.
 			service.Detail = ""
+			service.Checks = nil
 		}
 		services = append(services, service)
 	}

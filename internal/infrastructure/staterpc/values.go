@@ -17,6 +17,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/eventtype"
 	"github.com/samcharles93/archie-core/internal/domain/harnesssecret"
+	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/source"
@@ -613,6 +614,10 @@ func applyStatusValue(status *pb.ApplyStatus) storecontract.ApplyStatus {
 }
 
 func presenceProto(presence storecontract.Presence) *pb.Presence {
+	checks := make([]*pb.DependencyCheck, 0, len(presence.Checks))
+	for _, check := range presence.Checks {
+		checks = append(checks, &pb.DependencyCheck{Name: check.Name, Status: string(check.Status), Ready: check.Ready, Detail: check.Detail})
+	}
 	return &pb.Presence{
 		Service:     presence.Service,
 		InstanceId:  presence.InstanceID,
@@ -622,12 +627,17 @@ func presenceProto(presence storecontract.Presence) *pb.Presence {
 		ReportedAt:  timestamp(presence.ReportedAt),
 		Ready:       presence.Ready,
 		Detail:      presence.Detail,
+		Checks:      checks,
 	}
 }
 
 func presenceValue(presence *pb.Presence) storecontract.Presence {
 	if presence == nil {
 		return storecontract.Presence{}
+	}
+	checks := make([]health.Component, 0, len(presence.Checks))
+	for _, check := range presence.Checks {
+		checks = append(checks, health.Component{Name: check.Name, Status: health.Status(check.Status), Ready: check.Ready, Detail: check.Detail})
 	}
 	return storecontract.Presence{
 		Service:     presence.Service,
@@ -638,6 +648,7 @@ func presenceValue(presence *pb.Presence) storecontract.Presence {
 		ReportedAt:  timeValue(presence.ReportedAt),
 		Ready:       presence.Ready,
 		Detail:      presence.Detail,
+		Checks:      checks,
 	}
 }
 

@@ -29,6 +29,7 @@ interface Service {
   reported_at: string;
   detail?: string;
   applied: AppliedRecord[];
+  checks?: { name: string; status: "ok" | "degraded"; detail?: string }[];
 }
 
 const services = ref<Service[]>([]);
@@ -91,6 +92,11 @@ onUnmounted(() => clearInterval(timer));
               <span v-if="service.detail" class="ml-2 text-sm text-fg-muted"
                 >{{ service.state }}: {{ service.detail }}</span
               >
+              <div v-for="check in service.checks" :key="check.name" class="mt-1 flex items-center gap-2 text-xs">
+                <span>{{ check.name }}</span>
+                <Badge :variant="check.status === 'ok' ? 'ok' : 'warn'">{{ check.status }}</Badge>
+                <span v-if="check.detail" class="text-fg-muted">{{ check.detail }}</span>
+              </div>
             </TableCell>
             <TableCell class="text-sm">
               <template v-if="service.version">
