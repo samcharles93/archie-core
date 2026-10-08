@@ -138,6 +138,15 @@ function choose(entry: NavEntry): void {
   close();
 }
 
+// The pointer and the keyboard share one highlight, so a scroll must never
+// move it: when the list scrolls under a stationary pointer (including the
+// scrollIntoView below) the browser reports a move with no delta, and
+// letting it steal selection puts the highlight on the wrong row.
+function onHover(index: number, event: MouseEvent): void {
+  if (event.movementX === 0 && event.movementY === 0) return;
+  selection.value = index;
+}
+
 // Keep the highlighted row visible once matches run past the rows that fit.
 // block: 'nearest' scrolls the minimum distance and never animates, so reduced
 // motion needs no handling here. Optional call: not every environment
@@ -160,7 +169,7 @@ watch([selection, matches], async () => {
     <div
       role="dialog"
       aria-label="Command palette"
-      class="bg-popover text-popover-foreground border-border-strong shadow-md mx-auto mt-[15vh] w-[calc(100%-2rem)] max-w-lg overflow-hidden rounded-xl border"
+      class="bg-popover text-popover-foreground border-border-strong shadow-md relative mx-auto mt-[15vh] w-[calc(100%-2rem)] max-w-lg overflow-hidden rounded-xl border"
     >
       <div class="border-border flex items-center gap-2 border-b px-3">
         <Search :size="15" class="text-muted-foreground shrink-0" />
@@ -196,7 +205,7 @@ watch([selection, matches], async () => {
           :aria-selected="index === selection"
           class="hover:bg-muted aria-selected:bg-muted flex flex-col gap-0.5 rounded-md px-2.5 py-2 text-left outline-none"
           @mousedown.prevent
-          @mousemove="selection = index"
+          @mousemove="onHover(index, $event)"
           @click="choose(entry)"
         >
           <span class="truncate text-sm text-foreground">{{
