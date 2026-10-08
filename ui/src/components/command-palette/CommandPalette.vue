@@ -194,7 +194,7 @@ watch([selection, matches], async () => {
         ref="list"
         role="listbox"
         aria-label="Sections"
-        class="max-h-72 overflow-auto p-1.5"
+        class="max-h-72 overflow-x-hidden overflow-y-auto p-1.5"
       >
         <button
           v-for="(entry, index) in matches"
@@ -208,12 +208,12 @@ watch([selection, matches], async () => {
           @mousemove="onHover(index, $event)"
           @click="choose(entry)"
         >
-          <span class="truncate text-sm text-foreground">{{
+          <span class="truncate text-sm text-foreground min-w-0">{{
             entry.label
           }}</span>
           <span
             v-if="entry.description"
-            class="text-fg-muted truncate text-xs"
+            class="text-fg-muted truncate text-xs min-w-0"
             >{{ entry.description }}</span
           >
         </button>
