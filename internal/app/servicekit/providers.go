@@ -64,9 +64,7 @@ func resolveProviderMap(scope string, providers map[string]config.Provider, regi
 }
 
 // disableProvider clears a provider's credential so every consumer sees it as
-// unconfigured, and says why. The reference is cleared rather than left in
-// place: webui's ProviderView derives Configured from it, so keeping an
-// unresolvable reference would advertise a provider that cannot be used.
+// unconfigured, and says why.
 func disableProvider(providers map[string]config.Provider, id string, provider config.Provider, log *slog.Logger, reason string, cause error) {
 	provider.APIKey = secret.SecretRef{}
 	provider.APIKeyEnv = ""

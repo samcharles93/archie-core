@@ -10,7 +10,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/channels/status"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
-	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 )
 
 // ChannelView is one conversational front-end as shown on the dashboard's
@@ -106,59 +105,24 @@ func channelStateDetail(state status.State, configured bool) string {
 	}
 }
 
-// ConfigView is the read-only, secret-free projection of config.Config
-// shown on the dashboard's Configuration page. Every field here is an
-// explicit, hand-picked allowlist -- see handleConfig for why this is
-// built field by field rather than by marshalling config.Config directly.
+// ConfigView is the daemon's secret-free snapshot for dashboard handlers.
+// Only catalog, review and reload are exposed by /api/config.
 type ConfigView struct {
-	Identity     IdentityView            `json:"identity"`
-	Repositories []RepoView              `json:"repositories"`
-	Models       map[string]string       `json:"models"`
-	Providers    map[string]ProviderView `json:"providers"`
-	Budgets      BudgetsView             `json:"budgets"`
-	// Review is the layered pr-review policy: what a review may post, and
-	// whether a human decides. It is a plain projection of the effective
-	// cfg.Review, so the published snapshot tells a reader which dials are in
-	// force.
-	Review     ReviewView     `json:"review"`
-	Storage    StorageView    `json:"storage"`
-	Containers ContainersView `json:"containers"`
-	Web        WebView        `json:"web"`
-	// Chat carries the dashboard's own chat-page settings. They are
-	// daemon configuration the page cannot otherwise see: a process that
-	// renders a published snapshot has no [chat] section to read.
-	Chat ChatView `json:"chat"`
-	// Catalog lists the providers the model catalog found usable (their key
-	// is set in the environment, or they are configured), with their models,
-	// so Settings can offer to enable one and pick role models from it.
-	Catalog    []CatalogProviderView `json:"catalog"`
-	Provenance []ConfigOrigin        `json:"provenance"`
-	// Reload reports the most recent config reload outcome. Omitted when
-	// the reload status is unavailable.
-	Reload *config.ReloadStatus `json:"reload,omitempty"`
-	// Locked maps dotted config keys that cannot be changed from the
-	// dashboard to the reason. The UI renders these rows disabled rather
-	// than silently omitting the edit affordance.
-	Locked map[string]string `json:"locked,omitempty"`
-	// MultiIdentity reports that [[identities]] is configured, so Identity and
-	// Repositories describe only the default identity.
-	MultiIdentity bool `json:"multi_identity,omitempty"`
-	// Identities lists each identity's forge and repositories. Empty for a
-	// single-identity deployment.
-	Identities []ForgeIdentityView `json:"identities,omitempty"`
-	// Schema is the field-descriptor catalog for the configuration page.
-	Schema []ConfigSection `json:"schema"`
+	Identity      IdentityView          `json:"identity"`
+	Repositories  []ForgeRepoView       `json:"repositories"`
+	Review        ReviewView            `json:"review"`
+	Chat          ChatView              `json:"chat"`
+	Catalog       []CatalogProviderView `json:"catalog"`
+	Reload        *config.ReloadStatus  `json:"reload,omitempty"`
+	MultiIdentity bool                  `json:"multi_identity,omitempty"`
+	Identities    []ForgeIdentityView   `json:"identities,omitempty"`
 }
 
-// IdentityView is who Archie is on the forge -- never the token that
-// authenticates as that identity.
+// IdentityView supplies setup and task forge coordinates.
 type IdentityView struct {
-	BotUser      string `json:"bot_user"`
-	BotEmail     string `json:"bot_email"`
-	Label        string `json:"label"`
-	ForgeType    string `json:"forge_type"`
-	ForgeHost    string `json:"forge_host"`
-	DiffCapLines int    `json:"diff_cap_lines"`
+	BotUser   string `json:"bot_user"`
+	ForgeType string `json:"forge_type"`
+	ForgeHost string `json:"forge_host"`
 }
 
 // ForgeRepoView names one repository an identity owns. Owner and name are
@@ -177,39 +141,6 @@ type ForgeIdentityView struct {
 	Repos     []ForgeRepoView `json:"repos,omitempty"`
 }
 
-// RepoView is one managed repository and the quality gate it must pass.
-// Gate and Preflight are shell command argv lists -- test runners and
-// linters, not secrets -- so they are safe to show verbatim.
-type RepoView struct {
-	Owner             string     `json:"owner"`
-	Name              string     `json:"name"`
-	Base              string     `json:"base"`
-	Gate              [][]string `json:"gate"`
-	Protect           []string   `json:"protect"`
-	Ecosystem         string     `json:"ecosystem"`
-	PersistentStorage bool       `json:"persistent_storage"`
-	AllowConcurrent   bool       `json:"allow_concurrent"`
-	MaxRetries        int        `json:"max_retries"`
-}
-
-// ProviderView is an LLM provider's shape, never its key. APIKeyEnv is the
-// name of an environment variable, not a value, so it is safe to show;
-// Configured reports whether either credential form (env or secret engine)
-// is actually set, without revealing which or what.
-type ProviderView struct {
-	Class      string `json:"class"`
-	BaseURL    string `json:"base_url,omitempty"`
-	APIKeyEnv  string `json:"api_key_env,omitempty"`
-	Configured bool   `json:"configured"`
-}
-
-// BudgetsView mirrors config.Budgets, none of which is secret.
-type BudgetsView struct {
-	MaxSteps        int    `json:"max_steps"`
-	WallClock       string `json:"wall_clock"`
-	GateMaxFailures int    `json:"gate_max_failures"`
-}
-
 // ReviewView mirrors config.Review, neither field of which is secret. It
 // carries the value in force after the review-settings resource is layered over
 // the file's [review] section.
@@ -218,25 +149,6 @@ type ReviewView struct {
 	ApproveBeforePost bool `json:"approve_before_post"`
 }
 
-// StorageView is where archied keeps its state on disk. All paths, no
-// secrets.
-type StorageView struct {
-	WorkDir   string `json:"work_dir"`
-	StateDir  string `json:"state_dir"`
-	SkillsDir string `json:"skills_dir,omitempty"`
-}
-
-// ContainersView is how sandboxed task execution is configured.
-type ContainersView struct {
-	Image          string `json:"image,omitempty"`
-	MaxConcurrency int    `json:"max_concurrency"`
-	MaxUptime      string `json:"max_uptime"`
-	VolumeTTL      string `json:"volume_ttl"`
-	PullPolicy     string `json:"pull_policy"`
-	Network        string `json:"network,omitempty"`
-}
-
-// WebView is the dashboard's own listen address and proxy header trust settings.
 // ChatView carries the chat page's own settings and the facts the setup
 // checklist needs. Secret-free by construction: whether a channel has
 // credentials, never the credentials.
@@ -249,11 +161,6 @@ type ChatView struct {
 	// ChannelConfigured reports that at least one conversational
 	// front-end has credentials.
 	ChannelConfigured bool `json:"channel_configured"`
-}
-
-type WebView struct {
-	Listen                string `json:"listen"`
-	TrustForwardedHeaders bool   `json:"trust_forwarded_headers"`
 }
 
 // ConfigViewSchema names ConfigView's JSON shape; it changes on incompatible
@@ -285,7 +192,11 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{})
 		return
 	}
-	writeJSON(w, view)
+	writeJSON(w, struct {
+		Catalog []CatalogProviderView `json:"catalog"`
+		Review  ReviewView            `json:"review"`
+		Reload  *config.ReloadStatus  `json:"reload,omitempty"`
+	}{Catalog: view.Catalog, Review: view.Review, Reload: view.Reload})
 }
 
 // ConfigViewInput is everything BuildConfigView needs. The configuration
@@ -295,9 +206,6 @@ type ConfigViewInput struct {
 	// Config is one snapshot, read once. Under a Holder a reload swaps the
 	// whole value, which is what a read-only view always wanted.
 	Config config.Config
-	// Provenance is the file chain that produced Config, in precedence
-	// order.
-	Provenance []ConfigOrigin
 	// Reload is the most recent reload outcome, or nil when unavailable.
 	Reload *config.ReloadStatus
 	// Catalog is the usable-provider catalog the configuration owner loaded.
@@ -319,60 +227,16 @@ type CatalogProviderView struct {
 // allowlist of fields.
 func BuildConfigView(in ConfigViewInput) ConfigView {
 	cfg := in.Config
-	provenance := append([]ConfigOrigin(nil), in.Provenance...)
-
-	view := ConfigView{
-		Identity: IdentityView{
-			BotUser:      cfg.BotUser,
-			BotEmail:     cfg.BotEmail,
-			Label:        cfg.Label,
-			ForgeType:    cfg.Forge.Type,
-			ForgeHost:    cfg.Forge.Host,
-			DiffCapLines: cfg.DiffCap(),
-		},
+	return ConfigView{
+		Identity:      IdentityView{BotUser: cfg.BotUser, ForgeType: cfg.Forge.Type, ForgeHost: cfg.Forge.Host},
 		Repositories:  reposView(cfg.Repos),
 		MultiIdentity: len(cfg.Identities) > 0,
 		Identities:    identityForgesView(cfg.Identities),
-		Models:        cfg.Models,
-		Providers:     providersView(cfg.Providers),
-		Budgets: BudgetsView{
-			MaxSteps:        cfg.Budgets.MaxSteps,
-			WallClock:       cfg.Budgets.WallClock.Std().String(),
-			GateMaxFailures: cfg.Budgets.GateMaxFailures,
-		},
-		Review: ReviewView{
-			PrecisionGate:     cfg.Review.PrecisionGate,
-			ApproveBeforePost: cfg.Review.ApproveBeforePost,
-		},
-		Storage: StorageView{
-			WorkDir:   cfg.WorkDir,
-			StateDir:  cfg.StateDir,
-			SkillsDir: cfg.SkillsDir,
-		},
-		Containers: ContainersView{
-			Image:          cfg.Containers.Image,
-			MaxConcurrency: cfg.Containers.MaxConcurrency,
-			MaxUptime:      cfg.Containers.MaxUptime.Std().String(),
-			VolumeTTL:      cfg.Containers.VolumeTTL.Std().String(),
-			PullPolicy:     cfg.Containers.PullPolicy,
-			Network:        cfg.Containers.Network,
-		},
-		Web: WebView{
-			Listen:                cfg.Web.Listen,
-			TrustForwardedHeaders: cfg.Web.TrustForwardedHeaders,
-		},
-		Catalog: append([]CatalogProviderView{}, in.Catalog...),
-		Chat: ChatView{
-			ShowToolCalls:     cfg.Chat.ShowToolCalls,
-			Operator:          strings.TrimSpace(cfg.Chat.Operator),
-			ChannelConfigured: chatChannelConfigured(cfg.Chat),
-		},
-		Provenance: provenance,
-		Reload:     in.Reload,
+		Review:        ReviewView{PrecisionGate: cfg.Review.PrecisionGate, ApproveBeforePost: cfg.Review.ApproveBeforePost},
+		Catalog:       append([]CatalogProviderView{}, in.Catalog...),
+		Chat:          ChatView{ShowToolCalls: cfg.Chat.ShowToolCalls, Operator: strings.TrimSpace(cfg.Chat.Operator), ChannelConfigured: chatChannelConfigured(cfg.Chat)},
+		Reload:        in.Reload,
 	}
-	view.Schema = buildConfigSchema(view)
-	view.Locked = lockedSchemaKeys(view.Schema)
-	return view
 }
 
 // chatChannelConfigured reports whether any chat front-end is configured.
@@ -437,38 +301,10 @@ func RemoteConfigView(snapshots storecontract.ConfigSnapshotStore) ConfigViewSou
 	}
 }
 
-// lockedSchemaKeys returns the bootstrap-owned keys the schema exposes a row
-// for, with the reason shown in the UI. Keys the dashboard no longer renders,
-// such as the database URL, are omitted rather than advertised.
-func lockedSchemaKeys(sections []ConfigSection) map[string]string {
-	out := make(map[string]string)
-	for _, s := range sections {
-		for _, f := range s.Fields {
-			if reason, ok := configuration.DeniedKeys[f.Key]; ok {
-				out[f.Key] = reason
-			}
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-func reposView(repos []config.Repo) []RepoView {
-	out := make([]RepoView, 0, len(repos))
+func reposView(repos []config.Repo) []ForgeRepoView {
+	out := make([]ForgeRepoView, 0, len(repos))
 	for _, r := range repos {
-		out = append(out, RepoView{
-			Owner:             r.Owner,
-			Name:              r.Name,
-			Base:              r.BaseBranch(),
-			Gate:              r.Gate,
-			Protect:           r.Protect,
-			Ecosystem:         r.Ecosystem,
-			PersistentStorage: r.PersistentStorage,
-			AllowConcurrent:   r.AllowConcurrent,
-			MaxRetries:        r.MaxRetries,
-		})
+		out = append(out, ForgeRepoView{Owner: r.Owner, Name: r.Name})
 	}
 	return out
 }
@@ -488,19 +324,6 @@ func identityForgesView(identities []config.IdentityConfig) []ForgeIdentityView 
 			ForgeHost: id.Forge.Host,
 			Repos:     repos,
 		})
-	}
-	return out
-}
-
-func providersView(providers map[string]config.Provider) map[string]ProviderView {
-	out := make(map[string]ProviderView, len(providers))
-	for name, p := range providers {
-		out[name] = ProviderView{
-			Class:      p.Class,
-			BaseURL:    p.BaseURL,
-			APIKeyEnv:  p.APIKeyEnv,
-			Configured: strings.TrimSpace(p.APIKeyEnv) != "" || strings.TrimSpace(p.APIKey.Key) != "",
-		}
 	}
 	return out
 }

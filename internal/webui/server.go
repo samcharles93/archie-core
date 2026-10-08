@@ -226,17 +226,6 @@ func (s *Server) trustForwardedHeaders() bool {
 	return s.TrustForwardedHeaders
 }
 
-// ConfigOrigin explains one source file contributing to the effective
-// configuration. Sources are ordered from lowest to highest precedence.
-type ConfigOrigin struct {
-	Path    string `json:"path"`
-	Role    string `json:"role"`
-	Layer   string `json:"layer"`
-	Feature string `json:"feature,omitempty"`
-}
-
-// SetProvenance publishes a fresh provenance list after a config reload.
-
 // EventPublisher accepts events for the store and the live stream. The bus
 // in cmd/archied satisfies it.
 type EventPublisher interface {

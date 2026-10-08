@@ -724,26 +724,11 @@ func (b *boot) publishConfig(ctx context.Context, cfg config.Config) {
 	}
 }
 
-func (b *boot) configOrigins() []webui.ConfigOrigin {
-	provenance := b.currentProvenance.Load()
-	if provenance == nil {
-		return nil
-	}
-	origins := make([]webui.ConfigOrigin, 0, len(provenance.Origins))
-	for _, origin := range provenance.Origins {
-		origins = append(origins, webui.ConfigOrigin{
-			Path: origin.Path, Role: string(origin.Role), Layer: string(origin.Layer), Feature: string(origin.Feature),
-		})
-	}
-	return origins
-}
-
 func (b *boot) configViewInput() webui.ConfigViewInput {
 	catalog, _ := b.catalogState()
 	in := webui.ConfigViewInput{
-		Config:     b.cfgHolder.Get(),
-		Provenance: b.configOrigins(),
-		Catalog:    catalogView(catalog),
+		Config:  b.cfgHolder.Get(),
+		Catalog: catalogView(catalog),
 	}
 	if b.lastReload != nil {
 		status := b.lastReload()
