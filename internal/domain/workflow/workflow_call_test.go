@@ -120,7 +120,9 @@ steps:
   - type: workflow.call
     settings: {workflow: callee}
 `,
-			wantErr: "needs an id",
+			// The whole message, so the refusal still names the step it
+			// refused: this is where a pinned definition is compiled.
+			wantErr: `workflow "caller" step 1: "workflow.call" needs an id`,
 		},
 	}
 	for _, tt := range tests {
@@ -259,22 +261,6 @@ steps:
 `,
 			},
 			wantErr: `workflow "caller" step 1 branch "a" step 1 calls "missing", which is not defined`,
-		},
-		{
-			name: "a call step with no id is refused naming the step",
-			defs: map[string]string{
-				"caller": `id: caller
-repository: none
-steps:
-  - {type: workflow.call, settings: {workflow: callee}}
-`,
-				"callee": `id: callee
-repository: none
-steps:
-  - type: workflow.finish
-`,
-			},
-			wantErr: `workflow "caller" step 1: "workflow.call" needs an id`,
 		},
 		{
 			name: "a cycle through branch calls is refused",

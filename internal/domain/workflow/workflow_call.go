@@ -139,13 +139,7 @@ func runWorkflowCall(ctx context.Context, s workflowCallSettings, tc *TaskContex
 		return fmt.Errorf("%s: could not be recorded: %w", WorkflowCallStepName, err)
 	}
 	if !s.Wait {
-		// The call step closes at once: the callee runs on, and nothing the
-		// caller waits on remains open.
-		if err := tc.finishChildStep(ctx, callStep, taskstate.StepSucceeded,
-			fmt.Sprintf("started %q (task %d); no wait", s.Workflow, callee.ID), 0); err != nil {
-			return fmt.Errorf("%s: could not be closed: %w", WorkflowCallStepName, err)
-		}
-		return nil
+		return tc.closeUnwaitedCall(ctx, s, callStep, callee.ID)
 	}
 	// Close the call step with the callee's outcome, unless the caller itself was
 	// cancelled.
@@ -171,6 +165,16 @@ func runWorkflowCall(ctx context.Context, s workflowCallSettings, tc *TaskContex
 	// Later steps read the callee's outputs as this step's result.
 	tc.stepResult = StepResult{Summary: fmt.Sprintf("%q (task %d) finished", s.Workflow, callee.ID), Result: calleeOutputs}
 	if err := tc.finishChildStep(ctx, callStep, taskstate.StepSucceeded, tc.stepResult.Summary, 0); err != nil {
+		return fmt.Errorf("%s: could not be closed: %w", WorkflowCallStepName, err)
+	}
+	return nil
+}
+
+// closeUnwaitedCall closes the call step of a wait:false call at once: the
+// callee runs on, and nothing the caller waits on remains open.
+func (tc *TaskContext) closeUnwaitedCall(ctx context.Context, s workflowCallSettings, callStep, calleeTaskID int64) error {
+	if err := tc.finishChildStep(ctx, callStep, taskstate.StepSucceeded,
+		fmt.Sprintf("started %q (task %d); no wait", s.Workflow, calleeTaskID), 0); err != nil {
 		return fmt.Errorf("%s: could not be closed: %w", WorkflowCallStepName, err)
 	}
 	return nil

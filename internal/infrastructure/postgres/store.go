@@ -786,7 +786,7 @@ func (s *Store) TaskByID(ctx context.Context, taskID int64) (*workflow.Task, err
 // callerTaskID and callKey when there is one. A child that ended dead or
 // declined freed its key, so such a call starts a fresh child. The caller must
 // be running and within workflow.MaxCallDepth.
-func (s *Store) StartCall(ctx context.Context, callerTaskID int64, callKey string, wf string, inputs map[string]any) (*workflow.Task, error) {
+func (s *Store) StartCall(ctx context.Context, callerTaskID int64, callKey, wf string, inputs map[string]any) (*workflow.Task, error) {
 	encoded, err := task.EncodeInputs(inputs)
 	if err != nil {
 		return nil, err
