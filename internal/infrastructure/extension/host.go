@@ -169,7 +169,7 @@ func (h *Host) Close() {
 
 // openVerified opens the extension binary and checks it against sum.
 func openVerified(path string, sum []byte) (*os.File, error) {
-	f, err := os.Open(path) //nolint:gosec // the path is the installed package's binary
+	f, err := os.Open(path) // the path is the installed package's binary
 	if err != nil {
 		return nil, err
 	}

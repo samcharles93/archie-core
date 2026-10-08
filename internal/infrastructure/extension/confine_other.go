@@ -16,5 +16,5 @@ func confinedCommand(context.Context, *os.File, string) (*exec.Cmd, error) {
 }
 
 func openCommand(ctx context.Context, binary *os.File) *exec.Cmd {
-	return exec.CommandContext(ctx, binary.Name()) //nolint:gosec // the host-verified binary
+	return exec.CommandContext(ctx, binary.Name()) // the host-verified binary
 }

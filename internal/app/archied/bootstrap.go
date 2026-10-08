@@ -340,7 +340,7 @@ func (b *boot) setupObservability(ctx context.Context) {
 
 const reactionStreamMaxAge = 24 * time.Hour
 
-func (b *boot) connectNATS(ctx context.Context) error { //nolint:nestif // embedded broker discovery and startup require explicit fallback branches
+func (b *boot) connectNATS(ctx context.Context) error { // embedded broker discovery and startup require explicit fallback branches
 	cfg, log := b.cfg, b.log
 	url := cfg.NATS.URL
 	var natsToken string

@@ -21,7 +21,7 @@ func (randomSampler) Sample(_ context.Context, candidates []Candidate, req Reque
 		return nil, nil
 	}
 	n := effectiveCap(req.Cap, len(candidates))
-	seed := uint64(req.Seed) //nolint:gosec // deterministic seeding, not a security boundary
+	seed := uint64(req.Seed) // deterministic seeding, not a security boundary
 	rng := rand.New(rand.NewPCG(seed, seed))
 	order := rng.Perm(len(candidates))
 	out := make([]Candidate, n)

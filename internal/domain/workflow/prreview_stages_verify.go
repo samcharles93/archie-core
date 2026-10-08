@@ -99,7 +99,7 @@ func runPrecisionGate(ctx context.Context, tc *TaskContext, findings []prreview.
 		Parameters: precisionGateSchema, RequiredFields: []string{"verdicts"}, MaxCalls: 1,
 	}})
 	if err != nil || res.Status != agentrun.StatusPassed {
-		return findings //nolint:nilerr // recall-first: a gate that could not run is not evidence any finding should drop
+		return findings // recall-first: a gate that could not run is not evidence any finding should drop
 	}
 	calls := res.Captures["precision_gate"]
 	if len(calls) != 1 {
@@ -455,7 +455,7 @@ func runCompoundClusterCheck(ctx context.Context, tc *TaskContext, clusterID str
 		Parameters: params, RequiredFields: []string{"indices"}, MaxCalls: 1,
 	}})
 	if err != nil || res.Status != agentrun.StatusPassed {
-		return nil //nolint:nilerr // a cluster call that could not run flags nothing rather than failing the whole compound-check stage
+		return nil // a cluster call that could not run flags nothing rather than failing the whole compound-check stage
 	}
 	calls := res.Captures["compound_findings"]
 	if len(calls) != 1 {
@@ -618,7 +618,7 @@ func runMergeGateCall(ctx context.Context, tc *TaskContext, f prreview.ScoredFin
 		Parameters: mergeGateSchema, RequiredFields: []string{"blocking"}, MaxCalls: 1,
 	}})
 	if err != nil || res.Status != agentrun.StatusPassed {
-		return false //nolint:nilerr // a merge-gate call that could not run leaves the finding advisory
+		return false // a merge-gate call that could not run leaves the finding advisory
 	}
 	calls := res.Captures["classify_blocking"]
 	if len(calls) != 1 {

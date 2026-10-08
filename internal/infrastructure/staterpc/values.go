@@ -54,7 +54,7 @@ func mapValues[A, B any](in []A, f func(A) B) []B {
 	return out
 }
 
-func taskProto(t *task.Task) *pb.Task { //nolint:dupl // mirror-image field-by-field proto<->domain mapping; taskValue below reverses every assignment, so line-level duplication is unavoidable without reflection
+func taskProto(t *task.Task) *pb.Task { // mirror-image field-by-field proto<->domain mapping; taskValue below reverses every assignment, so line-level duplication is unavoidable without reflection
 	if t == nil {
 		return nil
 	}
@@ -86,7 +86,7 @@ func taskProto(t *task.Task) *pb.Task { //nolint:dupl // mirror-image field-by-f
 	}
 }
 
-func taskValue(t *pb.Task) *task.Task { //nolint:dupl // see taskProto above
+func taskValue(t *pb.Task) *task.Task { // see taskProto above
 	if t == nil {
 		return nil
 	}

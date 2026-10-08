@@ -57,7 +57,7 @@ func confinedCommand(ctx context.Context, binary *os.File, socket string) (*exec
 // network, for a package that declares no egress hosts.
 func openCommand(ctx context.Context, binary *os.File) *exec.Cmd {
 	path := fmt.Sprintf("/proc/%d/fd/%d", os.Getpid(), binary.Fd())
-	cmd := exec.CommandContext(ctx, path) //nolint:gosec // the host-verified binary, by descriptor
+	cmd := exec.CommandContext(ctx, path) // the host-verified binary, by descriptor
 	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
 	return cmd
 }
@@ -94,7 +94,7 @@ func launch(socket string) int {
 func runExtension(ctx context.Context, path string) int {
 	runtime.LockOSThread()
 	proxy := "http://" + proxyAddr
-	cmd := exec.CommandContext(ctx, path) //nolint:gosec // the host-verified binary, by descriptor
+	cmd := exec.CommandContext(ctx, path) // the host-verified binary, by descriptor
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	cmd.Env = append(os.Environ(),
 		"HTTP_PROXY="+proxy, "HTTPS_PROXY="+proxy, "ALL_PROXY="+proxy,

@@ -557,7 +557,7 @@ func (s *EDA) SetDispatchTask(ctx context.Context, bindingID, captureID string, 
 
 // ListDispatches returns the newest ledger rows matching filter.
 func (s *EDA) ListDispatches(ctx context.Context, filter storecontract.DispatchFilter) ([]storecontract.Dispatch, error) {
-	params := postgresdb.ListBindingDispatchesParams{EntryLimit: int32(min(max(filter.Limit, 1), 500))} //nolint:gosec // clamped
+	params := postgresdb.ListBindingDispatchesParams{EntryLimit: int32(min(max(filter.Limit, 1), 500))} // clamped
 	if filter.BindingID != "" {
 		params.Binding = pgtype.Text{String: filter.BindingID, Valid: true}
 	}

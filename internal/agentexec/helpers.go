@@ -64,7 +64,7 @@ func ProtectionMatcher(p agentrun.Protection, readOnly bool) func(string) bool {
 func ValidateCaptureArgs(spec agentrun.CaptureTool, value json.RawMessage) (string, bool) {
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(value, &object); err != nil {
-		return spec.Name + " rejected: arguments must be a JSON object", false //nolint:nilerr // the agent loop must see malformed tool arguments as feedback it can correct, not as a failed tool call
+		return spec.Name + " rejected: arguments must be a JSON object", false // the agent loop must see malformed tool arguments as feedback it can correct, not as a failed tool call
 	}
 	for _, check := range []func(agentrun.CaptureTool, map[string]json.RawMessage) (string, bool){
 		checkRequiredFields,

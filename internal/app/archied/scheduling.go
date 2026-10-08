@@ -174,8 +174,6 @@ func (s scheduleResourceStore) MarkRun(ctx context.Context, id string, runAt tim
 // The stop path derives its own timeout budget from Background rather than
 // the boot context, which is already cancelled by the time shutdown runs --
 // the same reasoning as shutdownCuratorRuntime.
-//
-//nolint:contextcheck
 func shutdownSchedulingEngine(e *scheduling.Engine, log *slog.Logger) func() {
 	return func() {
 		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

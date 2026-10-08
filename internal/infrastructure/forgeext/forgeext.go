@@ -136,7 +136,7 @@ func call[T any](ctx context.Context, f *Forge, op string, fn func(forgev1.Forge
 func ref(owner, repo string) *forgev1.RepoRef { return &forgev1.RepoRef{Owner: owner, Repo: repo} }
 
 func prRef(owner, repo string, number int) *forgev1.PullRequestRef {
-	return &forgev1.PullRequestRef{Repo: ref(owner, repo), Number: int32(number)} //nolint:gosec // issue numbers fit int32
+	return &forgev1.PullRequestRef{Repo: ref(owner, repo), Number: int32(number)} // issue numbers fit int32
 }
 
 func issues(in []*forgev1.Issue) []forge.Issue {
@@ -169,21 +169,21 @@ func (f *Forge) IssuesWithLabel(ctx context.Context, owner, repo, label string) 
 
 func (f *Forge) Comment(ctx context.Context, owner, repo string, number int, body string) (int64, error) {
 	resp, err := call(ctx, f, "comment", func(c forgev1.ForgeServiceClient) (*forgev1.CommentResponse, error) {
-		return c.Comment(ctx, &forgev1.CommentRequest{Repo: ref(owner, repo), Number: int32(number), Body: body}) //nolint:gosec // issue numbers fit int32
+		return c.Comment(ctx, &forgev1.CommentRequest{Repo: ref(owner, repo), Number: int32(number), Body: body}) // issue numbers fit int32
 	})
 	return resp.GetId(), err
 }
 
 func (f *Forge) CloseIssue(ctx context.Context, owner, repo string, number int, comment string) error {
 	_, err := call(ctx, f, "close issue", func(c forgev1.ForgeServiceClient) (*forgev1.CloseIssueResponse, error) {
-		return c.CloseIssue(ctx, &forgev1.CloseIssueRequest{Repo: ref(owner, repo), Number: int32(number), Comment: comment}) //nolint:gosec // issue numbers fit int32
+		return c.CloseIssue(ctx, &forgev1.CloseIssueRequest{Repo: ref(owner, repo), Number: int32(number), Comment: comment}) // issue numbers fit int32
 	})
 	return err
 }
 
 func (f *Forge) React(ctx context.Context, owner, repo string, number int, reaction string) error {
 	_, err := call(ctx, f, "react", func(c forgev1.ForgeServiceClient) (*forgev1.ReactResponse, error) {
-		return c.React(ctx, &forgev1.ReactRequest{Repo: ref(owner, repo), Number: int32(number), Reaction: reaction}) //nolint:gosec // issue numbers fit int32
+		return c.React(ctx, &forgev1.ReactRequest{Repo: ref(owner, repo), Number: int32(number), Reaction: reaction}) // issue numbers fit int32
 	})
 	return err
 }
@@ -192,7 +192,7 @@ func (f *Forge) React(ctx context.Context, owner, repo string, number int, react
 // state change corrects the label.
 func (f *Forge) SetStateLabel(ctx context.Context, owner, repo string, number int, label string, knownLabels []string) {
 	_, err := call(ctx, f, "set state label", func(c forgev1.ForgeServiceClient) (*forgev1.SetStateLabelResponse, error) {
-		return c.SetStateLabel(ctx, &forgev1.SetStateLabelRequest{Repo: ref(owner, repo), Number: int32(number), Label: label, KnownLabels: knownLabels}) //nolint:gosec // issue numbers fit int32
+		return c.SetStateLabel(ctx, &forgev1.SetStateLabelRequest{Repo: ref(owner, repo), Number: int32(number), Label: label, KnownLabels: knownLabels}) // issue numbers fit int32
 	})
 	if err != nil {
 		f.log.Warn("set state label", "owner", owner, "repo", repo, "number", number, "err", err)
@@ -208,28 +208,28 @@ func (f *Forge) CreatePR(ctx context.Context, owner, repo, title, head, base, bo
 
 func (f *Forge) ClosePR(ctx context.Context, owner, repo string, number int, comment string) error {
 	_, err := call(ctx, f, "close pull request", func(c forgev1.ForgeServiceClient) (*forgev1.ClosePRResponse, error) {
-		return c.ClosePR(ctx, &forgev1.ClosePRRequest{Repo: ref(owner, repo), Number: int32(number), Comment: comment}) //nolint:gosec // PR numbers fit int32
+		return c.ClosePR(ctx, &forgev1.ClosePRRequest{Repo: ref(owner, repo), Number: int32(number), Comment: comment}) // PR numbers fit int32
 	})
 	return err
 }
 
 func (f *Forge) MergePR(ctx context.Context, owner, repo string, number int) error {
 	_, err := call(ctx, f, "merge pull request", func(c forgev1.ForgeServiceClient) (*forgev1.MergePRResponse, error) {
-		return c.MergePR(ctx, &forgev1.MergePRRequest{Repo: ref(owner, repo), Number: int32(number)}) //nolint:gosec // PR numbers fit int32
+		return c.MergePR(ctx, &forgev1.MergePRRequest{Repo: ref(owner, repo), Number: int32(number)}) // PR numbers fit int32
 	})
 	return err
 }
 
 func (f *Forge) PRState(ctx context.Context, owner, repo string, number int) (string, error) {
 	resp, err := call(ctx, f, "pull request state", func(c forgev1.ForgeServiceClient) (*forgev1.PRStateResponse, error) {
-		return c.PRState(ctx, &forgev1.PRStateRequest{Repo: ref(owner, repo), Number: int32(number)}) //nolint:gosec // issue numbers fit int32
+		return c.PRState(ctx, &forgev1.PRStateRequest{Repo: ref(owner, repo), Number: int32(number)}) // issue numbers fit int32
 	})
 	return resp.GetState(), err
 }
 
 func (f *Forge) GetPullRequest(ctx context.Context, owner, repo string, number int) (forge.PullRequest, error) {
 	resp, err := call(ctx, f, "get pull request", func(c forgev1.ForgeServiceClient) (*forgev1.GetPullRequestResponse, error) {
-		return c.GetPullRequest(ctx, &forgev1.GetPullRequestRequest{Repo: ref(owner, repo), Number: int32(number)}) //nolint:gosec // issue numbers fit int32
+		return c.GetPullRequest(ctx, &forgev1.GetPullRequestRequest{Repo: ref(owner, repo), Number: int32(number)}) // issue numbers fit int32
 	})
 	if err != nil {
 		return forge.PullRequest{}, err
@@ -244,7 +244,7 @@ func (f *Forge) GetPullRequest(ctx context.Context, owner, repo string, number i
 
 func (f *Forge) GetPullRequestDiff(ctx context.Context, owner, repo string, number int) (string, error) {
 	resp, err := call(ctx, f, "get pull request diff", func(c forgev1.ForgeServiceClient) (*forgev1.GetPullRequestDiffResponse, error) {
-		return c.GetPullRequestDiff(ctx, &forgev1.GetPullRequestDiffRequest{Repo: ref(owner, repo), Number: int32(number)}) //nolint:gosec // issue numbers fit int32
+		return c.GetPullRequestDiff(ctx, &forgev1.GetPullRequestDiffRequest{Repo: ref(owner, repo), Number: int32(number)}) // issue numbers fit int32
 	})
 	return resp.GetDiff(), err
 }
@@ -290,7 +290,7 @@ func (f *Forge) ReplyToReview(ctx context.Context, owner, repo string, number in
 func (f *Forge) CreateReviewComments(ctx context.Context, owner, repo string, number int, reviewedHeadSHA string, comments []forge.InlineReviewComment) error {
 	in := make([]*forgev1.InlineReviewComment, 0, len(comments))
 	for _, c := range comments {
-		in = append(in, &forgev1.InlineReviewComment{Path: c.Path, Line: int32(c.Line), Body: c.Body}) //nolint:gosec // line numbers fit int32
+		in = append(in, &forgev1.InlineReviewComment{Path: c.Path, Line: int32(c.Line), Body: c.Body}) // line numbers fit int32
 	}
 	_, err := call(ctx, f, "create review comments", func(c forgev1.ForgeServiceClient) (*forgev1.CreateReviewCommentsResponse, error) {
 		return c.CreateReviewComments(ctx, &forgev1.CreateReviewCommentsRequest{PullRequest: prRef(owner, repo, number), ReviewedHeadSha: reviewedHeadSHA, Comments: in})
@@ -314,7 +314,7 @@ func (f *Forge) VerifyPush(ctx context.Context, owner, repo string) error {
 
 func (f *Forge) LinkBranch(ctx context.Context, owner, repo string, issueNumber int, branch string) error {
 	_, err := call(ctx, f, "link branch", func(c forgev1.ForgeServiceClient) (*forgev1.LinkBranchResponse, error) {
-		return c.LinkBranch(ctx, &forgev1.LinkBranchRequest{Repo: ref(owner, repo), IssueNumber: int32(issueNumber), Branch: branch}) //nolint:gosec // issue numbers fit int32
+		return c.LinkBranch(ctx, &forgev1.LinkBranchRequest{Repo: ref(owner, repo), IssueNumber: int32(issueNumber), Branch: branch}) // issue numbers fit int32
 	})
 	return err
 }

@@ -701,7 +701,7 @@ func (s *Store) Tasks(ctx context.Context, limit int) ([]workflow.Task, error) {
 func (s *Store) TasksPage(ctx context.Context, page storecontract.TaskPage) ([]workflow.Task, error) {
 	params := postgresdb.ListTaskSummariesParams{
 		Statuses:  append([]string{}, page.Statuses...),
-		PageLimit: int32(min(max(page.Limit, 1), 500)), //nolint:gosec // clamped
+		PageLimit: int32(min(max(page.Limit, 1), 500)), // clamped
 	}
 	if page.After.ID != 0 {
 		params.BeforeUpdated = pgtype.Timestamptz{Time: page.After.UpdatedAt, Valid: true}

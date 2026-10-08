@@ -2,7 +2,6 @@ package webui
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 	"strings"
 
@@ -267,6 +266,3 @@ func matchPrefix(path, prefix string) bool {
 func matchSegment(path, prefix, suffix string) bool {
 	return strings.HasPrefix(path, prefix) && strings.HasSuffix(path, suffix)
 }
-
-// The log the authorize wrapper reports assembly failures with.
-var _ = slog.Default //nolint:unused // logging stays on s.Log

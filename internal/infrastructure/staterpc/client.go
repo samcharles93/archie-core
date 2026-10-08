@@ -596,7 +596,7 @@ func (c *Client) ListBindings(ctx context.Context) ([]binding.Binding, error) {
 
 func (c *Client) ListDispatches(ctx context.Context, filter storecontract.DispatchFilter) ([]storecontract.Dispatch, error) {
 	r, err := c.client.ListDispatches(ctx, &pb.ListDispatchesRequest{
-		BindingId: filter.BindingID, CaptureId: filter.CaptureID, TaskId: filter.TaskID, Limit: int32(filter.Limit), //nolint:gosec // the store clamps it
+		BindingId: filter.BindingID, CaptureId: filter.CaptureID, TaskId: filter.TaskID, Limit: int32(filter.Limit), // the store clamps it
 	})
 	if err != nil {
 		return nil, unmapError(err)

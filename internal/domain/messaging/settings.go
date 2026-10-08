@@ -144,7 +144,7 @@ func (c *SettingsCommand) replace(ctx context.Context, actor, input string) stri
 	return fmt.Sprintf("Updated %s to version %d.", updated.Kind, updated.Version)
 }
 
-func (c *SettingsCommand) identity(ctx context.Context, actor string, args []string) string { //nolint:gocyclo,cyclop,funlen // command arity checks remain adjacent to spoof-sensitive dispatch
+func (c *SettingsCommand) identity(ctx context.Context, actor string, args []string) string { //nolint:gocyclo,cyclop // command arity checks remain adjacent to spoof-sensitive dispatch
 	const usage = "Usage: /settings identity <list|create <kind> <name>|rename <id> <name>|suspend <id>|reactivate <id>|retire <id>>"
 	actorID, refusal := c.resolveActor(ctx, "Identity changes", actor)
 	if refusal != "" {
