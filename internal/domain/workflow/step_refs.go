@@ -126,19 +126,100 @@ func checkStepReference(path string, parts []string, earlier *refScope) error {
 
 var taskFields = map[string]bool{"review": true, "plan": true, "title": true, "body": true, "prompt": true, "repository": true, "kind": true, "issue": true, "pr": true}
 
+// soleReferencePattern matches a value that is exactly one reference, which is
+// what lets it carry the referenced value's own type instead of its text.
+var soleReferencePattern = regexp.MustCompile(`^\s*\{\{\s*([^{}\s]+)\s*\}\}\s*$`)
+
 // renderSettings returns a copy of settings with every reference replaced by
-// its value in this run. A reference to an absent value renders empty: a
-// skipped earlier step leaves nothing behind, and that is not an error.
+// its value in this run.
+//
+// A value that is exactly one reference takes that reference's own type, so a
+// boolean, number, array or object crosses from one step to the next intact; a
+// reference embedded in prose is interpolated as text, the only thing a string
+// can hold. A reference to an absent value renders empty, which is not an
+// error: a skipped earlier step leaves nothing behind.
 func renderSettings(settings yaml.Node, tc *TaskContext) yaml.Node {
 	scope := referenceScope(tc)
 	rendered := deepCopyNode(&settings)
-	walkStrings(rendered, func(value string) string {
-		return referencePattern.ReplaceAllStringFunc(value, func(token string) string {
-			path := referencePattern.FindStringSubmatch(token)[1]
-			return stringify(lookup(scope, strings.Split(path, ".")))
-		})
-	})
+	renderNode(rendered, scope)
 	return *rendered
+}
+
+// renderNode replaces references in a settings node's string values, in place.
+// Mapping keys are interpolated as text: a key names a field, so it has no
+// typed value to carry.
+func renderNode(node *yaml.Node, scope map[string]any) {
+	switch node.Kind {
+	case yaml.DocumentNode, yaml.SequenceNode:
+		for _, child := range node.Content {
+			renderNode(child, scope)
+		}
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			interpolateNode(node.Content[i], scope)
+			renderNode(node.Content[i+1], scope)
+		}
+	default:
+		if node.Tag == "!!str" {
+			renderValue(node, scope)
+		}
+	}
+}
+
+// renderValue replaces one string value's references. A value that is exactly
+// one reference takes the referenced value's type; otherwise its references
+// are interpolated as text.
+func renderValue(node *yaml.Node, scope map[string]any) {
+	if path, ok := soleReference(node.Value); ok {
+		setNodeValue(node, lookup(scope, strings.Split(path, ".")))
+		return
+	}
+	interpolateNode(node, scope)
+}
+
+// interpolateNode replaces every reference in one string node with its text.
+func interpolateNode(node *yaml.Node, scope map[string]any) {
+	if node.Kind != yaml.ScalarNode || node.Tag != "!!str" {
+		return
+	}
+	node.Value = referencePattern.ReplaceAllStringFunc(node.Value, func(token string) string {
+		path := referencePattern.FindStringSubmatch(token)[1]
+		return stringify(lookup(scope, strings.Split(path, ".")))
+	})
+}
+
+// soleReference returns the path of the one reference value is, when value is
+// nothing but that reference.
+func soleReference(value string) (string, bool) {
+	match := soleReferencePattern.FindStringSubmatch(value)
+	if match == nil {
+		return "", false
+	}
+	return match[1], true
+}
+
+// setNodeValue replaces a scalar node with the node for value, so the value's
+// type survives the trip. An absent reference renders empty, the documented
+// rendering of nothing. A value yaml cannot carry keeps the reference text,
+// which reads better than dropping the setting.
+func setNodeValue(node *yaml.Node, value any) {
+	if value == nil {
+		node.Value = ""
+		return
+	}
+	raw, err := yaml.Marshal(value)
+	if err != nil {
+		return
+	}
+	var replacement yaml.Node
+	if err := yaml.Unmarshal(raw, &replacement); err != nil {
+		return
+	}
+	content := &replacement
+	if replacement.Kind == yaml.DocumentNode && len(replacement.Content) == 1 {
+		content = replacement.Content[0]
+	}
+	*node = *content
 }
 
 func referenceScope(tc *TaskContext) map[string]any {

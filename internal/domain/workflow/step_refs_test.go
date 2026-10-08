@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -199,6 +200,85 @@ steps:
 				t.Fatalf("rendering changed the definition: %s", original)
 			}
 		})
+	}
+}
+
+// TestRenderSettingsPreservesTypes pins the reference contract between steps:
+// a setting that is exactly one reference takes the referenced value's type,
+// so booleans, numbers, arrays and objects survive; a reference embedded in
+// prose is interpolated as text, which is the only thing a string can hold.
+func TestRenderSettingsPreservesTypes(t *testing.T) {
+	src := `
+flag: "{{ steps.plan.result.fit }}"
+count: "{{ steps.plan.result.count }}"
+items: "{{ steps.plan.result.labels }}"
+nested: "{{ steps.plan.result.meta }}"
+whole: "{{ steps.plan.result }}"
+text: "fit is {{ steps.plan.result.fit }}"
+prose: "labels: {{ steps.plan.result.labels }}"
+absent: "{{ steps.plan.result.missing }}"
+raw: "{{ steps.plan.summary }}"
+`
+	var settings yaml.Node
+	if err := yaml.Unmarshal([]byte(src), &settings); err != nil {
+		t.Fatal(err)
+	}
+	tc := &TaskContext{Task: &Task{Title: "t"}, stepResults: map[string]StepResult{
+		"plan": {
+			Summary: "the plan",
+			Result: map[string]any{
+				"fit":    true,
+				"count":  float64(3),
+				"labels": []any{"a", "b"},
+				"meta":   map[string]any{"k": "v"},
+			},
+		},
+	}}
+	var got struct {
+		Flag   bool              `yaml:"flag"`
+		Count  int               `yaml:"count"`
+		Items  []string          `yaml:"items"`
+		Nested map[string]string `yaml:"nested"`
+		Whole  map[string]any    `yaml:"whole"`
+		Text   string            `yaml:"text"`
+		Prose  string            `yaml:"prose"`
+		Absent string            `yaml:"absent"`
+		Raw    string            `yaml:"raw"`
+	}
+	rendered := renderSettings(settings, tc)
+	if err := rendered.Decode(&got); err != nil {
+		t.Fatalf("decode rendered settings: %v", err)
+	}
+	if !got.Flag {
+		t.Error("flag: a boolean reference did not survive as a boolean")
+	}
+	if got.Count != 3 {
+		t.Errorf("count = %d, want 3", got.Count)
+	}
+	if !slices.Equal(got.Items, []string{"a", "b"}) {
+		t.Errorf("items = %v, want [a b]", got.Items)
+	}
+	if got.Nested["k"] != "v" {
+		t.Errorf("nested = %v, want k=v", got.Nested)
+	}
+	if got.Whole["fit"] != true || got.Whole["count"] != 3 {
+		t.Errorf("whole = %v, want the whole result object", got.Whole)
+	}
+	if got.Text != "fit is true" {
+		t.Errorf("text = %q, want %q", got.Text, "fit is true")
+	}
+	if got.Prose != `labels: ["a","b"]` {
+		t.Errorf("prose = %q, want the array as text", got.Prose)
+	}
+	if got.Absent != "" {
+		t.Errorf("absent = %q, want empty", got.Absent)
+	}
+	if got.Raw != "the plan" {
+		t.Errorf("raw = %q, want %q", got.Raw, "the plan")
+	}
+	// The definition is not mutated: rendering works on a copy.
+	if original := yamlString(t, settings); !strings.Contains(original, "{{ steps.plan.summary }}") {
+		t.Fatalf("rendering changed the definition: %s", original)
 	}
 }
 
