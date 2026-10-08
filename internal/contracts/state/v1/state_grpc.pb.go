@@ -19,6 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	StateStoreService_RecentLogs_FullMethodName                 = "/state.v1.StateStoreService/RecentLogs"
 	StateStoreService_InstallPackage_FullMethodName             = "/state.v1.StateStoreService/InstallPackage"
 	StateStoreService_ListCatalogue_FullMethodName              = "/state.v1.StateStoreService/ListCatalogue"
 	StateStoreService_InstallFromCatalogue_FullMethodName       = "/state.v1.StateStoreService/InstallFromCatalogue"
@@ -156,6 +157,7 @@ const (
 // service over internal/infrastructure/postgres; the proto bypasses the Go
 // interfacebloat cap (max 8), like gateway.v1.ChatService does.
 type StateStoreServiceClient interface {
+	RecentLogs(ctx context.Context, in *RecentLogsRequest, opts ...grpc.CallOption) (*RecentLogsResponse, error)
 	// Installed Archie packages. Administrative until org-scoped principals land.
 	InstallPackage(ctx context.Context, in *InstallPackageRequest, opts ...grpc.CallOption) (*InstallPackageResponse, error)
 	// ListCatalogue returns the packages the instance's verified catalogue
@@ -384,6 +386,16 @@ type stateStoreServiceClient struct {
 
 func NewStateStoreServiceClient(cc grpc.ClientConnInterface) StateStoreServiceClient {
 	return &stateStoreServiceClient{cc}
+}
+
+func (c *stateStoreServiceClient) RecentLogs(ctx context.Context, in *RecentLogsRequest, opts ...grpc.CallOption) (*RecentLogsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RecentLogsResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_RecentLogs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *stateStoreServiceClient) InstallPackage(ctx context.Context, in *InstallPackageRequest, opts ...grpc.CallOption) (*InstallPackageResponse, error) {
@@ -1655,6 +1667,7 @@ func (c *stateStoreServiceClient) AssignAgent(ctx context.Context, in *AssignAge
 // service over internal/infrastructure/postgres; the proto bypasses the Go
 // interfacebloat cap (max 8), like gateway.v1.ChatService does.
 type StateStoreServiceServer interface {
+	RecentLogs(context.Context, *RecentLogsRequest) (*RecentLogsResponse, error)
 	// Installed Archie packages. Administrative until org-scoped principals land.
 	InstallPackage(context.Context, *InstallPackageRequest) (*InstallPackageResponse, error)
 	// ListCatalogue returns the packages the instance's verified catalogue
@@ -1885,6 +1898,9 @@ type StateStoreServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedStateStoreServiceServer struct{}
 
+func (UnimplementedStateStoreServiceServer) RecentLogs(context.Context, *RecentLogsRequest) (*RecentLogsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RecentLogs not implemented")
+}
 func (UnimplementedStateStoreServiceServer) InstallPackage(context.Context, *InstallPackageRequest) (*InstallPackageResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method InstallPackage not implemented")
 }
@@ -2273,6 +2289,24 @@ func RegisterStateStoreServiceServer(s grpc.ServiceRegistrar, srv StateStoreServ
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&StateStoreService_ServiceDesc, srv)
+}
+
+func _StateStoreService_RecentLogs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecentLogsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).RecentLogs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_RecentLogs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).RecentLogs(ctx, req.(*RecentLogsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _StateStoreService_InstallPackage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -4475,6 +4509,10 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "state.v1.StateStoreService",
 	HandlerType: (*StateStoreServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "RecentLogs",
+			Handler:    _StateStoreService_RecentLogs_Handler,
+		},
 		{
 			MethodName: "InstallPackage",
 			Handler:    _StateStoreService_InstallPackage_Handler,

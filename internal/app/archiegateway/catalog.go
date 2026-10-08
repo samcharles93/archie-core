@@ -2,9 +2,13 @@ package archiegateway
 
 import (
 	"context"
+	"fmt"
 	"slices"
 
+	"github.com/samcharles93/archie-core/internal/domain/presence"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
+	"github.com/samcharles93/archie-core/internal/infrastructure/logrpc"
+	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/skill"
 )
 
@@ -21,6 +25,7 @@ func (b *server) setSkillList(entries []skill.CatalogEntry) {
 // channels, so channel reload is left unset and answers Unavailable.
 func (b *server) chatCatalog() gatewayrpc.Catalog {
 	return gatewayrpc.Catalog{
+		Logs:     b.recentLogs,
 		Skills:   b.skillEntries,
 		Curators: b.curatorStates,
 	}
@@ -84,5 +89,16 @@ func skillSource(entry skill.CatalogEntry, workDir, sharedDir string) string {
 		return "project skills"
 	default:
 		return "user-global skills"
+	}
+}
+
+func (b *server) recentLogs(ctx context.Context, service string, q logging.Query) (logging.Result, error) {
+	switch service {
+	case "", presence.Gateway:
+		return b.logFeed.Read(q)
+	case presence.Daemon:
+		return logrpc.ReadDaemon(ctx, b.taskActionsConn, q)
+	default:
+		return logging.Result{}, fmt.Errorf("unknown log service %q", service)
 	}
 }

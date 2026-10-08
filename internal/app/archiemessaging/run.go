@@ -21,6 +21,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/messagingrpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/secretengine"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
+	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
 	"github.com/samcharles93/archie-core/internal/secret"
 )
@@ -29,6 +30,7 @@ import (
 func Run(ctx context.Context, o Options) error {
 	log := slog.Default().With("service", "archie-messaging")
 
+	log, feed := servicekit.Diagnostics(log, presence.Messaging)
 	cfg, err := Resolve(o, log)
 	if err != nil {
 		return fmt.Errorf("resolve messaging options: %w", err)
@@ -110,11 +112,11 @@ func Run(ctx context.Context, o Options) error {
 	if err != nil {
 		return err
 	}
-	return serve(ctx, cfg.Options, srv, log)
+	return serve(ctx, cfg.Options, srv, log, feed)
 }
 
 // serve runs srv and serves MessagingService over it until ctx is cancelled.
-func serve(ctx context.Context, o Options, srv *Service, log *slog.Logger) error {
+func serve(ctx context.Context, o Options, srv *Service, log *slog.Logger, feed *logging.Feed) error {
 	opts, err := messagingrpc.ServerOptions(o.Listen, o.Token)
 	if err != nil {
 		return err
@@ -124,7 +126,7 @@ func serve(ctx context.Context, o Options, srv *Service, log *slog.Logger) error
 		return fmt.Errorf("listen messaging (%s): %w", o.Listen, err)
 	}
 	server := grpc.NewServer(opts...)
-	messagingrpc.RegisterServer(server, srv)
+	messagingrpc.RegisterServer(server, srv, feed)
 	go func() {
 		if err := server.Serve(listener); err != nil {
 			log.Error("messaging gRPC server stopped", "err", err)

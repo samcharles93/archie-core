@@ -7,6 +7,7 @@
 package gatewayv1
 
 import (
+	v1 "github.com/samcharles93/archie-core/internal/contracts/logging/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -3730,12 +3731,108 @@ func (*ReloadChannelResponse) Descriptor() ([]byte, []int) {
 	return file_gateway_v1_chat_proto_rawDescGZIP(), []int{62}
 }
 
+type RecentLogsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Query         *v1.LogQuery           `protobuf:"bytes,1,opt,name=query,proto3" json:"query,omitempty"`
+	Service       string                 `protobuf:"bytes,2,opt,name=service,proto3" json:"service,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RecentLogsRequest) Reset() {
+	*x = RecentLogsRequest{}
+	mi := &file_gateway_v1_chat_proto_msgTypes[63]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecentLogsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecentLogsRequest) ProtoMessage() {}
+
+func (x *RecentLogsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_gateway_v1_chat_proto_msgTypes[63]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecentLogsRequest.ProtoReflect.Descriptor instead.
+func (*RecentLogsRequest) Descriptor() ([]byte, []int) {
+	return file_gateway_v1_chat_proto_rawDescGZIP(), []int{63}
+}
+
+func (x *RecentLogsRequest) GetQuery() *v1.LogQuery {
+	if x != nil {
+		return x.Query
+	}
+	return nil
+}
+
+func (x *RecentLogsRequest) GetService() string {
+	if x != nil {
+		return x.Service
+	}
+	return ""
+}
+
+type RecentLogsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Snapshot      *v1.LogSnapshot        `protobuf:"bytes,1,opt,name=snapshot,proto3" json:"snapshot,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RecentLogsResponse) Reset() {
+	*x = RecentLogsResponse{}
+	mi := &file_gateway_v1_chat_proto_msgTypes[64]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecentLogsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecentLogsResponse) ProtoMessage() {}
+
+func (x *RecentLogsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_gateway_v1_chat_proto_msgTypes[64]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecentLogsResponse.ProtoReflect.Descriptor instead.
+func (*RecentLogsResponse) Descriptor() ([]byte, []int) {
+	return file_gateway_v1_chat_proto_rawDescGZIP(), []int{64}
+}
+
+func (x *RecentLogsResponse) GetSnapshot() *v1.LogSnapshot {
+	if x != nil {
+		return x.Snapshot
+	}
+	return nil
+}
+
 var File_gateway_v1_chat_proto protoreflect.FileDescriptor
 
 const file_gateway_v1_chat_proto_rawDesc = "" +
 	"\n" +
 	"\x15gateway/v1/chat.proto\x12\n" +
-	"gateway.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfb\x02\n" +
+	"gateway.v1\x1a\x18logging/v1/logging.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfb\x02\n" +
 	"\aSession\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1a\n" +
@@ -4028,8 +4125,15 @@ const file_gateway_v1_chat_proto_rawDesc = "" +
 	"\x14ReloadChannelRequest\x12\x1d\n" +
 	"\n" +
 	"channel_id\x18\x01 \x01(\tR\tchannelId\"\x17\n" +
-	"\x15ReloadChannelResponse2\xfa\x10\n" +
-	"\vChatService\x12E\n" +
+	"\x15ReloadChannelResponse\"Y\n" +
+	"\x11RecentLogsRequest\x12*\n" +
+	"\x05query\x18\x01 \x01(\v2\x14.logging.v1.LogQueryR\x05query\x12\x18\n" +
+	"\aservice\x18\x02 \x01(\tR\aservice\"I\n" +
+	"\x12RecentLogsResponse\x123\n" +
+	"\bsnapshot\x18\x01 \x01(\v2\x17.logging.v1.LogSnapshotR\bsnapshot2\xc7\x11\n" +
+	"\vChatService\x12K\n" +
+	"\n" +
+	"RecentLogs\x12\x1d.gateway.v1.RecentLogsRequest\x1a\x1e.gateway.v1.RecentLogsResponse\x12E\n" +
 	"\bSnapshot\x12\x1b.gateway.v1.SnapshotRequest\x1a\x1c.gateway.v1.SnapshotResponse\x12K\n" +
 	"\n" +
 	"GetSession\x12\x1d.gateway.v1.GetSessionRequest\x1a\x1e.gateway.v1.GetSessionResponse\x12W\n" +
@@ -4075,7 +4179,7 @@ func file_gateway_v1_chat_proto_rawDescGZIP() []byte {
 	return file_gateway_v1_chat_proto_rawDescData
 }
 
-var file_gateway_v1_chat_proto_msgTypes = make([]protoimpl.MessageInfo, 65)
+var file_gateway_v1_chat_proto_msgTypes = make([]protoimpl.MessageInfo, 67)
 var file_gateway_v1_chat_proto_goTypes = []any{
 	(*Session)(nil),                         // 0: gateway.v1.Session
 	(*Message)(nil),                         // 1: gateway.v1.Message
@@ -4140,21 +4244,25 @@ var file_gateway_v1_chat_proto_goTypes = []any{
 	(*CuratorAction)(nil),                   // 60: gateway.v1.CuratorAction
 	(*ReloadChannelRequest)(nil),            // 61: gateway.v1.ReloadChannelRequest
 	(*ReloadChannelResponse)(nil),           // 62: gateway.v1.ReloadChannelResponse
-	nil,                                     // 63: gateway.v1.SnapshotResponse.ModelsByProviderEntry
-	nil,                                     // 64: gateway.v1.SnapshotResponse.ActivePersonasEntry
-	(*timestamppb.Timestamp)(nil),           // 65: google.protobuf.Timestamp
+	(*RecentLogsRequest)(nil),               // 63: gateway.v1.RecentLogsRequest
+	(*RecentLogsResponse)(nil),              // 64: gateway.v1.RecentLogsResponse
+	nil,                                     // 65: gateway.v1.SnapshotResponse.ModelsByProviderEntry
+	nil,                                     // 66: gateway.v1.SnapshotResponse.ActivePersonasEntry
+	(*timestamppb.Timestamp)(nil),           // 67: google.protobuf.Timestamp
+	(*v1.LogQuery)(nil),                     // 68: logging.v1.LogQuery
+	(*v1.LogSnapshot)(nil),                  // 69: logging.v1.LogSnapshot
 }
 var file_gateway_v1_chat_proto_depIdxs = []int32{
-	65, // 0: gateway.v1.Session.created_at:type_name -> google.protobuf.Timestamp
-	65, // 1: gateway.v1.Session.last_active_at:type_name -> google.protobuf.Timestamp
-	65, // 2: gateway.v1.Message.at:type_name -> google.protobuf.Timestamp
+	67, // 0: gateway.v1.Session.created_at:type_name -> google.protobuf.Timestamp
+	67, // 1: gateway.v1.Session.last_active_at:type_name -> google.protobuf.Timestamp
+	67, // 2: gateway.v1.Message.at:type_name -> google.protobuf.Timestamp
 	3,  // 3: gateway.v1.Message.media:type_name -> gateway.v1.Media
 	2,  // 4: gateway.v1.Turn.tool_calls:type_name -> gateway.v1.ToolCall
-	65, // 5: gateway.v1.Turn.created_at:type_name -> google.protobuf.Timestamp
-	65, // 6: gateway.v1.Turn.updated_at:type_name -> google.protobuf.Timestamp
+	67, // 5: gateway.v1.Turn.created_at:type_name -> google.protobuf.Timestamp
+	67, // 6: gateway.v1.Turn.updated_at:type_name -> google.protobuf.Timestamp
 	0,  // 7: gateway.v1.SnapshotResponse.sessions:type_name -> gateway.v1.Session
-	63, // 8: gateway.v1.SnapshotResponse.models_by_provider:type_name -> gateway.v1.SnapshotResponse.ModelsByProviderEntry
-	64, // 9: gateway.v1.SnapshotResponse.active_personas:type_name -> gateway.v1.SnapshotResponse.ActivePersonasEntry
+	65, // 8: gateway.v1.SnapshotResponse.models_by_provider:type_name -> gateway.v1.SnapshotResponse.ModelsByProviderEntry
+	66, // 9: gateway.v1.SnapshotResponse.active_personas:type_name -> gateway.v1.SnapshotResponse.ActivePersonasEntry
 	0,  // 10: gateway.v1.GetSessionResponse.session:type_name -> gateway.v1.Session
 	1,  // 11: gateway.v1.RecentMessagesResponse.messages:type_name -> gateway.v1.Message
 	4,  // 12: gateway.v1.RecentTurnsResponse.turns:type_name -> gateway.v1.Turn
@@ -4173,67 +4281,71 @@ var file_gateway_v1_chat_proto_depIdxs = []int32{
 	1,  // 25: gateway.v1.SearchMessagesResponse.messages:type_name -> gateway.v1.Message
 	56, // 26: gateway.v1.ListSkillsResponse.skills:type_name -> gateway.v1.Skill
 	59, // 27: gateway.v1.CuratorHealthResponse.curators:type_name -> gateway.v1.Curator
-	65, // 28: gateway.v1.Curator.last_run_at:type_name -> google.protobuf.Timestamp
+	67, // 28: gateway.v1.Curator.last_run_at:type_name -> google.protobuf.Timestamp
 	60, // 29: gateway.v1.Curator.recent_actions:type_name -> gateway.v1.CuratorAction
-	65, // 30: gateway.v1.CuratorAction.at:type_name -> google.protobuf.Timestamp
-	5,  // 31: gateway.v1.SnapshotResponse.ModelsByProviderEntry.value:type_name -> gateway.v1.StringList
-	6,  // 32: gateway.v1.ChatService.Snapshot:input_type -> gateway.v1.SnapshotRequest
-	8,  // 33: gateway.v1.ChatService.GetSession:input_type -> gateway.v1.GetSessionRequest
-	10, // 34: gateway.v1.ChatService.RecentMessages:input_type -> gateway.v1.RecentMessagesRequest
-	12, // 35: gateway.v1.ChatService.RecentTurns:input_type -> gateway.v1.RecentTurnsRequest
-	14, // 36: gateway.v1.ChatService.Route:input_type -> gateway.v1.RouteRequest
-	16, // 37: gateway.v1.ChatService.Stream:input_type -> gateway.v1.StreamRequest
-	19, // 38: gateway.v1.ChatService.Answer:input_type -> gateway.v1.AnswerRequest
-	22, // 39: gateway.v1.ChatService.Cancel:input_type -> gateway.v1.CancelRequest
-	24, // 40: gateway.v1.ChatService.StopTasks:input_type -> gateway.v1.StopTasksRequest
-	26, // 41: gateway.v1.ChatService.SetPersona:input_type -> gateway.v1.SetPersonaRequest
-	28, // 42: gateway.v1.ChatService.ApplyTaskAction:input_type -> gateway.v1.ApplyTaskActionRequest
-	30, // 43: gateway.v1.ChatService.ApplyOperatorTaskAction:input_type -> gateway.v1.ApplyOperatorTaskActionRequest
-	33, // 44: gateway.v1.ChatService.SaveSession:input_type -> gateway.v1.SaveSessionRequest
-	34, // 45: gateway.v1.ChatService.GetSessionsByChannel:input_type -> gateway.v1.GetSessionsByChannelRequest
-	42, // 46: gateway.v1.ChatService.DeleteSession:input_type -> gateway.v1.DeleteSessionRequest
-	43, // 47: gateway.v1.ChatService.TouchSession:input_type -> gateway.v1.TouchSessionRequest
-	44, // 48: gateway.v1.ChatService.ListSessions:input_type -> gateway.v1.ListSessionsRequest
-	45, // 49: gateway.v1.ChatService.SaveMessage:input_type -> gateway.v1.SaveMessageRequest
-	46, // 50: gateway.v1.ChatService.DeleteRecentMessages:input_type -> gateway.v1.DeleteRecentMessagesRequest
-	48, // 51: gateway.v1.ChatService.MessageCount:input_type -> gateway.v1.MessageCountRequest
-	50, // 52: gateway.v1.ChatService.SaveMessages:input_type -> gateway.v1.SaveMessagesRequest
-	51, // 53: gateway.v1.ChatService.ReplaceMessages:input_type -> gateway.v1.ReplaceMessagesRequest
-	52, // 54: gateway.v1.ChatService.SearchMessages:input_type -> gateway.v1.SearchMessagesRequest
-	54, // 55: gateway.v1.ChatService.ListSkills:input_type -> gateway.v1.ListSkillsRequest
-	57, // 56: gateway.v1.ChatService.CuratorHealth:input_type -> gateway.v1.CuratorHealthRequest
-	61, // 57: gateway.v1.ChatService.ReloadChannel:input_type -> gateway.v1.ReloadChannelRequest
-	7,  // 58: gateway.v1.ChatService.Snapshot:output_type -> gateway.v1.SnapshotResponse
-	9,  // 59: gateway.v1.ChatService.GetSession:output_type -> gateway.v1.GetSessionResponse
-	11, // 60: gateway.v1.ChatService.RecentMessages:output_type -> gateway.v1.RecentMessagesResponse
-	13, // 61: gateway.v1.ChatService.RecentTurns:output_type -> gateway.v1.RecentTurnsResponse
-	15, // 62: gateway.v1.ChatService.Route:output_type -> gateway.v1.RouteResponse
-	21, // 63: gateway.v1.ChatService.Stream:output_type -> gateway.v1.StreamResponse
-	20, // 64: gateway.v1.ChatService.Answer:output_type -> gateway.v1.AnswerResponse
-	23, // 65: gateway.v1.ChatService.Cancel:output_type -> gateway.v1.CancelResponse
-	25, // 66: gateway.v1.ChatService.StopTasks:output_type -> gateway.v1.StopTasksResponse
-	27, // 67: gateway.v1.ChatService.SetPersona:output_type -> gateway.v1.SetPersonaResponse
-	29, // 68: gateway.v1.ChatService.ApplyTaskAction:output_type -> gateway.v1.ApplyTaskActionResponse
-	31, // 69: gateway.v1.ChatService.ApplyOperatorTaskAction:output_type -> gateway.v1.ApplyOperatorTaskActionResponse
-	32, // 70: gateway.v1.ChatService.SaveSession:output_type -> gateway.v1.SaveSessionResponse
-	35, // 71: gateway.v1.ChatService.GetSessionsByChannel:output_type -> gateway.v1.GetSessionsByChannelResponse
-	37, // 72: gateway.v1.ChatService.DeleteSession:output_type -> gateway.v1.DeleteSessionResponse
-	38, // 73: gateway.v1.ChatService.TouchSession:output_type -> gateway.v1.TouchSessionResponse
-	36, // 74: gateway.v1.ChatService.ListSessions:output_type -> gateway.v1.ListSessionsResponse
-	39, // 75: gateway.v1.ChatService.SaveMessage:output_type -> gateway.v1.SaveMessageResponse
-	47, // 76: gateway.v1.ChatService.DeleteRecentMessages:output_type -> gateway.v1.DeleteRecentMessagesResponse
-	49, // 77: gateway.v1.ChatService.MessageCount:output_type -> gateway.v1.MessageCountResponse
-	40, // 78: gateway.v1.ChatService.SaveMessages:output_type -> gateway.v1.SaveMessagesResponse
-	41, // 79: gateway.v1.ChatService.ReplaceMessages:output_type -> gateway.v1.ReplaceMessagesResponse
-	53, // 80: gateway.v1.ChatService.SearchMessages:output_type -> gateway.v1.SearchMessagesResponse
-	55, // 81: gateway.v1.ChatService.ListSkills:output_type -> gateway.v1.ListSkillsResponse
-	58, // 82: gateway.v1.ChatService.CuratorHealth:output_type -> gateway.v1.CuratorHealthResponse
-	62, // 83: gateway.v1.ChatService.ReloadChannel:output_type -> gateway.v1.ReloadChannelResponse
-	58, // [58:84] is the sub-list for method output_type
-	32, // [32:58] is the sub-list for method input_type
-	32, // [32:32] is the sub-list for extension type_name
-	32, // [32:32] is the sub-list for extension extendee
-	0,  // [0:32] is the sub-list for field type_name
+	67, // 30: gateway.v1.CuratorAction.at:type_name -> google.protobuf.Timestamp
+	68, // 31: gateway.v1.RecentLogsRequest.query:type_name -> logging.v1.LogQuery
+	69, // 32: gateway.v1.RecentLogsResponse.snapshot:type_name -> logging.v1.LogSnapshot
+	5,  // 33: gateway.v1.SnapshotResponse.ModelsByProviderEntry.value:type_name -> gateway.v1.StringList
+	63, // 34: gateway.v1.ChatService.RecentLogs:input_type -> gateway.v1.RecentLogsRequest
+	6,  // 35: gateway.v1.ChatService.Snapshot:input_type -> gateway.v1.SnapshotRequest
+	8,  // 36: gateway.v1.ChatService.GetSession:input_type -> gateway.v1.GetSessionRequest
+	10, // 37: gateway.v1.ChatService.RecentMessages:input_type -> gateway.v1.RecentMessagesRequest
+	12, // 38: gateway.v1.ChatService.RecentTurns:input_type -> gateway.v1.RecentTurnsRequest
+	14, // 39: gateway.v1.ChatService.Route:input_type -> gateway.v1.RouteRequest
+	16, // 40: gateway.v1.ChatService.Stream:input_type -> gateway.v1.StreamRequest
+	19, // 41: gateway.v1.ChatService.Answer:input_type -> gateway.v1.AnswerRequest
+	22, // 42: gateway.v1.ChatService.Cancel:input_type -> gateway.v1.CancelRequest
+	24, // 43: gateway.v1.ChatService.StopTasks:input_type -> gateway.v1.StopTasksRequest
+	26, // 44: gateway.v1.ChatService.SetPersona:input_type -> gateway.v1.SetPersonaRequest
+	28, // 45: gateway.v1.ChatService.ApplyTaskAction:input_type -> gateway.v1.ApplyTaskActionRequest
+	30, // 46: gateway.v1.ChatService.ApplyOperatorTaskAction:input_type -> gateway.v1.ApplyOperatorTaskActionRequest
+	33, // 47: gateway.v1.ChatService.SaveSession:input_type -> gateway.v1.SaveSessionRequest
+	34, // 48: gateway.v1.ChatService.GetSessionsByChannel:input_type -> gateway.v1.GetSessionsByChannelRequest
+	42, // 49: gateway.v1.ChatService.DeleteSession:input_type -> gateway.v1.DeleteSessionRequest
+	43, // 50: gateway.v1.ChatService.TouchSession:input_type -> gateway.v1.TouchSessionRequest
+	44, // 51: gateway.v1.ChatService.ListSessions:input_type -> gateway.v1.ListSessionsRequest
+	45, // 52: gateway.v1.ChatService.SaveMessage:input_type -> gateway.v1.SaveMessageRequest
+	46, // 53: gateway.v1.ChatService.DeleteRecentMessages:input_type -> gateway.v1.DeleteRecentMessagesRequest
+	48, // 54: gateway.v1.ChatService.MessageCount:input_type -> gateway.v1.MessageCountRequest
+	50, // 55: gateway.v1.ChatService.SaveMessages:input_type -> gateway.v1.SaveMessagesRequest
+	51, // 56: gateway.v1.ChatService.ReplaceMessages:input_type -> gateway.v1.ReplaceMessagesRequest
+	52, // 57: gateway.v1.ChatService.SearchMessages:input_type -> gateway.v1.SearchMessagesRequest
+	54, // 58: gateway.v1.ChatService.ListSkills:input_type -> gateway.v1.ListSkillsRequest
+	57, // 59: gateway.v1.ChatService.CuratorHealth:input_type -> gateway.v1.CuratorHealthRequest
+	61, // 60: gateway.v1.ChatService.ReloadChannel:input_type -> gateway.v1.ReloadChannelRequest
+	64, // 61: gateway.v1.ChatService.RecentLogs:output_type -> gateway.v1.RecentLogsResponse
+	7,  // 62: gateway.v1.ChatService.Snapshot:output_type -> gateway.v1.SnapshotResponse
+	9,  // 63: gateway.v1.ChatService.GetSession:output_type -> gateway.v1.GetSessionResponse
+	11, // 64: gateway.v1.ChatService.RecentMessages:output_type -> gateway.v1.RecentMessagesResponse
+	13, // 65: gateway.v1.ChatService.RecentTurns:output_type -> gateway.v1.RecentTurnsResponse
+	15, // 66: gateway.v1.ChatService.Route:output_type -> gateway.v1.RouteResponse
+	21, // 67: gateway.v1.ChatService.Stream:output_type -> gateway.v1.StreamResponse
+	20, // 68: gateway.v1.ChatService.Answer:output_type -> gateway.v1.AnswerResponse
+	23, // 69: gateway.v1.ChatService.Cancel:output_type -> gateway.v1.CancelResponse
+	25, // 70: gateway.v1.ChatService.StopTasks:output_type -> gateway.v1.StopTasksResponse
+	27, // 71: gateway.v1.ChatService.SetPersona:output_type -> gateway.v1.SetPersonaResponse
+	29, // 72: gateway.v1.ChatService.ApplyTaskAction:output_type -> gateway.v1.ApplyTaskActionResponse
+	31, // 73: gateway.v1.ChatService.ApplyOperatorTaskAction:output_type -> gateway.v1.ApplyOperatorTaskActionResponse
+	32, // 74: gateway.v1.ChatService.SaveSession:output_type -> gateway.v1.SaveSessionResponse
+	35, // 75: gateway.v1.ChatService.GetSessionsByChannel:output_type -> gateway.v1.GetSessionsByChannelResponse
+	37, // 76: gateway.v1.ChatService.DeleteSession:output_type -> gateway.v1.DeleteSessionResponse
+	38, // 77: gateway.v1.ChatService.TouchSession:output_type -> gateway.v1.TouchSessionResponse
+	36, // 78: gateway.v1.ChatService.ListSessions:output_type -> gateway.v1.ListSessionsResponse
+	39, // 79: gateway.v1.ChatService.SaveMessage:output_type -> gateway.v1.SaveMessageResponse
+	47, // 80: gateway.v1.ChatService.DeleteRecentMessages:output_type -> gateway.v1.DeleteRecentMessagesResponse
+	49, // 81: gateway.v1.ChatService.MessageCount:output_type -> gateway.v1.MessageCountResponse
+	40, // 82: gateway.v1.ChatService.SaveMessages:output_type -> gateway.v1.SaveMessagesResponse
+	41, // 83: gateway.v1.ChatService.ReplaceMessages:output_type -> gateway.v1.ReplaceMessagesResponse
+	53, // 84: gateway.v1.ChatService.SearchMessages:output_type -> gateway.v1.SearchMessagesResponse
+	55, // 85: gateway.v1.ChatService.ListSkills:output_type -> gateway.v1.ListSkillsResponse
+	58, // 86: gateway.v1.ChatService.CuratorHealth:output_type -> gateway.v1.CuratorHealthResponse
+	62, // 87: gateway.v1.ChatService.ReloadChannel:output_type -> gateway.v1.ReloadChannelResponse
+	61, // [61:88] is the sub-list for method output_type
+	34, // [34:61] is the sub-list for method input_type
+	34, // [34:34] is the sub-list for extension type_name
+	34, // [34:34] is the sub-list for extension extendee
+	0,  // [0:34] is the sub-list for field type_name
 }
 
 func init() { file_gateway_v1_chat_proto_init() }
@@ -4249,7 +4361,7 @@ func file_gateway_v1_chat_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gateway_v1_chat_proto_rawDesc), len(file_gateway_v1_chat_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   65,
+			NumMessages:   67,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

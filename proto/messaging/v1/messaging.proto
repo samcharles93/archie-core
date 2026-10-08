@@ -2,10 +2,13 @@ syntax = "proto3";
 
 package messaging.v1;
 
+import "logging/v1/logging.proto";
+
 // MessagingService is the Messaging Service's contract: the process that holds
 // the chat channel transports. Other services send outbound messages through
 // it rather than holding channel credentials themselves.
 service MessagingService {
+ rpc RecentLogs(RecentLogsRequest) returns (RecentLogsResponse);
   // Deliver sends text to one chat on one channel. FAILED_PRECONDITION means
   // the channel is not running or cannot send; the caller may retry later.
   rpc Deliver(DeliverRequest) returns (DeliverResponse);
@@ -20,3 +23,6 @@ message DeliverRequest {
 }
 
 message DeliverResponse {}
+
+message RecentLogsRequest { logging.v1.LogQuery query = 1; }
+message RecentLogsResponse { logging.v1.LogSnapshot snapshot = 1; }

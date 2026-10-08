@@ -18,6 +18,7 @@ import (
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/messaging/v1"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
+	"github.com/samcharles93/archie-core/internal/logging"
 )
 
 const tokenMetadataKey = "messaging-token"
@@ -34,11 +35,12 @@ type Deliverer interface {
 type server struct {
 	pb.UnimplementedMessagingServiceServer
 	deliverer Deliverer
+	feed      *logging.Feed
 }
 
 // RegisterServer registers MessagingService over d.
-func RegisterServer(registrar grpc.ServiceRegistrar, d Deliverer) {
-	pb.RegisterMessagingServiceServer(registrar, &server{deliverer: d})
+func RegisterServer(registrar grpc.ServiceRegistrar, d Deliverer, feed *logging.Feed) {
+	pb.RegisterMessagingServiceServer(registrar, &server{deliverer: d, feed: feed})
 }
 
 func (s *server) Deliver(ctx context.Context, req *pb.DeliverRequest) (*pb.DeliverResponse, error) {

@@ -20,8 +20,9 @@ import (
 // server is the State Store process: the one owner of the task and
 // control-plane tables.
 type server struct {
-	cfg config.Config
-	log *slog.Logger
+	cfg     config.Config
+	log     *slog.Logger
+	logFeed *logging.Feed
 	// stderrLog keeps an offline command off cfg.Log.File: a diagnosis must
 	// not create, append to or rotate the deployment's log.
 	stderrLog bool
@@ -57,7 +58,7 @@ func (b *server) loadConfig(_ context.Context, cfgPath, overlayPath string) erro
 		return nil
 	}
 	logs := servicekit.Logging(b.cfg, "state-store")
-	b.log, b.taskLogs = logs.Log, logs.TaskLogs
+	b.log, b.taskLogs, b.logFeed = logs.Log, logs.TaskLogs, logs.Feed
 	b.addCleanup(func() { _ = logs.Closer.Close() })
 	return nil
 }

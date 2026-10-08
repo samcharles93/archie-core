@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/gateway/v1"
+	"github.com/samcharles93/archie-core/internal/logging"
 )
 
 // SkillEntry is one catalogued skill as the Skills page shows it: what it does
@@ -43,6 +44,7 @@ type CuratorAction struct {
 // ChatService. A zero Catalog answers empty lists and an Unavailable reload,
 // which is the honest answer from a process that hosts none of them.
 type Catalog struct {
+	Logs          func(context.Context, string, logging.Query) (logging.Result, error)
 	Skills        func() []SkillEntry
 	Curators      func(context.Context) []CuratorState
 	ReloadChannel func(context.Context, string) error

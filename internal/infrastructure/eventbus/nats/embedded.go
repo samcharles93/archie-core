@@ -65,15 +65,13 @@ func StartEmbedded(ctx context.Context, opts EmbeddedOptions, log *slog.Logger) 
 		// are both checked here.
 		CustomClientAuthentication: authenticator{token: token, tasks: opts.Tasks},
 		NoSigs:                     true, // the daemon owns signals, not the embedded server
-		// NoLog leaves the server's logger nil (ConfigureLogger is only ever
-		// called on reload). A nil logger makes the server's Fatalf a no-op
-		// rather than an os.Exit, so a JetStream startup failure cannot crash
-		// archied -- it surfaces instead as a Connect error below.
+		// The custom logger below reports fatal errors without exiting archied.
 		NoLog: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("embedded nats create: %w", err)
 	}
+	srv.SetLogger(brokerLogger{log: log.With("service", "nats", "component", "nats")}, false, false)
 	srv.Start()
 
 	// Wait for the server to accept connections, or stop it if ctx is already
@@ -110,3 +108,18 @@ func (e *EmbeddedServer) Shutdown() {
 	e.srv.Shutdown()
 	e.log.Debug("embedded nats stopped")
 }
+
+// Fatal broker errors stay local instead of terminating the host process.
+type brokerLogger struct{ log *slog.Logger }
+
+func (l brokerLogger) Noticef(format string, args ...any) { l.log.Info(fmt.Sprintf(format, args...)) }
+
+func (l brokerLogger) Warnf(format string, args ...any) { l.log.Warn(fmt.Sprintf(format, args...)) }
+
+func (l brokerLogger) Errorf(format string, args ...any) { l.log.Error(fmt.Sprintf(format, args...)) }
+
+func (l brokerLogger) Fatalf(format string, args ...any) { l.log.Error(fmt.Sprintf(format, args...)) }
+
+func (l brokerLogger) Debugf(format string, args ...any) { l.log.Debug(fmt.Sprintf(format, args...)) }
+
+func (l brokerLogger) Tracef(format string, args ...any) { l.log.Debug(fmt.Sprintf(format, args...)) }

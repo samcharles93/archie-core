@@ -58,6 +58,7 @@ type projection struct {
 	trustForwardedHeaders bool
 	gateway               ServiceTarget
 	state                 ServiceTarget
+	messaging             ServiceTarget
 	harness               ServiceTarget
 	capture               CaptureOptions
 }
@@ -67,6 +68,7 @@ func project(cfg config.Config) projection {
 		listen:                cfg.Web.Listen,
 		trustForwardedHeaders: cfg.Web.TrustForwardedHeaders,
 		gateway:               ServiceTarget{Target: cfg.Services.Get(config.ServiceNameGateway).Target, Token: cfg.Services.Get(config.ServiceNameGateway).TargetToken},
+		messaging:             ServiceTarget{Target: cfg.Services.Get(config.ServiceNameMessaging).Target, Token: cfg.Services.Get(config.ServiceNameMessaging).TargetToken},
 		state:                 ServiceTarget{Target: cfg.Services.Get(config.ServiceNameState).Target, Token: cfg.Services.Get(config.ServiceNameState).TargetToken},
 		harness:               ServiceTarget{Target: cfg.Services.Get(config.ServiceNameHarness).Target, Token: cfg.Services.Get(config.ServiceNameHarness).TargetToken},
 		capture: CaptureOptions{
@@ -87,6 +89,9 @@ func withEnvTokens(o Options) Options {
 	if o.State.Token == "" {
 		o.State.Token = os.Getenv("STATE_STORE_TOKEN")
 	}
+	if o.Messaging.Token == "" {
+		o.Messaging.Token = os.Getenv("MESSAGING_TOKEN")
+	}
 	if o.Harness.Token == "" {
 		o.Harness.Token = os.Getenv("HARNESS_TOKEN")
 	}
@@ -102,24 +107,10 @@ func merge(o Options, p projection) Options {
 		trust := p.trustForwardedHeaders
 		o.TrustForwardedHeaders = &trust
 	}
-	if o.Gateway.Target == "" {
-		o.Gateway.Target = p.gateway.Target
-	}
-	if o.Gateway.Token == "" {
-		o.Gateway.Token = p.gateway.Token
-	}
-	if o.State.Target == "" {
-		o.State.Target = p.state.Target
-	}
-	if o.State.Token == "" {
-		o.State.Token = p.state.Token
-	}
-	if o.Harness.Target == "" {
-		o.Harness.Target = p.harness.Target
-	}
-	if o.Harness.Token == "" {
-		o.Harness.Token = p.harness.Token
-	}
+	o.Gateway = mergeTarget(o.Gateway, p.gateway)
+	o.Messaging = mergeTarget(o.Messaging, p.messaging)
+	o.State = mergeTarget(o.State, p.state)
+	o.Harness = mergeTarget(o.Harness, p.harness)
 	if o.Capture.Retention <= 0 {
 		o.Capture.Retention = p.capture.Retention
 	}
@@ -139,6 +130,10 @@ func merge(o Options, p projection) Options {
 }
 
 func withDefaults(o Options) Options {
+	if o.Messaging.Target == "" {
+		spec, _ := config.LookupService(config.ServiceNameMessaging)
+		o.Messaging.Target = spec.Target
+	}
 	// "off" disables the daemon's dashboard but means the default listener here.
 	if o.Listen == "" || o.Listen == "off" {
 		o.Listen = defaultListen
@@ -186,4 +181,14 @@ func (o Options) validate() error {
 		)
 	}
 	return nil
+}
+
+func mergeTarget(o, p ServiceTarget) ServiceTarget {
+	if o.Target == "" {
+		o.Target = p.Target
+	}
+	if o.Token == "" {
+		o.Token = p.Token
+	}
+	return o
 }

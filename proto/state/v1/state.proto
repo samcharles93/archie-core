@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package state.v1;
 
+import "logging/v1/logging.proto";
+
 import "google/protobuf/timestamp.proto";
 
 // StateStore is the single gRPC service fronting archie's PostgreSQL database.
@@ -12,6 +14,7 @@ import "google/protobuf/timestamp.proto";
 // service over internal/infrastructure/postgres; the proto bypasses the Go
 // interfacebloat cap (max 8), like gateway.v1.ChatService does.
 service StateStoreService {
+ rpc RecentLogs(RecentLogsRequest) returns (RecentLogsResponse);
   // Installed Archie packages. Administrative until org-scoped principals land.
   rpc InstallPackage(InstallPackageRequest) returns (InstallPackageResponse);
   // ListCatalogue returns the packages the instance's verified catalogue
@@ -1486,3 +1489,6 @@ message AssignAgentRequest {
   string identity_id = 2;
 }
 message AssignAgentResponse {}
+
+message RecentLogsRequest { logging.v1.LogQuery query = 1; }
+message RecentLogsResponse { logging.v1.LogSnapshot snapshot = 1; }

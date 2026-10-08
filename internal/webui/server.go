@@ -44,7 +44,8 @@ type Server struct {
 
 	// LogFeed is the daemon diagnostic stream. It is separate from Events,
 	// which contains persisted task lifecycle activity only.
-	LogFeed *logging.Feed
+	LogFeed    *logging.Feed
+	LogSources map[string]LogSource
 	// TaskLogs reads task logs. Nil means this process cannot read them.
 	TaskLogs TaskLogSource
 
@@ -202,11 +203,6 @@ type Server struct {
 	// nil leaves every claim in a relayed update report Unverified rather
 	// than Confirmed.
 	RunningVersions func() map[string]string
-
-	// LogFile is the log file this process can read history from, for
-	// GET /api/logs. Process-local: the file is on the daemon's disk, so
-	// only a dashboard sharing that host can set it.
-	LogFile string
 
 	// TrustForwardedHeaders controls whether X-Forwarded-Proto and
 	// X-Forwarded-Host are trusted when validating Origin on mutating

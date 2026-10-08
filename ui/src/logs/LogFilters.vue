@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { LOG_LEVELS } from "@/lib/log";
-import { componentOptions, filters } from "./state";
+import { componentOptions, serviceOptions, filters } from "./state";
 
 /**
  * The list's filters: level, component and a search over messages and fields.
@@ -37,6 +37,9 @@ const componentSelectOptions = computed(() => [
   { value: ALL, label: "All components" },
   ...componentOptions.value.map((name) => ({ value: name, label: name })),
 ]);
+
+const service=computed(()=>filters.service||ALL);
+function setService(value:unknown):void{filters.service=value===ALL?"":String(value??"")}
 
 const level = computed(() => filters.level || ALL);
 const component = computed(() => filters.component || ALL);
@@ -67,6 +70,13 @@ onUnmounted(() => clearTimeout(searchTimer));
 
 <template>
   <div class="flex min-w-0 flex-wrap items-center gap-2">
+    <Select :model-value="service" @update:model-value="setService">
+      <SelectTrigger size="sm" class="w-48" aria-label="Service"><SelectValue placeholder="All services" /></SelectTrigger>
+      <SelectContent><SelectGroup>
+        <SelectItem :value="ALL">All services</SelectItem>
+        <SelectItem v-for="name in serviceOptions" :key="name" :value="name">{{ name }}</SelectItem>
+      </SelectGroup></SelectContent>
+    </Select>
     <Select :model-value="level" @update:model-value="setLevel">
       <SelectTrigger size="sm" class="w-44" aria-label="Level">
         <SelectValue />

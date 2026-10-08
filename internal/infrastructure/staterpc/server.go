@@ -141,6 +141,7 @@ type Deps struct {
 	// TaskLogs reads task attempt logs. Nil answers ReadTaskLog with
 	// Unavailable.
 	TaskLogs storecontract.TaskLogStore
+	LogFeed  *logging.Feed
 	Log      *slog.Logger
 }
 

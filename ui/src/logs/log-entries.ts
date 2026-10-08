@@ -9,6 +9,7 @@ import type { LogEntry } from "@/lib/log";
 /** The filters the list is read through. All three narrow the read
  * server-side as well as the live stream locally. */
 export interface LogFilters {
+ service?: string;
   level: string;
   component: string;
   q: string;
@@ -36,6 +37,7 @@ export function matchesFilters(entry: LogEntry, filters: LogFilters): boolean {
   ) {
     return false;
   }
+  if (filters.service && entry.fields?.service !== filters.service) return false;
   if (filters.component && entry.fields?.component !== filters.component)
     return false;
   if (filters.q) {

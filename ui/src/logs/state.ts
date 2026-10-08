@@ -25,6 +25,8 @@ import { logsEmptyDetail, logsEmptyTitle } from "./logs-empty";
 interface LogHistory {
   entries?: LogEntry[];
   components?: string[];
+ services?:string[];
+ errors?:Record<string,string>;
   file?: string;
   truncated?: boolean;
   /** The process serving the request keeps no durable history. */
@@ -33,12 +35,15 @@ interface LogHistory {
 
 export const filters = reactive<LogFilters>({
   level: "",
+ service:"",
   component: "",
   q: "",
 });
 
 /** The components the filter can name: those the server found, plus any the
  * live stream has shown since. */
+export const serviceOptions=ref<string[]>([]);
+export const serviceErrors=ref<Record<string,string>>({});
 export const componentOptions = ref<string[]>([]);
 export const paused = ref(false);
 export const loading = ref(true);
@@ -69,8 +74,8 @@ export const meta = computed(() => {
   if (loading.value) return "Refreshing…";
   if (durableUnavailable.value) return "Live only";
   if (truncated.value)
-    return `showing the most recent matches from ${logFile.value}`;
-  return logFile.value;
+    return "Showing recent matches; older lines are omitted";
+  return logFile.value || "Recent service logs; refreshed every 5 seconds";
 });
 
 /** The stream's state as a badge kind. Never `ok` for a stream that is still
@@ -89,27 +94,34 @@ export const emptyDetail = computed(() =>
   logsEmptyDetail(durableUnavailable.value, streamState.value),
 );
 
+let generation=0;
 export async function loadLogs(): Promise<void> {
-  loading.value = true;
+  const current=++generation;
+ loading.value = true;
   readError.value = null;
   try {
     const res = await api.logs<LogHistory>({
+      service:filters.service,
       level: filters.level,
       component: filters.component,
       q: filters.q,
       limit: 500,
     });
-    componentOptions.value = res.components ?? [];
+    if(current!==generation)return;
+ serviceOptions.value=[...new Set([...serviceOptions.value,...(res.services??[])])].sort();
+ serviceErrors.value=res.errors??{};
+ componentOptions.value = res.components ?? [];
     durableUnavailable.value = !!res.disabled;
     truncated.value = !!res.truncated;
     logFile.value = res.file ?? "";
     historyEntries.value = res.entries ?? [];
   } catch (err) {
+    if(current!==generation)return;
     // The server's own message is the only part of a failure an operator can
     // act on, so it is what the list says instead of the lines.
     readError.value = (err as Error).message || String(err);
   } finally {
-    loading.value = false;
+    if(current===generation)loading.value = false;
   }
 }
 
@@ -134,6 +146,7 @@ function handleEntry(raw: unknown): void {
   liveTick.value += 1;
 }
 
+let refresh:ReturnType<typeof setInterval>|undefined;
 let unsubscribe: (() => void) | undefined;
 
 /** Owns the initial read, the re-reads a filter change causes, and the live
@@ -151,10 +164,13 @@ export function useLogs(): void {
     liveTick.value += 1;
 
     void loadLogs();
+ refresh=setInterval(()=>{if(!paused.value)void loadLogs()},5000);
     unsubscribe = live.subscribe("logs", handleEntry);
     streamState.value = live.streamState;
   });
   onUnmounted(() => {
+    clearInterval(refresh);
+ generation++;
     unsubscribe?.();
     unsubscribe = undefined;
   });

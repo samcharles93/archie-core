@@ -58,3 +58,9 @@ func Logging(cfg config.Config, component string) Logs {
 	}
 	return Logs{Log: log, Feed: feed, TaskLogs: taskLogs, Closer: closer}
 }
+
+// Diagnostics captures a service's stderr log for its recent-log contract.
+func Diagnostics(log *slog.Logger, service string) (*slog.Logger, *logging.Feed) {
+	feed := logging.NewFeed(1000)
+	return slog.New(logging.NewFeedHandler(log.Handler(), feed)).With("service", service), feed
+}

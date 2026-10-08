@@ -7,6 +7,7 @@
 package statev1
 
 import (
+	v1 "github.com/samcharles93/archie-core/internal/contracts/logging/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -15279,11 +15280,99 @@ func (*AssignAgentResponse) Descriptor() ([]byte, []int) {
 	return file_state_v1_state_proto_rawDescGZIP(), []int{282}
 }
 
+type RecentLogsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Query         *v1.LogQuery           `protobuf:"bytes,1,opt,name=query,proto3" json:"query,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RecentLogsRequest) Reset() {
+	*x = RecentLogsRequest{}
+	mi := &file_state_v1_state_proto_msgTypes[283]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecentLogsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecentLogsRequest) ProtoMessage() {}
+
+func (x *RecentLogsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[283]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecentLogsRequest.ProtoReflect.Descriptor instead.
+func (*RecentLogsRequest) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{283}
+}
+
+func (x *RecentLogsRequest) GetQuery() *v1.LogQuery {
+	if x != nil {
+		return x.Query
+	}
+	return nil
+}
+
+type RecentLogsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Snapshot      *v1.LogSnapshot        `protobuf:"bytes,1,opt,name=snapshot,proto3" json:"snapshot,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RecentLogsResponse) Reset() {
+	*x = RecentLogsResponse{}
+	mi := &file_state_v1_state_proto_msgTypes[284]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecentLogsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecentLogsResponse) ProtoMessage() {}
+
+func (x *RecentLogsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_state_v1_state_proto_msgTypes[284]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecentLogsResponse.ProtoReflect.Descriptor instead.
+func (*RecentLogsResponse) Descriptor() ([]byte, []int) {
+	return file_state_v1_state_proto_rawDescGZIP(), []int{284}
+}
+
+func (x *RecentLogsResponse) GetSnapshot() *v1.LogSnapshot {
+	if x != nil {
+		return x.Snapshot
+	}
+	return nil
+}
+
 var File_state_v1_state_proto protoreflect.FileDescriptor
 
 const file_state_v1_state_proto_rawDesc = "" +
 	"\n" +
-	"\x14state/v1/state.proto\x12\bstate.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"t\n" +
+	"\x14state/v1/state.proto\x12\bstate.v1\x1a\x18logging/v1/logging.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"t\n" +
 	"\x18RegisterTaskGrantRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\x03R\x06taskId\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x12)\n" +
@@ -16276,8 +16365,14 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x1f\n" +
 	"\videntity_id\x18\x02 \x01(\tR\n" +
 	"identityId\"\x15\n" +
-	"\x13AssignAgentResponse2\x91R\n" +
-	"\x11StateStoreService\x12S\n" +
+	"\x13AssignAgentResponse\"?\n" +
+	"\x11RecentLogsRequest\x12*\n" +
+	"\x05query\x18\x01 \x01(\v2\x14.logging.v1.LogQueryR\x05query\"I\n" +
+	"\x12RecentLogsResponse\x123\n" +
+	"\bsnapshot\x18\x01 \x01(\v2\x17.logging.v1.LogSnapshotR\bsnapshot2\xdaR\n" +
+	"\x11StateStoreService\x12G\n" +
+	"\n" +
+	"RecentLogs\x12\x1b.state.v1.RecentLogsRequest\x1a\x1c.state.v1.RecentLogsResponse\x12S\n" +
 	"\x0eInstallPackage\x12\x1f.state.v1.InstallPackageRequest\x1a .state.v1.InstallPackageResponse\x12P\n" +
 	"\rListCatalogue\x12\x1e.state.v1.ListCatalogueRequest\x1a\x1f.state.v1.ListCatalogueResponse\x12e\n" +
 	"\x14InstallFromCatalogue\x12%.state.v1.InstallFromCatalogueRequest\x1a&.state.v1.InstallFromCatalogueResponse\x12b\n" +
@@ -16422,7 +16517,7 @@ func file_state_v1_state_proto_rawDescGZIP() []byte {
 	return file_state_v1_state_proto_rawDescData
 }
 
-var file_state_v1_state_proto_msgTypes = make([]protoimpl.MessageInfo, 285)
+var file_state_v1_state_proto_msgTypes = make([]protoimpl.MessageInfo, 287)
 var file_state_v1_state_proto_goTypes = []any{
 	(*RegisterTaskGrantRequest)(nil),           // 0: state.v1.RegisterTaskGrantRequest
 	(*RegisterTaskGrantResponse)(nil),          // 1: state.v1.RegisterTaskGrantResponse
@@ -16707,13 +16802,17 @@ var file_state_v1_state_proto_goTypes = []any{
 	(*RemoveMembershipResponse)(nil),           // 280: state.v1.RemoveMembershipResponse
 	(*AssignAgentRequest)(nil),                 // 281: state.v1.AssignAgentRequest
 	(*AssignAgentResponse)(nil),                // 282: state.v1.AssignAgentResponse
-	nil,                                        // 283: state.v1.EventType.SchemaEntry
-	nil,                                        // 284: state.v1.StatusCountsResponse.CountsEntry
-	(*timestamppb.Timestamp)(nil),              // 285: google.protobuf.Timestamp
+	(*RecentLogsRequest)(nil),                  // 283: state.v1.RecentLogsRequest
+	(*RecentLogsResponse)(nil),                 // 284: state.v1.RecentLogsResponse
+	nil,                                        // 285: state.v1.EventType.SchemaEntry
+	nil,                                        // 286: state.v1.StatusCountsResponse.CountsEntry
+	(*timestamppb.Timestamp)(nil),              // 287: google.protobuf.Timestamp
+	(*v1.LogQuery)(nil),                        // 288: logging.v1.LogQuery
+	(*v1.LogSnapshot)(nil),                     // 289: logging.v1.LogSnapshot
 }
 var file_state_v1_state_proto_depIdxs = []int32{
-	285, // 0: state.v1.Identity.created_at:type_name -> google.protobuf.Timestamp
-	285, // 1: state.v1.Identity.updated_at:type_name -> google.protobuf.Timestamp
+	287, // 0: state.v1.Identity.created_at:type_name -> google.protobuf.Timestamp
+	287, // 1: state.v1.Identity.updated_at:type_name -> google.protobuf.Timestamp
 	6,   // 2: state.v1.ListIdentitiesResponse.identities:type_name -> state.v1.Identity
 	6,   // 3: state.v1.GetIdentityResponse.identity:type_name -> state.v1.Identity
 	7,   // 4: state.v1.CreateIdentityRequest.audit:type_name -> state.v1.IdentityAudit
@@ -16729,37 +16828,37 @@ var file_state_v1_state_proto_depIdxs = []int32{
 	6,   // 14: state.v1.ResolveIdentitySubjectResponse.identity:type_name -> state.v1.Identity
 	7,   // 15: state.v1.BindIdentitySubjectRequest.audit:type_name -> state.v1.IdentityAudit
 	6,   // 16: state.v1.BindIdentitySubjectResponse.identity:type_name -> state.v1.Identity
-	285, // 17: state.v1.PersonalToken.created_at:type_name -> google.protobuf.Timestamp
+	287, // 17: state.v1.PersonalToken.created_at:type_name -> google.protobuf.Timestamp
 	26,  // 18: state.v1.ListPersonalTokensResponse.tokens:type_name -> state.v1.PersonalToken
-	285, // 19: state.v1.Task.created_at:type_name -> google.protobuf.Timestamp
-	285, // 20: state.v1.Task.updated_at:type_name -> google.protobuf.Timestamp
-	285, // 21: state.v1.Event.at:type_name -> google.protobuf.Timestamp
-	285, // 22: state.v1.CapturedEvent.received_at:type_name -> google.protobuf.Timestamp
+	287, // 19: state.v1.Task.created_at:type_name -> google.protobuf.Timestamp
+	287, // 20: state.v1.Task.updated_at:type_name -> google.protobuf.Timestamp
+	287, // 21: state.v1.Event.at:type_name -> google.protobuf.Timestamp
+	287, // 22: state.v1.CapturedEvent.received_at:type_name -> google.protobuf.Timestamp
 	36,  // 23: state.v1.EventType.header_conditions:type_name -> state.v1.EventTypeHeaderCondition
 	37,  // 24: state.v1.EventType.payload_conditions:type_name -> state.v1.EventTypePayloadCondition
-	283, // 25: state.v1.EventType.schema:type_name -> state.v1.EventType.SchemaEntry
-	285, // 26: state.v1.EventType.created_at:type_name -> google.protobuf.Timestamp
-	285, // 27: state.v1.EventType.updated_at:type_name -> google.protobuf.Timestamp
+	285, // 25: state.v1.EventType.schema:type_name -> state.v1.EventType.SchemaEntry
+	287, // 26: state.v1.EventType.created_at:type_name -> google.protobuf.Timestamp
+	287, // 27: state.v1.EventType.updated_at:type_name -> google.protobuf.Timestamp
 	39,  // 28: state.v1.Mapping.fields:type_name -> state.v1.MappingField
-	285, // 29: state.v1.Mapping.created_at:type_name -> google.protobuf.Timestamp
-	285, // 30: state.v1.Mapping.updated_at:type_name -> google.protobuf.Timestamp
-	285, // 31: state.v1.Mapping.last_matched_at:type_name -> google.protobuf.Timestamp
+	287, // 29: state.v1.Mapping.created_at:type_name -> google.protobuf.Timestamp
+	287, // 30: state.v1.Mapping.updated_at:type_name -> google.protobuf.Timestamp
+	287, // 31: state.v1.Mapping.last_matched_at:type_name -> google.protobuf.Timestamp
 	41,  // 32: state.v1.Binding.matcher:type_name -> state.v1.BindingMatcher
-	285, // 33: state.v1.Binding.created_at:type_name -> google.protobuf.Timestamp
-	285, // 34: state.v1.Binding.updated_at:type_name -> google.protobuf.Timestamp
-	285, // 35: state.v1.Source.created_at:type_name -> google.protobuf.Timestamp
-	285, // 36: state.v1.Source.updated_at:type_name -> google.protobuf.Timestamp
+	287, // 33: state.v1.Binding.created_at:type_name -> google.protobuf.Timestamp
+	287, // 34: state.v1.Binding.updated_at:type_name -> google.protobuf.Timestamp
+	287, // 35: state.v1.Source.created_at:type_name -> google.protobuf.Timestamp
+	287, // 36: state.v1.Source.updated_at:type_name -> google.protobuf.Timestamp
 	33,  // 37: state.v1.ActiveTasksByOriginResponse.tasks:type_name -> state.v1.Task
 	33,  // 38: state.v1.EnqueueChatTaskResponse.task:type_name -> state.v1.Task
 	33,  // 39: state.v1.ClaimNextResponse.task:type_name -> state.v1.Task
 	33,  // 40: state.v1.ClaimByIssueResponse.task:type_name -> state.v1.Task
 	34,  // 41: state.v1.StartStepResponse.event:type_name -> state.v1.Event
 	34,  // 42: state.v1.FinishStepResponse.event:type_name -> state.v1.Event
-	285, // 43: state.v1.StepExecution.started_at:type_name -> google.protobuf.Timestamp
-	285, // 44: state.v1.StepExecution.finished_at:type_name -> google.protobuf.Timestamp
+	287, // 43: state.v1.StepExecution.started_at:type_name -> google.protobuf.Timestamp
+	287, // 44: state.v1.StepExecution.finished_at:type_name -> google.protobuf.Timestamp
 	65,  // 45: state.v1.ListStepsResponse.steps:type_name -> state.v1.StepExecution
-	285, // 46: state.v1.HarnessSecret.expires_at:type_name -> google.protobuf.Timestamp
-	285, // 47: state.v1.HarnessSecret.updated_at:type_name -> google.protobuf.Timestamp
+	287, // 46: state.v1.HarnessSecret.expires_at:type_name -> google.protobuf.Timestamp
+	287, // 47: state.v1.HarnessSecret.updated_at:type_name -> google.protobuf.Timestamp
 	68,  // 48: state.v1.GetHarnessSecretResponse.secret:type_name -> state.v1.HarnessSecret
 	68,  // 49: state.v1.PutHarnessSecretRequest.secret:type_name -> state.v1.HarnessSecret
 	33,  // 50: state.v1.UpdateRequest.task:type_name -> state.v1.Task
@@ -16768,35 +16867,35 @@ var file_state_v1_state_proto_depIdxs = []int32{
 	33,  // 53: state.v1.OpenTaskByPRResponse.task:type_name -> state.v1.Task
 	33,  // 54: state.v1.TaskByIDResponse.task:type_name -> state.v1.Task
 	33,  // 55: state.v1.OpenPRsResponse.tasks:type_name -> state.v1.Task
-	285, // 56: state.v1.TasksRequest.after_updated_at:type_name -> google.protobuf.Timestamp
+	287, // 56: state.v1.TasksRequest.after_updated_at:type_name -> google.protobuf.Timestamp
 	33,  // 57: state.v1.TasksResponse.tasks:type_name -> state.v1.Task
-	284, // 58: state.v1.StatusCountsResponse.counts:type_name -> state.v1.StatusCountsResponse.CountsEntry
+	286, // 58: state.v1.StatusCountsResponse.counts:type_name -> state.v1.StatusCountsResponse.CountsEntry
 	34,  // 59: state.v1.InsertEventRequest.event:type_name -> state.v1.Event
 	34,  // 60: state.v1.EventsSinceResponse.events:type_name -> state.v1.Event
 	34,  // 61: state.v1.TaskEventsResponse.events:type_name -> state.v1.Event
 	44,  // 62: state.v1.WorkflowStatsResponse.stats:type_name -> state.v1.WorkflowStat
 	45,  // 63: state.v1.StageStatsResponse.stats:type_name -> state.v1.StageStat
 	46,  // 64: state.v1.TokensByDayResponse.tokens:type_name -> state.v1.DayTokens
-	285, // 65: state.v1.ConfigSnapshot.published_at:type_name -> google.protobuf.Timestamp
+	287, // 65: state.v1.ConfigSnapshot.published_at:type_name -> google.protobuf.Timestamp
 	119, // 66: state.v1.PutConfigSnapshotRequest.snapshot:type_name -> state.v1.ConfigSnapshot
 	119, // 67: state.v1.GetConfigSnapshotResponse.snapshot:type_name -> state.v1.ConfigSnapshot
-	285, // 68: state.v1.ChannelStatus.observed_at:type_name -> google.protobuf.Timestamp
+	287, // 68: state.v1.ChannelStatus.observed_at:type_name -> google.protobuf.Timestamp
 	124, // 69: state.v1.PutChannelStatusRequest.channels:type_name -> state.v1.ChannelStatus
 	124, // 70: state.v1.ListChannelStatusResponse.channels:type_name -> state.v1.ChannelStatus
-	285, // 71: state.v1.ApplyStatus.reported_at:type_name -> google.protobuf.Timestamp
+	287, // 71: state.v1.ApplyStatus.reported_at:type_name -> google.protobuf.Timestamp
 	129, // 72: state.v1.PutApplyStatusRequest.status:type_name -> state.v1.ApplyStatus
 	129, // 73: state.v1.ListApplyStatusResponse.statuses:type_name -> state.v1.ApplyStatus
-	285, // 74: state.v1.Presence.started_at:type_name -> google.protobuf.Timestamp
-	285, // 75: state.v1.Presence.reported_at:type_name -> google.protobuf.Timestamp
+	287, // 74: state.v1.Presence.started_at:type_name -> google.protobuf.Timestamp
+	287, // 75: state.v1.Presence.reported_at:type_name -> google.protobuf.Timestamp
 	134, // 76: state.v1.Presence.checks:type_name -> state.v1.DependencyCheck
-	285, // 77: state.v1.RecordCaptureRefusalRequest.refused_at:type_name -> google.protobuf.Timestamp
-	285, // 78: state.v1.ListCaptureRefusalsRequest.since:type_name -> google.protobuf.Timestamp
+	287, // 77: state.v1.RecordCaptureRefusalRequest.refused_at:type_name -> google.protobuf.Timestamp
+	287, // 78: state.v1.ListCaptureRefusalsRequest.since:type_name -> google.protobuf.Timestamp
 	139, // 79: state.v1.ListCaptureRefusalsResponse.sources:type_name -> state.v1.CaptureRefusals
 	135, // 80: state.v1.PutPresenceRequest.presence:type_name -> state.v1.Presence
 	135, // 81: state.v1.ListPresenceResponse.presences:type_name -> state.v1.Presence
-	285, // 82: state.v1.TaskLogEntry.time:type_name -> google.protobuf.Timestamp
-	285, // 83: state.v1.ReadTaskLogRequest.since:type_name -> google.protobuf.Timestamp
-	285, // 84: state.v1.ReadTaskLogRequest.until:type_name -> google.protobuf.Timestamp
+	287, // 82: state.v1.TaskLogEntry.time:type_name -> google.protobuf.Timestamp
+	287, // 83: state.v1.ReadTaskLogRequest.since:type_name -> google.protobuf.Timestamp
+	287, // 84: state.v1.ReadTaskLogRequest.until:type_name -> google.protobuf.Timestamp
 	145, // 85: state.v1.ReadTaskLogResponse.entries:type_name -> state.v1.TaskLogEntry
 	35,  // 86: state.v1.InsertCaptureRequest.capture:type_name -> state.v1.CapturedEvent
 	35,  // 87: state.v1.StreamCapturesResponse.capture:type_name -> state.v1.CapturedEvent
@@ -16815,7 +16914,7 @@ var file_state_v1_state_proto_depIdxs = []int32{
 	43,  // 100: state.v1.GetSourceResponse.source:type_name -> state.v1.Source
 	43,  // 101: state.v1.ListSourcesResponse.sources:type_name -> state.v1.Source
 	42,  // 102: state.v1.ArmedBindingsForSourceResponse.bindings:type_name -> state.v1.Binding
-	285, // 103: state.v1.Dispatch.dispatched_at:type_name -> google.protobuf.Timestamp
+	287, // 103: state.v1.Dispatch.dispatched_at:type_name -> google.protobuf.Timestamp
 	213, // 104: state.v1.ListDispatchesResponse.dispatches:type_name -> state.v1.Dispatch
 	35,  // 105: state.v1.StreamUndispatchedCapturesResponse.capture:type_name -> state.v1.CapturedEvent
 	33,  // 106: state.v1.EnqueueBindingTaskResponse.task:type_name -> state.v1.Task
@@ -16833,7 +16932,7 @@ var file_state_v1_state_proto_depIdxs = []int32{
 	248, // 118: state.v1.ListPoliciesResponse.policies:type_name -> state.v1.AccessPolicy
 	248, // 119: state.v1.PutPolicyRequest.policy:type_name -> state.v1.AccessPolicy
 	248, // 120: state.v1.DeletePolicyRequest.policy:type_name -> state.v1.AccessPolicy
-	285, // 121: state.v1.AccessDenial.at:type_name -> google.protobuf.Timestamp
+	287, // 121: state.v1.AccessDenial.at:type_name -> google.protobuf.Timestamp
 	257, // 122: state.v1.RecordDenialRequest.denial:type_name -> state.v1.AccessDenial
 	257, // 123: state.v1.ListDenialsResponse.denials:type_name -> state.v1.AccessDenial
 	262, // 124: state.v1.ListOrgsResponse.orgs:type_name -> state.v1.Org
@@ -16842,257 +16941,261 @@ var file_state_v1_state_proto_depIdxs = []int32{
 	263, // 127: state.v1.ListWorkspacesResponse.workspaces:type_name -> state.v1.Workspace
 	263, // 128: state.v1.CreateWorkspaceResponse.workspace:type_name -> state.v1.Workspace
 	264, // 129: state.v1.ListMembersResponse.members:type_name -> state.v1.Member
-	229, // 130: state.v1.StateStoreService.InstallPackage:input_type -> state.v1.InstallPackageRequest
-	232, // 131: state.v1.StateStoreService.ListCatalogue:input_type -> state.v1.ListCatalogueRequest
-	234, // 132: state.v1.StateStoreService.InstallFromCatalogue:input_type -> state.v1.InstallFromCatalogueRequest
-	236, // 133: state.v1.StateStoreService.GetInstalledPackage:input_type -> state.v1.GetInstalledPackageRequest
-	238, // 134: state.v1.StateStoreService.ListInstalledPackages:input_type -> state.v1.ListInstalledPackagesRequest
-	240, // 135: state.v1.StateStoreService.AcceptPackageAuthority:input_type -> state.v1.AcceptPackageAuthorityRequest
-	242, // 136: state.v1.StateStoreService.RemoveInstalledPackage:input_type -> state.v1.RemoveInstalledPackageRequest
-	0,   // 137: state.v1.StateStoreService.RegisterTaskGrant:input_type -> state.v1.RegisterTaskGrantRequest
-	2,   // 138: state.v1.StateStoreService.RevokeTaskGrant:input_type -> state.v1.RevokeTaskGrantRequest
-	4,   // 139: state.v1.StateStoreService.ResolveTaskGrant:input_type -> state.v1.ResolveTaskGrantRequest
-	8,   // 140: state.v1.StateStoreService.ListIdentities:input_type -> state.v1.ListIdentitiesRequest
-	10,  // 141: state.v1.StateStoreService.GetIdentity:input_type -> state.v1.GetIdentityRequest
-	12,  // 142: state.v1.StateStoreService.CreateIdentity:input_type -> state.v1.CreateIdentityRequest
-	13,  // 143: state.v1.StateStoreService.RenameIdentity:input_type -> state.v1.RenameIdentityRequest
-	14,  // 144: state.v1.StateStoreService.SuspendIdentity:input_type -> state.v1.SuspendIdentityRequest
-	15,  // 145: state.v1.StateStoreService.ReactivateIdentity:input_type -> state.v1.ReactivateIdentityRequest
-	16,  // 146: state.v1.StateStoreService.RetireIdentity:input_type -> state.v1.RetireIdentityRequest
-	22,  // 147: state.v1.StateStoreService.ResolveIdentitySubject:input_type -> state.v1.ResolveIdentitySubjectRequest
-	24,  // 148: state.v1.StateStoreService.BindIdentitySubject:input_type -> state.v1.BindIdentitySubjectRequest
-	27,  // 149: state.v1.StateStoreService.AddPersonalToken:input_type -> state.v1.AddPersonalTokenRequest
-	29,  // 150: state.v1.StateStoreService.ListPersonalTokens:input_type -> state.v1.ListPersonalTokensRequest
-	31,  // 151: state.v1.StateStoreService.RevokePersonalToken:input_type -> state.v1.RevokePersonalTokenRequest
-	47,  // 152: state.v1.StateStoreService.EnqueueIssue:input_type -> state.v1.EnqueueIssueRequest
-	51,  // 153: state.v1.StateStoreService.EnqueueChatTask:input_type -> state.v1.EnqueueChatTaskRequest
-	49,  // 154: state.v1.StateStoreService.ActiveTasksByOrigin:input_type -> state.v1.ActiveTasksByOriginRequest
-	53,  // 155: state.v1.StateStoreService.ClaimNext:input_type -> state.v1.ClaimNextRequest
-	55,  // 156: state.v1.StateStoreService.ClaimByIssue:input_type -> state.v1.ClaimByIssueRequest
-	57,  // 157: state.v1.StateStoreService.Transition:input_type -> state.v1.TransitionRequest
-	73,  // 158: state.v1.StateStoreService.Update:input_type -> state.v1.UpdateRequest
-	59,  // 159: state.v1.StateStoreService.StartStep:input_type -> state.v1.StartStepRequest
-	61,  // 160: state.v1.StateStoreService.FinishStep:input_type -> state.v1.FinishStepRequest
-	63,  // 161: state.v1.StateStoreService.CancelExecution:input_type -> state.v1.CancelExecutionRequest
-	66,  // 162: state.v1.StateStoreService.ListSteps:input_type -> state.v1.ListStepsRequest
-	69,  // 163: state.v1.StateStoreService.GetHarnessSecret:input_type -> state.v1.GetHarnessSecretRequest
-	71,  // 164: state.v1.StateStoreService.PutHarnessSecret:input_type -> state.v1.PutHarnessSecretRequest
-	75,  // 165: state.v1.StateStoreService.Requeue:input_type -> state.v1.RequeueRequest
-	77,  // 166: state.v1.StateStoreService.ParkTask:input_type -> state.v1.ParkTaskRequest
-	79,  // 167: state.v1.StateStoreService.RecoverStale:input_type -> state.v1.RecoverStaleRequest
-	81,  // 168: state.v1.StateStoreService.ArchiveTask:input_type -> state.v1.ArchiveTaskRequest
-	83,  // 169: state.v1.StateStoreService.RetryTask:input_type -> state.v1.RetryTaskRequest
-	85,  // 170: state.v1.StateStoreService.RespondReviewGate:input_type -> state.v1.RespondReviewGateRequest
-	87,  // 171: state.v1.StateStoreService.BeginRemediation:input_type -> state.v1.BeginRemediationRequest
-	89,  // 172: state.v1.StateStoreService.UpdateReviewPayload:input_type -> state.v1.UpdateReviewPayloadRequest
-	91,  // 173: state.v1.StateStoreService.SetReviewCursors:input_type -> state.v1.SetReviewCursorsRequest
-	93,  // 174: state.v1.StateStoreService.TaskByIssue:input_type -> state.v1.TaskByIssueRequest
-	95,  // 175: state.v1.StateStoreService.OpenTaskByPR:input_type -> state.v1.OpenTaskByPRRequest
-	97,  // 176: state.v1.StateStoreService.TaskByID:input_type -> state.v1.TaskByIDRequest
-	99,  // 177: state.v1.StateStoreService.OpenPRs:input_type -> state.v1.OpenPRsRequest
-	101, // 178: state.v1.StateStoreService.ClearTerminalTasks:input_type -> state.v1.ClearTerminalTasksRequest
-	103, // 179: state.v1.StateStoreService.Tasks:input_type -> state.v1.TasksRequest
-	105, // 180: state.v1.StateStoreService.StatusCounts:input_type -> state.v1.StatusCountsRequest
-	107, // 181: state.v1.StateStoreService.InsertEvent:input_type -> state.v1.InsertEventRequest
-	109, // 182: state.v1.StateStoreService.EventsSince:input_type -> state.v1.EventsSinceRequest
-	111, // 183: state.v1.StateStoreService.TaskEvents:input_type -> state.v1.TaskEventsRequest
-	113, // 184: state.v1.StateStoreService.WorkflowStats:input_type -> state.v1.WorkflowStatsRequest
-	115, // 185: state.v1.StateStoreService.StageStats:input_type -> state.v1.StageStatsRequest
-	117, // 186: state.v1.StateStoreService.TokensByDay:input_type -> state.v1.TokensByDayRequest
-	120, // 187: state.v1.StateStoreService.PutConfigSnapshot:input_type -> state.v1.PutConfigSnapshotRequest
-	122, // 188: state.v1.StateStoreService.GetConfigSnapshot:input_type -> state.v1.GetConfigSnapshotRequest
-	125, // 189: state.v1.StateStoreService.PutChannelStatus:input_type -> state.v1.PutChannelStatusRequest
-	127, // 190: state.v1.StateStoreService.ListChannelStatus:input_type -> state.v1.ListChannelStatusRequest
-	130, // 191: state.v1.StateStoreService.PutApplyStatus:input_type -> state.v1.PutApplyStatusRequest
-	132, // 192: state.v1.StateStoreService.ListApplyStatus:input_type -> state.v1.ListApplyStatusRequest
-	141, // 193: state.v1.StateStoreService.PutPresence:input_type -> state.v1.PutPresenceRequest
-	136, // 194: state.v1.StateStoreService.RecordCaptureRefusal:input_type -> state.v1.RecordCaptureRefusalRequest
-	138, // 195: state.v1.StateStoreService.ListCaptureRefusals:input_type -> state.v1.ListCaptureRefusalsRequest
-	143, // 196: state.v1.StateStoreService.ListPresence:input_type -> state.v1.ListPresenceRequest
-	146, // 197: state.v1.StateStoreService.ReadTaskLog:input_type -> state.v1.ReadTaskLogRequest
-	148, // 198: state.v1.StateStoreService.StreamTaskLogContent:input_type -> state.v1.StreamTaskLogContentRequest
-	150, // 199: state.v1.StateStoreService.InsertCapture:input_type -> state.v1.InsertCaptureRequest
-	152, // 200: state.v1.StateStoreService.StreamCaptures:input_type -> state.v1.StreamCapturesRequest
-	154, // 201: state.v1.StateStoreService.InsertMapping:input_type -> state.v1.InsertMappingRequest
-	156, // 202: state.v1.StateStoreService.GetMapping:input_type -> state.v1.GetMappingRequest
-	158, // 203: state.v1.StateStoreService.ListMappings:input_type -> state.v1.ListMappingsRequest
-	160, // 204: state.v1.StateStoreService.UpdateMapping:input_type -> state.v1.UpdateMappingRequest
-	162, // 205: state.v1.StateStoreService.DeleteMapping:input_type -> state.v1.DeleteMappingRequest
-	164, // 206: state.v1.StateStoreService.RecordMappingMatch:input_type -> state.v1.RecordMappingMatchRequest
-	166, // 207: state.v1.StateStoreService.InsertEventType:input_type -> state.v1.InsertEventTypeRequest
-	168, // 208: state.v1.StateStoreService.UpdateEventType:input_type -> state.v1.UpdateEventTypeRequest
-	170, // 209: state.v1.StateStoreService.DeleteEventType:input_type -> state.v1.DeleteEventTypeRequest
-	172, // 210: state.v1.StateStoreService.ListEventTypes:input_type -> state.v1.ListEventTypesRequest
-	174, // 211: state.v1.StateStoreService.InsertBinding:input_type -> state.v1.InsertBindingRequest
-	176, // 212: state.v1.StateStoreService.GetBinding:input_type -> state.v1.GetBindingRequest
-	178, // 213: state.v1.StateStoreService.ListBindings:input_type -> state.v1.ListBindingsRequest
-	212, // 214: state.v1.StateStoreService.ListDispatches:input_type -> state.v1.ListDispatchesRequest
-	180, // 215: state.v1.StateStoreService.UpdateBinding:input_type -> state.v1.UpdateBindingRequest
-	182, // 216: state.v1.StateStoreService.DeleteBinding:input_type -> state.v1.DeleteBindingRequest
-	184, // 217: state.v1.StateStoreService.ApproveBinding:input_type -> state.v1.ApproveBindingRequest
-	192, // 218: state.v1.StateStoreService.PauseBinding:input_type -> state.v1.PauseBindingRequest
-	194, // 219: state.v1.StateStoreService.ResumeBinding:input_type -> state.v1.ResumeBindingRequest
-	196, // 220: state.v1.StateStoreService.InsertSource:input_type -> state.v1.InsertSourceRequest
-	198, // 221: state.v1.StateStoreService.GetSource:input_type -> state.v1.GetSourceRequest
-	200, // 222: state.v1.StateStoreService.ListSources:input_type -> state.v1.ListSourcesRequest
-	202, // 223: state.v1.StateStoreService.SetSourceSigning:input_type -> state.v1.SetSourceSigningRequest
-	204, // 224: state.v1.StateStoreService.SetSourceSecret:input_type -> state.v1.SetSourceSecretRequest
-	186, // 225: state.v1.StateStoreService.SetSourceName:input_type -> state.v1.SetSourceNameRequest
-	188, // 226: state.v1.StateStoreService.SetSourceDeliveryHeader:input_type -> state.v1.SetSourceDeliveryHeaderRequest
-	190, // 227: state.v1.StateStoreService.DeleteSource:input_type -> state.v1.DeleteSourceRequest
-	206, // 228: state.v1.StateStoreService.ArmedBindingsForSource:input_type -> state.v1.ArmedBindingsForSourceRequest
-	208, // 229: state.v1.StateStoreService.RecordDispatch:input_type -> state.v1.RecordDispatchRequest
-	210, // 230: state.v1.StateStoreService.SetDispatchTask:input_type -> state.v1.SetDispatchTaskRequest
-	215, // 231: state.v1.StateStoreService.RecordPlaybookDispatch:input_type -> state.v1.RecordPlaybookDispatchRequest
-	217, // 232: state.v1.StateStoreService.DeletePlaybookDispatches:input_type -> state.v1.DeletePlaybookDispatchesRequest
-	219, // 233: state.v1.StateStoreService.StreamUndispatchedCaptures:input_type -> state.v1.StreamUndispatchedCapturesRequest
-	221, // 234: state.v1.StateStoreService.EnqueueBindingTask:input_type -> state.v1.EnqueueBindingTaskRequest
-	223, // 235: state.v1.StateStoreService.EnqueueCallTask:input_type -> state.v1.EnqueueCallTaskRequest
-	225, // 236: state.v1.StateStoreService.WorkflowCallStatus:input_type -> state.v1.WorkflowCallStatusRequest
-	244, // 237: state.v1.StateStoreService.GetPrincipal:input_type -> state.v1.GetPrincipalRequest
-	249, // 238: state.v1.StateStoreService.ListPolicies:input_type -> state.v1.ListPoliciesRequest
-	251, // 239: state.v1.StateStoreService.PutPolicy:input_type -> state.v1.PutPolicyRequest
-	253, // 240: state.v1.StateStoreService.DeletePolicy:input_type -> state.v1.DeletePolicyRequest
-	255, // 241: state.v1.StateStoreService.EnsureShippedOrgPolicies:input_type -> state.v1.EnsureShippedOrgPoliciesRequest
-	258, // 242: state.v1.StateStoreService.RecordDenial:input_type -> state.v1.RecordDenialRequest
-	260, // 243: state.v1.StateStoreService.ListDenials:input_type -> state.v1.ListDenialsRequest
-	265, // 244: state.v1.StateStoreService.ListOrgs:input_type -> state.v1.ListOrgsRequest
-	267, // 245: state.v1.StateStoreService.GetOrg:input_type -> state.v1.GetOrgRequest
-	269, // 246: state.v1.StateStoreService.CreateOrg:input_type -> state.v1.CreateOrgRequest
-	271, // 247: state.v1.StateStoreService.ListWorkspaces:input_type -> state.v1.ListWorkspacesRequest
-	273, // 248: state.v1.StateStoreService.CreateWorkspace:input_type -> state.v1.CreateWorkspaceRequest
-	275, // 249: state.v1.StateStoreService.ListMembers:input_type -> state.v1.ListMembersRequest
-	277, // 250: state.v1.StateStoreService.SetMembership:input_type -> state.v1.SetMembershipRequest
-	279, // 251: state.v1.StateStoreService.RemoveMembership:input_type -> state.v1.RemoveMembershipRequest
-	281, // 252: state.v1.StateStoreService.AssignAgent:input_type -> state.v1.AssignAgentRequest
-	230, // 253: state.v1.StateStoreService.InstallPackage:output_type -> state.v1.InstallPackageResponse
-	233, // 254: state.v1.StateStoreService.ListCatalogue:output_type -> state.v1.ListCatalogueResponse
-	235, // 255: state.v1.StateStoreService.InstallFromCatalogue:output_type -> state.v1.InstallFromCatalogueResponse
-	237, // 256: state.v1.StateStoreService.GetInstalledPackage:output_type -> state.v1.GetInstalledPackageResponse
-	239, // 257: state.v1.StateStoreService.ListInstalledPackages:output_type -> state.v1.ListInstalledPackagesResponse
-	241, // 258: state.v1.StateStoreService.AcceptPackageAuthority:output_type -> state.v1.AcceptPackageAuthorityResponse
-	243, // 259: state.v1.StateStoreService.RemoveInstalledPackage:output_type -> state.v1.RemoveInstalledPackageResponse
-	1,   // 260: state.v1.StateStoreService.RegisterTaskGrant:output_type -> state.v1.RegisterTaskGrantResponse
-	3,   // 261: state.v1.StateStoreService.RevokeTaskGrant:output_type -> state.v1.RevokeTaskGrantResponse
-	5,   // 262: state.v1.StateStoreService.ResolveTaskGrant:output_type -> state.v1.ResolveTaskGrantResponse
-	9,   // 263: state.v1.StateStoreService.ListIdentities:output_type -> state.v1.ListIdentitiesResponse
-	11,  // 264: state.v1.StateStoreService.GetIdentity:output_type -> state.v1.GetIdentityResponse
-	17,  // 265: state.v1.StateStoreService.CreateIdentity:output_type -> state.v1.CreateIdentityResponse
-	18,  // 266: state.v1.StateStoreService.RenameIdentity:output_type -> state.v1.RenameIdentityResponse
-	19,  // 267: state.v1.StateStoreService.SuspendIdentity:output_type -> state.v1.SuspendIdentityResponse
-	20,  // 268: state.v1.StateStoreService.ReactivateIdentity:output_type -> state.v1.ReactivateIdentityResponse
-	21,  // 269: state.v1.StateStoreService.RetireIdentity:output_type -> state.v1.RetireIdentityResponse
-	23,  // 270: state.v1.StateStoreService.ResolveIdentitySubject:output_type -> state.v1.ResolveIdentitySubjectResponse
-	25,  // 271: state.v1.StateStoreService.BindIdentitySubject:output_type -> state.v1.BindIdentitySubjectResponse
-	28,  // 272: state.v1.StateStoreService.AddPersonalToken:output_type -> state.v1.AddPersonalTokenResponse
-	30,  // 273: state.v1.StateStoreService.ListPersonalTokens:output_type -> state.v1.ListPersonalTokensResponse
-	32,  // 274: state.v1.StateStoreService.RevokePersonalToken:output_type -> state.v1.RevokePersonalTokenResponse
-	48,  // 275: state.v1.StateStoreService.EnqueueIssue:output_type -> state.v1.EnqueueIssueResponse
-	52,  // 276: state.v1.StateStoreService.EnqueueChatTask:output_type -> state.v1.EnqueueChatTaskResponse
-	50,  // 277: state.v1.StateStoreService.ActiveTasksByOrigin:output_type -> state.v1.ActiveTasksByOriginResponse
-	54,  // 278: state.v1.StateStoreService.ClaimNext:output_type -> state.v1.ClaimNextResponse
-	56,  // 279: state.v1.StateStoreService.ClaimByIssue:output_type -> state.v1.ClaimByIssueResponse
-	58,  // 280: state.v1.StateStoreService.Transition:output_type -> state.v1.TransitionResponse
-	74,  // 281: state.v1.StateStoreService.Update:output_type -> state.v1.UpdateResponse
-	60,  // 282: state.v1.StateStoreService.StartStep:output_type -> state.v1.StartStepResponse
-	62,  // 283: state.v1.StateStoreService.FinishStep:output_type -> state.v1.FinishStepResponse
-	64,  // 284: state.v1.StateStoreService.CancelExecution:output_type -> state.v1.CancelExecutionResponse
-	67,  // 285: state.v1.StateStoreService.ListSteps:output_type -> state.v1.ListStepsResponse
-	70,  // 286: state.v1.StateStoreService.GetHarnessSecret:output_type -> state.v1.GetHarnessSecretResponse
-	72,  // 287: state.v1.StateStoreService.PutHarnessSecret:output_type -> state.v1.PutHarnessSecretResponse
-	76,  // 288: state.v1.StateStoreService.Requeue:output_type -> state.v1.RequeueResponse
-	78,  // 289: state.v1.StateStoreService.ParkTask:output_type -> state.v1.ParkTaskResponse
-	80,  // 290: state.v1.StateStoreService.RecoverStale:output_type -> state.v1.RecoverStaleResponse
-	82,  // 291: state.v1.StateStoreService.ArchiveTask:output_type -> state.v1.ArchiveTaskResponse
-	84,  // 292: state.v1.StateStoreService.RetryTask:output_type -> state.v1.RetryTaskResponse
-	86,  // 293: state.v1.StateStoreService.RespondReviewGate:output_type -> state.v1.RespondReviewGateResponse
-	88,  // 294: state.v1.StateStoreService.BeginRemediation:output_type -> state.v1.BeginRemediationResponse
-	90,  // 295: state.v1.StateStoreService.UpdateReviewPayload:output_type -> state.v1.UpdateReviewPayloadResponse
-	92,  // 296: state.v1.StateStoreService.SetReviewCursors:output_type -> state.v1.SetReviewCursorsResponse
-	94,  // 297: state.v1.StateStoreService.TaskByIssue:output_type -> state.v1.TaskByIssueResponse
-	96,  // 298: state.v1.StateStoreService.OpenTaskByPR:output_type -> state.v1.OpenTaskByPRResponse
-	98,  // 299: state.v1.StateStoreService.TaskByID:output_type -> state.v1.TaskByIDResponse
-	100, // 300: state.v1.StateStoreService.OpenPRs:output_type -> state.v1.OpenPRsResponse
-	102, // 301: state.v1.StateStoreService.ClearTerminalTasks:output_type -> state.v1.ClearTerminalTasksResponse
-	104, // 302: state.v1.StateStoreService.Tasks:output_type -> state.v1.TasksResponse
-	106, // 303: state.v1.StateStoreService.StatusCounts:output_type -> state.v1.StatusCountsResponse
-	108, // 304: state.v1.StateStoreService.InsertEvent:output_type -> state.v1.InsertEventResponse
-	110, // 305: state.v1.StateStoreService.EventsSince:output_type -> state.v1.EventsSinceResponse
-	112, // 306: state.v1.StateStoreService.TaskEvents:output_type -> state.v1.TaskEventsResponse
-	114, // 307: state.v1.StateStoreService.WorkflowStats:output_type -> state.v1.WorkflowStatsResponse
-	116, // 308: state.v1.StateStoreService.StageStats:output_type -> state.v1.StageStatsResponse
-	118, // 309: state.v1.StateStoreService.TokensByDay:output_type -> state.v1.TokensByDayResponse
-	121, // 310: state.v1.StateStoreService.PutConfigSnapshot:output_type -> state.v1.PutConfigSnapshotResponse
-	123, // 311: state.v1.StateStoreService.GetConfigSnapshot:output_type -> state.v1.GetConfigSnapshotResponse
-	126, // 312: state.v1.StateStoreService.PutChannelStatus:output_type -> state.v1.PutChannelStatusResponse
-	128, // 313: state.v1.StateStoreService.ListChannelStatus:output_type -> state.v1.ListChannelStatusResponse
-	131, // 314: state.v1.StateStoreService.PutApplyStatus:output_type -> state.v1.PutApplyStatusResponse
-	133, // 315: state.v1.StateStoreService.ListApplyStatus:output_type -> state.v1.ListApplyStatusResponse
-	142, // 316: state.v1.StateStoreService.PutPresence:output_type -> state.v1.PutPresenceResponse
-	137, // 317: state.v1.StateStoreService.RecordCaptureRefusal:output_type -> state.v1.RecordCaptureRefusalResponse
-	140, // 318: state.v1.StateStoreService.ListCaptureRefusals:output_type -> state.v1.ListCaptureRefusalsResponse
-	144, // 319: state.v1.StateStoreService.ListPresence:output_type -> state.v1.ListPresenceResponse
-	147, // 320: state.v1.StateStoreService.ReadTaskLog:output_type -> state.v1.ReadTaskLogResponse
-	149, // 321: state.v1.StateStoreService.StreamTaskLogContent:output_type -> state.v1.StreamTaskLogContentResponse
-	151, // 322: state.v1.StateStoreService.InsertCapture:output_type -> state.v1.InsertCaptureResponse
-	153, // 323: state.v1.StateStoreService.StreamCaptures:output_type -> state.v1.StreamCapturesResponse
-	155, // 324: state.v1.StateStoreService.InsertMapping:output_type -> state.v1.InsertMappingResponse
-	157, // 325: state.v1.StateStoreService.GetMapping:output_type -> state.v1.GetMappingResponse
-	159, // 326: state.v1.StateStoreService.ListMappings:output_type -> state.v1.ListMappingsResponse
-	161, // 327: state.v1.StateStoreService.UpdateMapping:output_type -> state.v1.UpdateMappingResponse
-	163, // 328: state.v1.StateStoreService.DeleteMapping:output_type -> state.v1.DeleteMappingResponse
-	165, // 329: state.v1.StateStoreService.RecordMappingMatch:output_type -> state.v1.RecordMappingMatchResponse
-	167, // 330: state.v1.StateStoreService.InsertEventType:output_type -> state.v1.InsertEventTypeResponse
-	169, // 331: state.v1.StateStoreService.UpdateEventType:output_type -> state.v1.UpdateEventTypeResponse
-	171, // 332: state.v1.StateStoreService.DeleteEventType:output_type -> state.v1.DeleteEventTypeResponse
-	173, // 333: state.v1.StateStoreService.ListEventTypes:output_type -> state.v1.ListEventTypesResponse
-	175, // 334: state.v1.StateStoreService.InsertBinding:output_type -> state.v1.InsertBindingResponse
-	177, // 335: state.v1.StateStoreService.GetBinding:output_type -> state.v1.GetBindingResponse
-	179, // 336: state.v1.StateStoreService.ListBindings:output_type -> state.v1.ListBindingsResponse
-	214, // 337: state.v1.StateStoreService.ListDispatches:output_type -> state.v1.ListDispatchesResponse
-	181, // 338: state.v1.StateStoreService.UpdateBinding:output_type -> state.v1.UpdateBindingResponse
-	183, // 339: state.v1.StateStoreService.DeleteBinding:output_type -> state.v1.DeleteBindingResponse
-	185, // 340: state.v1.StateStoreService.ApproveBinding:output_type -> state.v1.ApproveBindingResponse
-	193, // 341: state.v1.StateStoreService.PauseBinding:output_type -> state.v1.PauseBindingResponse
-	195, // 342: state.v1.StateStoreService.ResumeBinding:output_type -> state.v1.ResumeBindingResponse
-	197, // 343: state.v1.StateStoreService.InsertSource:output_type -> state.v1.InsertSourceResponse
-	199, // 344: state.v1.StateStoreService.GetSource:output_type -> state.v1.GetSourceResponse
-	201, // 345: state.v1.StateStoreService.ListSources:output_type -> state.v1.ListSourcesResponse
-	203, // 346: state.v1.StateStoreService.SetSourceSigning:output_type -> state.v1.SetSourceSigningResponse
-	205, // 347: state.v1.StateStoreService.SetSourceSecret:output_type -> state.v1.SetSourceSecretResponse
-	187, // 348: state.v1.StateStoreService.SetSourceName:output_type -> state.v1.SetSourceNameResponse
-	189, // 349: state.v1.StateStoreService.SetSourceDeliveryHeader:output_type -> state.v1.SetSourceDeliveryHeaderResponse
-	191, // 350: state.v1.StateStoreService.DeleteSource:output_type -> state.v1.DeleteSourceResponse
-	207, // 351: state.v1.StateStoreService.ArmedBindingsForSource:output_type -> state.v1.ArmedBindingsForSourceResponse
-	209, // 352: state.v1.StateStoreService.RecordDispatch:output_type -> state.v1.RecordDispatchResponse
-	211, // 353: state.v1.StateStoreService.SetDispatchTask:output_type -> state.v1.SetDispatchTaskResponse
-	216, // 354: state.v1.StateStoreService.RecordPlaybookDispatch:output_type -> state.v1.RecordPlaybookDispatchResponse
-	218, // 355: state.v1.StateStoreService.DeletePlaybookDispatches:output_type -> state.v1.DeletePlaybookDispatchesResponse
-	220, // 356: state.v1.StateStoreService.StreamUndispatchedCaptures:output_type -> state.v1.StreamUndispatchedCapturesResponse
-	222, // 357: state.v1.StateStoreService.EnqueueBindingTask:output_type -> state.v1.EnqueueBindingTaskResponse
-	224, // 358: state.v1.StateStoreService.EnqueueCallTask:output_type -> state.v1.EnqueueCallTaskResponse
-	226, // 359: state.v1.StateStoreService.WorkflowCallStatus:output_type -> state.v1.WorkflowCallStatusResponse
-	247, // 360: state.v1.StateStoreService.GetPrincipal:output_type -> state.v1.GetPrincipalResponse
-	250, // 361: state.v1.StateStoreService.ListPolicies:output_type -> state.v1.ListPoliciesResponse
-	252, // 362: state.v1.StateStoreService.PutPolicy:output_type -> state.v1.PutPolicyResponse
-	254, // 363: state.v1.StateStoreService.DeletePolicy:output_type -> state.v1.DeletePolicyResponse
-	256, // 364: state.v1.StateStoreService.EnsureShippedOrgPolicies:output_type -> state.v1.EnsureShippedOrgPoliciesResponse
-	259, // 365: state.v1.StateStoreService.RecordDenial:output_type -> state.v1.RecordDenialResponse
-	261, // 366: state.v1.StateStoreService.ListDenials:output_type -> state.v1.ListDenialsResponse
-	266, // 367: state.v1.StateStoreService.ListOrgs:output_type -> state.v1.ListOrgsResponse
-	268, // 368: state.v1.StateStoreService.GetOrg:output_type -> state.v1.GetOrgResponse
-	270, // 369: state.v1.StateStoreService.CreateOrg:output_type -> state.v1.CreateOrgResponse
-	272, // 370: state.v1.StateStoreService.ListWorkspaces:output_type -> state.v1.ListWorkspacesResponse
-	274, // 371: state.v1.StateStoreService.CreateWorkspace:output_type -> state.v1.CreateWorkspaceResponse
-	276, // 372: state.v1.StateStoreService.ListMembers:output_type -> state.v1.ListMembersResponse
-	278, // 373: state.v1.StateStoreService.SetMembership:output_type -> state.v1.SetMembershipResponse
-	280, // 374: state.v1.StateStoreService.RemoveMembership:output_type -> state.v1.RemoveMembershipResponse
-	282, // 375: state.v1.StateStoreService.AssignAgent:output_type -> state.v1.AssignAgentResponse
-	253, // [253:376] is the sub-list for method output_type
-	130, // [130:253] is the sub-list for method input_type
-	130, // [130:130] is the sub-list for extension type_name
-	130, // [130:130] is the sub-list for extension extendee
-	0,   // [0:130] is the sub-list for field type_name
+	288, // 130: state.v1.RecentLogsRequest.query:type_name -> logging.v1.LogQuery
+	289, // 131: state.v1.RecentLogsResponse.snapshot:type_name -> logging.v1.LogSnapshot
+	283, // 132: state.v1.StateStoreService.RecentLogs:input_type -> state.v1.RecentLogsRequest
+	229, // 133: state.v1.StateStoreService.InstallPackage:input_type -> state.v1.InstallPackageRequest
+	232, // 134: state.v1.StateStoreService.ListCatalogue:input_type -> state.v1.ListCatalogueRequest
+	234, // 135: state.v1.StateStoreService.InstallFromCatalogue:input_type -> state.v1.InstallFromCatalogueRequest
+	236, // 136: state.v1.StateStoreService.GetInstalledPackage:input_type -> state.v1.GetInstalledPackageRequest
+	238, // 137: state.v1.StateStoreService.ListInstalledPackages:input_type -> state.v1.ListInstalledPackagesRequest
+	240, // 138: state.v1.StateStoreService.AcceptPackageAuthority:input_type -> state.v1.AcceptPackageAuthorityRequest
+	242, // 139: state.v1.StateStoreService.RemoveInstalledPackage:input_type -> state.v1.RemoveInstalledPackageRequest
+	0,   // 140: state.v1.StateStoreService.RegisterTaskGrant:input_type -> state.v1.RegisterTaskGrantRequest
+	2,   // 141: state.v1.StateStoreService.RevokeTaskGrant:input_type -> state.v1.RevokeTaskGrantRequest
+	4,   // 142: state.v1.StateStoreService.ResolveTaskGrant:input_type -> state.v1.ResolveTaskGrantRequest
+	8,   // 143: state.v1.StateStoreService.ListIdentities:input_type -> state.v1.ListIdentitiesRequest
+	10,  // 144: state.v1.StateStoreService.GetIdentity:input_type -> state.v1.GetIdentityRequest
+	12,  // 145: state.v1.StateStoreService.CreateIdentity:input_type -> state.v1.CreateIdentityRequest
+	13,  // 146: state.v1.StateStoreService.RenameIdentity:input_type -> state.v1.RenameIdentityRequest
+	14,  // 147: state.v1.StateStoreService.SuspendIdentity:input_type -> state.v1.SuspendIdentityRequest
+	15,  // 148: state.v1.StateStoreService.ReactivateIdentity:input_type -> state.v1.ReactivateIdentityRequest
+	16,  // 149: state.v1.StateStoreService.RetireIdentity:input_type -> state.v1.RetireIdentityRequest
+	22,  // 150: state.v1.StateStoreService.ResolveIdentitySubject:input_type -> state.v1.ResolveIdentitySubjectRequest
+	24,  // 151: state.v1.StateStoreService.BindIdentitySubject:input_type -> state.v1.BindIdentitySubjectRequest
+	27,  // 152: state.v1.StateStoreService.AddPersonalToken:input_type -> state.v1.AddPersonalTokenRequest
+	29,  // 153: state.v1.StateStoreService.ListPersonalTokens:input_type -> state.v1.ListPersonalTokensRequest
+	31,  // 154: state.v1.StateStoreService.RevokePersonalToken:input_type -> state.v1.RevokePersonalTokenRequest
+	47,  // 155: state.v1.StateStoreService.EnqueueIssue:input_type -> state.v1.EnqueueIssueRequest
+	51,  // 156: state.v1.StateStoreService.EnqueueChatTask:input_type -> state.v1.EnqueueChatTaskRequest
+	49,  // 157: state.v1.StateStoreService.ActiveTasksByOrigin:input_type -> state.v1.ActiveTasksByOriginRequest
+	53,  // 158: state.v1.StateStoreService.ClaimNext:input_type -> state.v1.ClaimNextRequest
+	55,  // 159: state.v1.StateStoreService.ClaimByIssue:input_type -> state.v1.ClaimByIssueRequest
+	57,  // 160: state.v1.StateStoreService.Transition:input_type -> state.v1.TransitionRequest
+	73,  // 161: state.v1.StateStoreService.Update:input_type -> state.v1.UpdateRequest
+	59,  // 162: state.v1.StateStoreService.StartStep:input_type -> state.v1.StartStepRequest
+	61,  // 163: state.v1.StateStoreService.FinishStep:input_type -> state.v1.FinishStepRequest
+	63,  // 164: state.v1.StateStoreService.CancelExecution:input_type -> state.v1.CancelExecutionRequest
+	66,  // 165: state.v1.StateStoreService.ListSteps:input_type -> state.v1.ListStepsRequest
+	69,  // 166: state.v1.StateStoreService.GetHarnessSecret:input_type -> state.v1.GetHarnessSecretRequest
+	71,  // 167: state.v1.StateStoreService.PutHarnessSecret:input_type -> state.v1.PutHarnessSecretRequest
+	75,  // 168: state.v1.StateStoreService.Requeue:input_type -> state.v1.RequeueRequest
+	77,  // 169: state.v1.StateStoreService.ParkTask:input_type -> state.v1.ParkTaskRequest
+	79,  // 170: state.v1.StateStoreService.RecoverStale:input_type -> state.v1.RecoverStaleRequest
+	81,  // 171: state.v1.StateStoreService.ArchiveTask:input_type -> state.v1.ArchiveTaskRequest
+	83,  // 172: state.v1.StateStoreService.RetryTask:input_type -> state.v1.RetryTaskRequest
+	85,  // 173: state.v1.StateStoreService.RespondReviewGate:input_type -> state.v1.RespondReviewGateRequest
+	87,  // 174: state.v1.StateStoreService.BeginRemediation:input_type -> state.v1.BeginRemediationRequest
+	89,  // 175: state.v1.StateStoreService.UpdateReviewPayload:input_type -> state.v1.UpdateReviewPayloadRequest
+	91,  // 176: state.v1.StateStoreService.SetReviewCursors:input_type -> state.v1.SetReviewCursorsRequest
+	93,  // 177: state.v1.StateStoreService.TaskByIssue:input_type -> state.v1.TaskByIssueRequest
+	95,  // 178: state.v1.StateStoreService.OpenTaskByPR:input_type -> state.v1.OpenTaskByPRRequest
+	97,  // 179: state.v1.StateStoreService.TaskByID:input_type -> state.v1.TaskByIDRequest
+	99,  // 180: state.v1.StateStoreService.OpenPRs:input_type -> state.v1.OpenPRsRequest
+	101, // 181: state.v1.StateStoreService.ClearTerminalTasks:input_type -> state.v1.ClearTerminalTasksRequest
+	103, // 182: state.v1.StateStoreService.Tasks:input_type -> state.v1.TasksRequest
+	105, // 183: state.v1.StateStoreService.StatusCounts:input_type -> state.v1.StatusCountsRequest
+	107, // 184: state.v1.StateStoreService.InsertEvent:input_type -> state.v1.InsertEventRequest
+	109, // 185: state.v1.StateStoreService.EventsSince:input_type -> state.v1.EventsSinceRequest
+	111, // 186: state.v1.StateStoreService.TaskEvents:input_type -> state.v1.TaskEventsRequest
+	113, // 187: state.v1.StateStoreService.WorkflowStats:input_type -> state.v1.WorkflowStatsRequest
+	115, // 188: state.v1.StateStoreService.StageStats:input_type -> state.v1.StageStatsRequest
+	117, // 189: state.v1.StateStoreService.TokensByDay:input_type -> state.v1.TokensByDayRequest
+	120, // 190: state.v1.StateStoreService.PutConfigSnapshot:input_type -> state.v1.PutConfigSnapshotRequest
+	122, // 191: state.v1.StateStoreService.GetConfigSnapshot:input_type -> state.v1.GetConfigSnapshotRequest
+	125, // 192: state.v1.StateStoreService.PutChannelStatus:input_type -> state.v1.PutChannelStatusRequest
+	127, // 193: state.v1.StateStoreService.ListChannelStatus:input_type -> state.v1.ListChannelStatusRequest
+	130, // 194: state.v1.StateStoreService.PutApplyStatus:input_type -> state.v1.PutApplyStatusRequest
+	132, // 195: state.v1.StateStoreService.ListApplyStatus:input_type -> state.v1.ListApplyStatusRequest
+	141, // 196: state.v1.StateStoreService.PutPresence:input_type -> state.v1.PutPresenceRequest
+	136, // 197: state.v1.StateStoreService.RecordCaptureRefusal:input_type -> state.v1.RecordCaptureRefusalRequest
+	138, // 198: state.v1.StateStoreService.ListCaptureRefusals:input_type -> state.v1.ListCaptureRefusalsRequest
+	143, // 199: state.v1.StateStoreService.ListPresence:input_type -> state.v1.ListPresenceRequest
+	146, // 200: state.v1.StateStoreService.ReadTaskLog:input_type -> state.v1.ReadTaskLogRequest
+	148, // 201: state.v1.StateStoreService.StreamTaskLogContent:input_type -> state.v1.StreamTaskLogContentRequest
+	150, // 202: state.v1.StateStoreService.InsertCapture:input_type -> state.v1.InsertCaptureRequest
+	152, // 203: state.v1.StateStoreService.StreamCaptures:input_type -> state.v1.StreamCapturesRequest
+	154, // 204: state.v1.StateStoreService.InsertMapping:input_type -> state.v1.InsertMappingRequest
+	156, // 205: state.v1.StateStoreService.GetMapping:input_type -> state.v1.GetMappingRequest
+	158, // 206: state.v1.StateStoreService.ListMappings:input_type -> state.v1.ListMappingsRequest
+	160, // 207: state.v1.StateStoreService.UpdateMapping:input_type -> state.v1.UpdateMappingRequest
+	162, // 208: state.v1.StateStoreService.DeleteMapping:input_type -> state.v1.DeleteMappingRequest
+	164, // 209: state.v1.StateStoreService.RecordMappingMatch:input_type -> state.v1.RecordMappingMatchRequest
+	166, // 210: state.v1.StateStoreService.InsertEventType:input_type -> state.v1.InsertEventTypeRequest
+	168, // 211: state.v1.StateStoreService.UpdateEventType:input_type -> state.v1.UpdateEventTypeRequest
+	170, // 212: state.v1.StateStoreService.DeleteEventType:input_type -> state.v1.DeleteEventTypeRequest
+	172, // 213: state.v1.StateStoreService.ListEventTypes:input_type -> state.v1.ListEventTypesRequest
+	174, // 214: state.v1.StateStoreService.InsertBinding:input_type -> state.v1.InsertBindingRequest
+	176, // 215: state.v1.StateStoreService.GetBinding:input_type -> state.v1.GetBindingRequest
+	178, // 216: state.v1.StateStoreService.ListBindings:input_type -> state.v1.ListBindingsRequest
+	212, // 217: state.v1.StateStoreService.ListDispatches:input_type -> state.v1.ListDispatchesRequest
+	180, // 218: state.v1.StateStoreService.UpdateBinding:input_type -> state.v1.UpdateBindingRequest
+	182, // 219: state.v1.StateStoreService.DeleteBinding:input_type -> state.v1.DeleteBindingRequest
+	184, // 220: state.v1.StateStoreService.ApproveBinding:input_type -> state.v1.ApproveBindingRequest
+	192, // 221: state.v1.StateStoreService.PauseBinding:input_type -> state.v1.PauseBindingRequest
+	194, // 222: state.v1.StateStoreService.ResumeBinding:input_type -> state.v1.ResumeBindingRequest
+	196, // 223: state.v1.StateStoreService.InsertSource:input_type -> state.v1.InsertSourceRequest
+	198, // 224: state.v1.StateStoreService.GetSource:input_type -> state.v1.GetSourceRequest
+	200, // 225: state.v1.StateStoreService.ListSources:input_type -> state.v1.ListSourcesRequest
+	202, // 226: state.v1.StateStoreService.SetSourceSigning:input_type -> state.v1.SetSourceSigningRequest
+	204, // 227: state.v1.StateStoreService.SetSourceSecret:input_type -> state.v1.SetSourceSecretRequest
+	186, // 228: state.v1.StateStoreService.SetSourceName:input_type -> state.v1.SetSourceNameRequest
+	188, // 229: state.v1.StateStoreService.SetSourceDeliveryHeader:input_type -> state.v1.SetSourceDeliveryHeaderRequest
+	190, // 230: state.v1.StateStoreService.DeleteSource:input_type -> state.v1.DeleteSourceRequest
+	206, // 231: state.v1.StateStoreService.ArmedBindingsForSource:input_type -> state.v1.ArmedBindingsForSourceRequest
+	208, // 232: state.v1.StateStoreService.RecordDispatch:input_type -> state.v1.RecordDispatchRequest
+	210, // 233: state.v1.StateStoreService.SetDispatchTask:input_type -> state.v1.SetDispatchTaskRequest
+	215, // 234: state.v1.StateStoreService.RecordPlaybookDispatch:input_type -> state.v1.RecordPlaybookDispatchRequest
+	217, // 235: state.v1.StateStoreService.DeletePlaybookDispatches:input_type -> state.v1.DeletePlaybookDispatchesRequest
+	219, // 236: state.v1.StateStoreService.StreamUndispatchedCaptures:input_type -> state.v1.StreamUndispatchedCapturesRequest
+	221, // 237: state.v1.StateStoreService.EnqueueBindingTask:input_type -> state.v1.EnqueueBindingTaskRequest
+	223, // 238: state.v1.StateStoreService.EnqueueCallTask:input_type -> state.v1.EnqueueCallTaskRequest
+	225, // 239: state.v1.StateStoreService.WorkflowCallStatus:input_type -> state.v1.WorkflowCallStatusRequest
+	244, // 240: state.v1.StateStoreService.GetPrincipal:input_type -> state.v1.GetPrincipalRequest
+	249, // 241: state.v1.StateStoreService.ListPolicies:input_type -> state.v1.ListPoliciesRequest
+	251, // 242: state.v1.StateStoreService.PutPolicy:input_type -> state.v1.PutPolicyRequest
+	253, // 243: state.v1.StateStoreService.DeletePolicy:input_type -> state.v1.DeletePolicyRequest
+	255, // 244: state.v1.StateStoreService.EnsureShippedOrgPolicies:input_type -> state.v1.EnsureShippedOrgPoliciesRequest
+	258, // 245: state.v1.StateStoreService.RecordDenial:input_type -> state.v1.RecordDenialRequest
+	260, // 246: state.v1.StateStoreService.ListDenials:input_type -> state.v1.ListDenialsRequest
+	265, // 247: state.v1.StateStoreService.ListOrgs:input_type -> state.v1.ListOrgsRequest
+	267, // 248: state.v1.StateStoreService.GetOrg:input_type -> state.v1.GetOrgRequest
+	269, // 249: state.v1.StateStoreService.CreateOrg:input_type -> state.v1.CreateOrgRequest
+	271, // 250: state.v1.StateStoreService.ListWorkspaces:input_type -> state.v1.ListWorkspacesRequest
+	273, // 251: state.v1.StateStoreService.CreateWorkspace:input_type -> state.v1.CreateWorkspaceRequest
+	275, // 252: state.v1.StateStoreService.ListMembers:input_type -> state.v1.ListMembersRequest
+	277, // 253: state.v1.StateStoreService.SetMembership:input_type -> state.v1.SetMembershipRequest
+	279, // 254: state.v1.StateStoreService.RemoveMembership:input_type -> state.v1.RemoveMembershipRequest
+	281, // 255: state.v1.StateStoreService.AssignAgent:input_type -> state.v1.AssignAgentRequest
+	284, // 256: state.v1.StateStoreService.RecentLogs:output_type -> state.v1.RecentLogsResponse
+	230, // 257: state.v1.StateStoreService.InstallPackage:output_type -> state.v1.InstallPackageResponse
+	233, // 258: state.v1.StateStoreService.ListCatalogue:output_type -> state.v1.ListCatalogueResponse
+	235, // 259: state.v1.StateStoreService.InstallFromCatalogue:output_type -> state.v1.InstallFromCatalogueResponse
+	237, // 260: state.v1.StateStoreService.GetInstalledPackage:output_type -> state.v1.GetInstalledPackageResponse
+	239, // 261: state.v1.StateStoreService.ListInstalledPackages:output_type -> state.v1.ListInstalledPackagesResponse
+	241, // 262: state.v1.StateStoreService.AcceptPackageAuthority:output_type -> state.v1.AcceptPackageAuthorityResponse
+	243, // 263: state.v1.StateStoreService.RemoveInstalledPackage:output_type -> state.v1.RemoveInstalledPackageResponse
+	1,   // 264: state.v1.StateStoreService.RegisterTaskGrant:output_type -> state.v1.RegisterTaskGrantResponse
+	3,   // 265: state.v1.StateStoreService.RevokeTaskGrant:output_type -> state.v1.RevokeTaskGrantResponse
+	5,   // 266: state.v1.StateStoreService.ResolveTaskGrant:output_type -> state.v1.ResolveTaskGrantResponse
+	9,   // 267: state.v1.StateStoreService.ListIdentities:output_type -> state.v1.ListIdentitiesResponse
+	11,  // 268: state.v1.StateStoreService.GetIdentity:output_type -> state.v1.GetIdentityResponse
+	17,  // 269: state.v1.StateStoreService.CreateIdentity:output_type -> state.v1.CreateIdentityResponse
+	18,  // 270: state.v1.StateStoreService.RenameIdentity:output_type -> state.v1.RenameIdentityResponse
+	19,  // 271: state.v1.StateStoreService.SuspendIdentity:output_type -> state.v1.SuspendIdentityResponse
+	20,  // 272: state.v1.StateStoreService.ReactivateIdentity:output_type -> state.v1.ReactivateIdentityResponse
+	21,  // 273: state.v1.StateStoreService.RetireIdentity:output_type -> state.v1.RetireIdentityResponse
+	23,  // 274: state.v1.StateStoreService.ResolveIdentitySubject:output_type -> state.v1.ResolveIdentitySubjectResponse
+	25,  // 275: state.v1.StateStoreService.BindIdentitySubject:output_type -> state.v1.BindIdentitySubjectResponse
+	28,  // 276: state.v1.StateStoreService.AddPersonalToken:output_type -> state.v1.AddPersonalTokenResponse
+	30,  // 277: state.v1.StateStoreService.ListPersonalTokens:output_type -> state.v1.ListPersonalTokensResponse
+	32,  // 278: state.v1.StateStoreService.RevokePersonalToken:output_type -> state.v1.RevokePersonalTokenResponse
+	48,  // 279: state.v1.StateStoreService.EnqueueIssue:output_type -> state.v1.EnqueueIssueResponse
+	52,  // 280: state.v1.StateStoreService.EnqueueChatTask:output_type -> state.v1.EnqueueChatTaskResponse
+	50,  // 281: state.v1.StateStoreService.ActiveTasksByOrigin:output_type -> state.v1.ActiveTasksByOriginResponse
+	54,  // 282: state.v1.StateStoreService.ClaimNext:output_type -> state.v1.ClaimNextResponse
+	56,  // 283: state.v1.StateStoreService.ClaimByIssue:output_type -> state.v1.ClaimByIssueResponse
+	58,  // 284: state.v1.StateStoreService.Transition:output_type -> state.v1.TransitionResponse
+	74,  // 285: state.v1.StateStoreService.Update:output_type -> state.v1.UpdateResponse
+	60,  // 286: state.v1.StateStoreService.StartStep:output_type -> state.v1.StartStepResponse
+	62,  // 287: state.v1.StateStoreService.FinishStep:output_type -> state.v1.FinishStepResponse
+	64,  // 288: state.v1.StateStoreService.CancelExecution:output_type -> state.v1.CancelExecutionResponse
+	67,  // 289: state.v1.StateStoreService.ListSteps:output_type -> state.v1.ListStepsResponse
+	70,  // 290: state.v1.StateStoreService.GetHarnessSecret:output_type -> state.v1.GetHarnessSecretResponse
+	72,  // 291: state.v1.StateStoreService.PutHarnessSecret:output_type -> state.v1.PutHarnessSecretResponse
+	76,  // 292: state.v1.StateStoreService.Requeue:output_type -> state.v1.RequeueResponse
+	78,  // 293: state.v1.StateStoreService.ParkTask:output_type -> state.v1.ParkTaskResponse
+	80,  // 294: state.v1.StateStoreService.RecoverStale:output_type -> state.v1.RecoverStaleResponse
+	82,  // 295: state.v1.StateStoreService.ArchiveTask:output_type -> state.v1.ArchiveTaskResponse
+	84,  // 296: state.v1.StateStoreService.RetryTask:output_type -> state.v1.RetryTaskResponse
+	86,  // 297: state.v1.StateStoreService.RespondReviewGate:output_type -> state.v1.RespondReviewGateResponse
+	88,  // 298: state.v1.StateStoreService.BeginRemediation:output_type -> state.v1.BeginRemediationResponse
+	90,  // 299: state.v1.StateStoreService.UpdateReviewPayload:output_type -> state.v1.UpdateReviewPayloadResponse
+	92,  // 300: state.v1.StateStoreService.SetReviewCursors:output_type -> state.v1.SetReviewCursorsResponse
+	94,  // 301: state.v1.StateStoreService.TaskByIssue:output_type -> state.v1.TaskByIssueResponse
+	96,  // 302: state.v1.StateStoreService.OpenTaskByPR:output_type -> state.v1.OpenTaskByPRResponse
+	98,  // 303: state.v1.StateStoreService.TaskByID:output_type -> state.v1.TaskByIDResponse
+	100, // 304: state.v1.StateStoreService.OpenPRs:output_type -> state.v1.OpenPRsResponse
+	102, // 305: state.v1.StateStoreService.ClearTerminalTasks:output_type -> state.v1.ClearTerminalTasksResponse
+	104, // 306: state.v1.StateStoreService.Tasks:output_type -> state.v1.TasksResponse
+	106, // 307: state.v1.StateStoreService.StatusCounts:output_type -> state.v1.StatusCountsResponse
+	108, // 308: state.v1.StateStoreService.InsertEvent:output_type -> state.v1.InsertEventResponse
+	110, // 309: state.v1.StateStoreService.EventsSince:output_type -> state.v1.EventsSinceResponse
+	112, // 310: state.v1.StateStoreService.TaskEvents:output_type -> state.v1.TaskEventsResponse
+	114, // 311: state.v1.StateStoreService.WorkflowStats:output_type -> state.v1.WorkflowStatsResponse
+	116, // 312: state.v1.StateStoreService.StageStats:output_type -> state.v1.StageStatsResponse
+	118, // 313: state.v1.StateStoreService.TokensByDay:output_type -> state.v1.TokensByDayResponse
+	121, // 314: state.v1.StateStoreService.PutConfigSnapshot:output_type -> state.v1.PutConfigSnapshotResponse
+	123, // 315: state.v1.StateStoreService.GetConfigSnapshot:output_type -> state.v1.GetConfigSnapshotResponse
+	126, // 316: state.v1.StateStoreService.PutChannelStatus:output_type -> state.v1.PutChannelStatusResponse
+	128, // 317: state.v1.StateStoreService.ListChannelStatus:output_type -> state.v1.ListChannelStatusResponse
+	131, // 318: state.v1.StateStoreService.PutApplyStatus:output_type -> state.v1.PutApplyStatusResponse
+	133, // 319: state.v1.StateStoreService.ListApplyStatus:output_type -> state.v1.ListApplyStatusResponse
+	142, // 320: state.v1.StateStoreService.PutPresence:output_type -> state.v1.PutPresenceResponse
+	137, // 321: state.v1.StateStoreService.RecordCaptureRefusal:output_type -> state.v1.RecordCaptureRefusalResponse
+	140, // 322: state.v1.StateStoreService.ListCaptureRefusals:output_type -> state.v1.ListCaptureRefusalsResponse
+	144, // 323: state.v1.StateStoreService.ListPresence:output_type -> state.v1.ListPresenceResponse
+	147, // 324: state.v1.StateStoreService.ReadTaskLog:output_type -> state.v1.ReadTaskLogResponse
+	149, // 325: state.v1.StateStoreService.StreamTaskLogContent:output_type -> state.v1.StreamTaskLogContentResponse
+	151, // 326: state.v1.StateStoreService.InsertCapture:output_type -> state.v1.InsertCaptureResponse
+	153, // 327: state.v1.StateStoreService.StreamCaptures:output_type -> state.v1.StreamCapturesResponse
+	155, // 328: state.v1.StateStoreService.InsertMapping:output_type -> state.v1.InsertMappingResponse
+	157, // 329: state.v1.StateStoreService.GetMapping:output_type -> state.v1.GetMappingResponse
+	159, // 330: state.v1.StateStoreService.ListMappings:output_type -> state.v1.ListMappingsResponse
+	161, // 331: state.v1.StateStoreService.UpdateMapping:output_type -> state.v1.UpdateMappingResponse
+	163, // 332: state.v1.StateStoreService.DeleteMapping:output_type -> state.v1.DeleteMappingResponse
+	165, // 333: state.v1.StateStoreService.RecordMappingMatch:output_type -> state.v1.RecordMappingMatchResponse
+	167, // 334: state.v1.StateStoreService.InsertEventType:output_type -> state.v1.InsertEventTypeResponse
+	169, // 335: state.v1.StateStoreService.UpdateEventType:output_type -> state.v1.UpdateEventTypeResponse
+	171, // 336: state.v1.StateStoreService.DeleteEventType:output_type -> state.v1.DeleteEventTypeResponse
+	173, // 337: state.v1.StateStoreService.ListEventTypes:output_type -> state.v1.ListEventTypesResponse
+	175, // 338: state.v1.StateStoreService.InsertBinding:output_type -> state.v1.InsertBindingResponse
+	177, // 339: state.v1.StateStoreService.GetBinding:output_type -> state.v1.GetBindingResponse
+	179, // 340: state.v1.StateStoreService.ListBindings:output_type -> state.v1.ListBindingsResponse
+	214, // 341: state.v1.StateStoreService.ListDispatches:output_type -> state.v1.ListDispatchesResponse
+	181, // 342: state.v1.StateStoreService.UpdateBinding:output_type -> state.v1.UpdateBindingResponse
+	183, // 343: state.v1.StateStoreService.DeleteBinding:output_type -> state.v1.DeleteBindingResponse
+	185, // 344: state.v1.StateStoreService.ApproveBinding:output_type -> state.v1.ApproveBindingResponse
+	193, // 345: state.v1.StateStoreService.PauseBinding:output_type -> state.v1.PauseBindingResponse
+	195, // 346: state.v1.StateStoreService.ResumeBinding:output_type -> state.v1.ResumeBindingResponse
+	197, // 347: state.v1.StateStoreService.InsertSource:output_type -> state.v1.InsertSourceResponse
+	199, // 348: state.v1.StateStoreService.GetSource:output_type -> state.v1.GetSourceResponse
+	201, // 349: state.v1.StateStoreService.ListSources:output_type -> state.v1.ListSourcesResponse
+	203, // 350: state.v1.StateStoreService.SetSourceSigning:output_type -> state.v1.SetSourceSigningResponse
+	205, // 351: state.v1.StateStoreService.SetSourceSecret:output_type -> state.v1.SetSourceSecretResponse
+	187, // 352: state.v1.StateStoreService.SetSourceName:output_type -> state.v1.SetSourceNameResponse
+	189, // 353: state.v1.StateStoreService.SetSourceDeliveryHeader:output_type -> state.v1.SetSourceDeliveryHeaderResponse
+	191, // 354: state.v1.StateStoreService.DeleteSource:output_type -> state.v1.DeleteSourceResponse
+	207, // 355: state.v1.StateStoreService.ArmedBindingsForSource:output_type -> state.v1.ArmedBindingsForSourceResponse
+	209, // 356: state.v1.StateStoreService.RecordDispatch:output_type -> state.v1.RecordDispatchResponse
+	211, // 357: state.v1.StateStoreService.SetDispatchTask:output_type -> state.v1.SetDispatchTaskResponse
+	216, // 358: state.v1.StateStoreService.RecordPlaybookDispatch:output_type -> state.v1.RecordPlaybookDispatchResponse
+	218, // 359: state.v1.StateStoreService.DeletePlaybookDispatches:output_type -> state.v1.DeletePlaybookDispatchesResponse
+	220, // 360: state.v1.StateStoreService.StreamUndispatchedCaptures:output_type -> state.v1.StreamUndispatchedCapturesResponse
+	222, // 361: state.v1.StateStoreService.EnqueueBindingTask:output_type -> state.v1.EnqueueBindingTaskResponse
+	224, // 362: state.v1.StateStoreService.EnqueueCallTask:output_type -> state.v1.EnqueueCallTaskResponse
+	226, // 363: state.v1.StateStoreService.WorkflowCallStatus:output_type -> state.v1.WorkflowCallStatusResponse
+	247, // 364: state.v1.StateStoreService.GetPrincipal:output_type -> state.v1.GetPrincipalResponse
+	250, // 365: state.v1.StateStoreService.ListPolicies:output_type -> state.v1.ListPoliciesResponse
+	252, // 366: state.v1.StateStoreService.PutPolicy:output_type -> state.v1.PutPolicyResponse
+	254, // 367: state.v1.StateStoreService.DeletePolicy:output_type -> state.v1.DeletePolicyResponse
+	256, // 368: state.v1.StateStoreService.EnsureShippedOrgPolicies:output_type -> state.v1.EnsureShippedOrgPoliciesResponse
+	259, // 369: state.v1.StateStoreService.RecordDenial:output_type -> state.v1.RecordDenialResponse
+	261, // 370: state.v1.StateStoreService.ListDenials:output_type -> state.v1.ListDenialsResponse
+	266, // 371: state.v1.StateStoreService.ListOrgs:output_type -> state.v1.ListOrgsResponse
+	268, // 372: state.v1.StateStoreService.GetOrg:output_type -> state.v1.GetOrgResponse
+	270, // 373: state.v1.StateStoreService.CreateOrg:output_type -> state.v1.CreateOrgResponse
+	272, // 374: state.v1.StateStoreService.ListWorkspaces:output_type -> state.v1.ListWorkspacesResponse
+	274, // 375: state.v1.StateStoreService.CreateWorkspace:output_type -> state.v1.CreateWorkspaceResponse
+	276, // 376: state.v1.StateStoreService.ListMembers:output_type -> state.v1.ListMembersResponse
+	278, // 377: state.v1.StateStoreService.SetMembership:output_type -> state.v1.SetMembershipResponse
+	280, // 378: state.v1.StateStoreService.RemoveMembership:output_type -> state.v1.RemoveMembershipResponse
+	282, // 379: state.v1.StateStoreService.AssignAgent:output_type -> state.v1.AssignAgentResponse
+	256, // [256:380] is the sub-list for method output_type
+	132, // [132:256] is the sub-list for method input_type
+	132, // [132:132] is the sub-list for extension type_name
+	132, // [132:132] is the sub-list for extension extendee
+	0,   // [0:132] is the sub-list for field type_name
 }
 
 func init() { file_state_v1_state_proto_init() }
@@ -17106,7 +17209,7 @@ func file_state_v1_state_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_state_v1_state_proto_rawDesc), len(file_state_v1_state_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   285,
+			NumMessages:   287,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

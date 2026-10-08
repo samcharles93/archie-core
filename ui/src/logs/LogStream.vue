@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
 import LogFilters from "./LogFilters.vue";
 import LogList from "./LogList.vue";
+import {serviceErrors} from "./state";
 import LogStatus from "./LogStatus.vue";
 
 /** The log surface: the filters and the stream's own state over the lines. */
@@ -19,6 +20,7 @@ import LogStatus from "./LogStatus.vue";
       <LogStatus />
     </CardHeader>
     <CardContent class="px-0">
+      <p v-for="(error,service) in serviceErrors" :key="service" role="alert" class="px-3 py-2 text-sm text-danger">{{ service }}: {{ error }}</p>
       <LogList />
     </CardContent>
   </Card>

@@ -49,6 +49,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	"github.com/samcharles93/archie-core/internal/infrastructure/extension"
 	"github.com/samcharles93/archie-core/internal/infrastructure/kitrun"
+	"github.com/samcharles93/archie-core/internal/infrastructure/logrpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/messagingrpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
@@ -582,6 +583,11 @@ func (b *boot) registerNATSRPC() error {
 	}
 	b.addCleanup(unsubscribe)
 
+	stopLogs, err := logrpc.RegisterDaemon(coreConn, b.logFeed, log)
+	if err != nil {
+		return fmt.Errorf("register daemon logs: %w", err)
+	}
+	b.addCleanup(stopLogs)
 	unsubscribeSystemLogs, err := subscribeSystemLogs(coreConn, b.taskLogs, log)
 	if err != nil {
 		log.Error("system log subscribe failed", "err", err)

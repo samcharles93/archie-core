@@ -48,11 +48,11 @@ func buildAccessChain(ctx context.Context, store *staterpc.Client, log *slog.Log
 // on shutdown.
 func Run(ctx context.Context, options Options) error {
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil)).With("component", "ui")
+	log, feed := servicekit.Diagnostics(log, presence.UI)
 	opts, err := Resolve(options, log)
 	if err != nil {
 		return err
 	}
-
 	var cleanups []func()
 	defer func() {
 		for _, cleanup := range slices.Backward(cleanups) {
@@ -69,12 +69,10 @@ func Run(ctx context.Context, options Options) error {
 		return err
 	}
 	cleanups = append(cleanups, closeGateway)
-
 	chain, err := buildAccessChain(ctx, tasks, log)
 	if err != nil {
 		return err
 	}
-
 	provider, err := signInProvider(opts)
 	if err != nil {
 		return err
@@ -84,7 +82,6 @@ func Run(ctx context.Context, options Options) error {
 	if err != nil {
 		return err
 	}
-
 	srv := compose(ctx, deps{
 		Options:      opts,
 		Log:          log,
@@ -100,20 +97,20 @@ func Run(ctx context.Context, options Options) error {
 		Principals:   tasks,
 		Denials:      tasks,
 	})
+	stopLogs, err := wireServiceLogs(opts, srv, tasks, chat, feed)
+	if err != nil {
+		return err
+	}
+	cleanups = append(cleanups, stopLogs)
 	if err := wireHarness(opts, srv, &cleanups); err != nil {
 		return err
 	}
-
-	// Live activity has no in-process bus in this process: the pump reads
-	// events back out of the State Store over the same cursor SSE catch-up
-	// uses. Backgrounded so priming past a large events table cannot delay the
-	// listener.
+	// Priming event history must not delay the listener.
 	go pumpEvents(ctx, srv, opts.EventPollInterval, log)
 	go presence.Run(ctx, presence.UI, servicekit.Build(), tasks, srv.Health, log)
 	liveCtx, stopLive := context.WithCancel(ctx)
 	defer stopLive()
 	go srv.RunLive(liveCtx)
-
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", opts.Listen)
 	if err != nil {
 		return fmt.Errorf("listen for ui: %w", err)
@@ -131,7 +128,6 @@ func Run(ctx context.Context, options Options) error {
 		attrs = append(attrs, "token_file", opts.TokenFile)
 	}
 	log.Info("archie-ui running", attrs...)
-
 	return serve(ctx, listener, srv.Handler(), opts)
 }
 

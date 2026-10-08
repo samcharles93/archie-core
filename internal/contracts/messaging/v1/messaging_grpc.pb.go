@@ -19,7 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	MessagingService_Deliver_FullMethodName = "/messaging.v1.MessagingService/Deliver"
+	MessagingService_RecentLogs_FullMethodName = "/messaging.v1.MessagingService/RecentLogs"
+	MessagingService_Deliver_FullMethodName    = "/messaging.v1.MessagingService/Deliver"
 )
 
 // MessagingServiceClient is the client API for MessagingService service.
@@ -30,6 +31,7 @@ const (
 // the chat channel transports. Other services send outbound messages through
 // it rather than holding channel credentials themselves.
 type MessagingServiceClient interface {
+	RecentLogs(ctx context.Context, in *RecentLogsRequest, opts ...grpc.CallOption) (*RecentLogsResponse, error)
 	// Deliver sends text to one chat on one channel. FAILED_PRECONDITION means
 	// the channel is not running or cannot send; the caller may retry later.
 	Deliver(ctx context.Context, in *DeliverRequest, opts ...grpc.CallOption) (*DeliverResponse, error)
@@ -41,6 +43,16 @@ type messagingServiceClient struct {
 
 func NewMessagingServiceClient(cc grpc.ClientConnInterface) MessagingServiceClient {
 	return &messagingServiceClient{cc}
+}
+
+func (c *messagingServiceClient) RecentLogs(ctx context.Context, in *RecentLogsRequest, opts ...grpc.CallOption) (*RecentLogsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RecentLogsResponse)
+	err := c.cc.Invoke(ctx, MessagingService_RecentLogs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *messagingServiceClient) Deliver(ctx context.Context, in *DeliverRequest, opts ...grpc.CallOption) (*DeliverResponse, error) {
@@ -61,6 +73,7 @@ func (c *messagingServiceClient) Deliver(ctx context.Context, in *DeliverRequest
 // the chat channel transports. Other services send outbound messages through
 // it rather than holding channel credentials themselves.
 type MessagingServiceServer interface {
+	RecentLogs(context.Context, *RecentLogsRequest) (*RecentLogsResponse, error)
 	// Deliver sends text to one chat on one channel. FAILED_PRECONDITION means
 	// the channel is not running or cannot send; the caller may retry later.
 	Deliver(context.Context, *DeliverRequest) (*DeliverResponse, error)
@@ -74,6 +87,9 @@ type MessagingServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedMessagingServiceServer struct{}
 
+func (UnimplementedMessagingServiceServer) RecentLogs(context.Context, *RecentLogsRequest) (*RecentLogsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RecentLogs not implemented")
+}
 func (UnimplementedMessagingServiceServer) Deliver(context.Context, *DeliverRequest) (*DeliverResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Deliver not implemented")
 }
@@ -96,6 +112,24 @@ func RegisterMessagingServiceServer(s grpc.ServiceRegistrar, srv MessagingServic
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&MessagingService_ServiceDesc, srv)
+}
+
+func _MessagingService_RecentLogs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecentLogsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MessagingServiceServer).RecentLogs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MessagingService_RecentLogs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MessagingServiceServer).RecentLogs(ctx, req.(*RecentLogsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _MessagingService_Deliver_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -123,6 +157,10 @@ var MessagingService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "messaging.v1.MessagingService",
 	HandlerType: (*MessagingServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "RecentLogs",
+			Handler:    _MessagingService_RecentLogs_Handler,
+		},
 		{
 			MethodName: "Deliver",
 			Handler:    _MessagingService_Deliver_Handler,

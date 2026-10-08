@@ -2,9 +2,12 @@ syntax = "proto3";
 
 package gateway.v1;
 
+import "logging/v1/logging.proto";
+
 import "google/protobuf/timestamp.proto";
 
 service ChatService {
+ rpc RecentLogs(RecentLogsRequest) returns (RecentLogsResponse);
   rpc Snapshot(SnapshotRequest) returns (SnapshotResponse);
   rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
   rpc RecentMessages(RecentMessagesRequest) returns (RecentMessagesResponse);
@@ -277,3 +280,6 @@ message CuratorAction {
 // configuration. It is Unavailable from a Gateway that hosts no channels.
 message ReloadChannelRequest { string channel_id = 1; }
 message ReloadChannelResponse {}
+
+message RecentLogsRequest { logging.v1.LogQuery query = 1; string service = 2; }
+message RecentLogsResponse { logging.v1.LogSnapshot snapshot = 1; }

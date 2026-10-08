@@ -292,6 +292,11 @@ func subscribeSystemLogs(nc *natsio.Conn, taskLogs *logging.TaskRegistry, log *s
 		}
 		// The NATS callback has no context of its own; the write is an append to
 		// an already-open sink, so there is nothing to cancel.
+		if entry.Fields == nil {
+			entry.Fields = map[string]any{}
+		}
+		entry.Fields["service"] = presence.Agent
+		entry.Fields["task_id"] = taskID
 		taskLogs.Write(context.Background(), taskID, entry)
 	})
 	if err != nil {

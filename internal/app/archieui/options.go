@@ -67,8 +67,9 @@ type Options struct {
 	Capture CaptureOptions
 
 	// Gateway and State are the two remote contracts the dashboard consumes.
-	Gateway ServiceTarget
-	State   ServiceTarget
+	Gateway   ServiceTarget
+	State     ServiceTarget
+	Messaging ServiceTarget
 	// Harness is the daemon's session contract. Optional: empty leaves the
 	// setup terminal unwired, and /api/harness reports terminal:false rather
 	// than offering a control that would fail.

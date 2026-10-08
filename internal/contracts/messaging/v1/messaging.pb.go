@@ -7,6 +7,7 @@
 package messagingv1
 
 import (
+	v1 "github.com/samcharles93/archie-core/internal/contracts/logging/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -119,17 +120,111 @@ func (*DeliverResponse) Descriptor() ([]byte, []int) {
 	return file_messaging_v1_messaging_proto_rawDescGZIP(), []int{1}
 }
 
+type RecentLogsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Query         *v1.LogQuery           `protobuf:"bytes,1,opt,name=query,proto3" json:"query,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RecentLogsRequest) Reset() {
+	*x = RecentLogsRequest{}
+	mi := &file_messaging_v1_messaging_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecentLogsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecentLogsRequest) ProtoMessage() {}
+
+func (x *RecentLogsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_messaging_v1_messaging_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecentLogsRequest.ProtoReflect.Descriptor instead.
+func (*RecentLogsRequest) Descriptor() ([]byte, []int) {
+	return file_messaging_v1_messaging_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *RecentLogsRequest) GetQuery() *v1.LogQuery {
+	if x != nil {
+		return x.Query
+	}
+	return nil
+}
+
+type RecentLogsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Snapshot      *v1.LogSnapshot        `protobuf:"bytes,1,opt,name=snapshot,proto3" json:"snapshot,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RecentLogsResponse) Reset() {
+	*x = RecentLogsResponse{}
+	mi := &file_messaging_v1_messaging_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecentLogsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecentLogsResponse) ProtoMessage() {}
+
+func (x *RecentLogsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_messaging_v1_messaging_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecentLogsResponse.ProtoReflect.Descriptor instead.
+func (*RecentLogsResponse) Descriptor() ([]byte, []int) {
+	return file_messaging_v1_messaging_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *RecentLogsResponse) GetSnapshot() *v1.LogSnapshot {
+	if x != nil {
+		return x.Snapshot
+	}
+	return nil
+}
+
 var File_messaging_v1_messaging_proto protoreflect.FileDescriptor
 
 const file_messaging_v1_messaging_proto_rawDesc = "" +
 	"\n" +
-	"\x1cmessaging/v1/messaging.proto\x12\fmessaging.v1\"W\n" +
+	"\x1cmessaging/v1/messaging.proto\x12\fmessaging.v1\x1a\x18logging/v1/logging.proto\"W\n" +
 	"\x0eDeliverRequest\x12\x18\n" +
 	"\achannel\x18\x01 \x01(\tR\achannel\x12\x17\n" +
 	"\achat_id\x18\x02 \x01(\tR\x06chatId\x12\x12\n" +
 	"\x04text\x18\x03 \x01(\tR\x04text\"\x11\n" +
-	"\x0fDeliverResponse2Z\n" +
-	"\x10MessagingService\x12F\n" +
+	"\x0fDeliverResponse\"?\n" +
+	"\x11RecentLogsRequest\x12*\n" +
+	"\x05query\x18\x01 \x01(\v2\x14.logging.v1.LogQueryR\x05query\"I\n" +
+	"\x12RecentLogsResponse\x123\n" +
+	"\bsnapshot\x18\x01 \x01(\v2\x17.logging.v1.LogSnapshotR\bsnapshot2\xab\x01\n" +
+	"\x10MessagingService\x12O\n" +
+	"\n" +
+	"RecentLogs\x12\x1f.messaging.v1.RecentLogsRequest\x1a .messaging.v1.RecentLogsResponse\x12F\n" +
 	"\aDeliver\x12\x1c.messaging.v1.DeliverRequest\x1a\x1d.messaging.v1.DeliverResponseB\xc4\x01\n" +
 	"\x10com.messaging.v1B\x0eMessagingProtoP\x01ZOgithub.com/samcharles93/archie-core/internal/contracts/messaging/v1;messagingv1\xa2\x02\x03MXX\xaa\x02\fMessaging.V1\xca\x02\fMessaging\\V1\xe2\x02\x18Messaging\\V1\\GPBMetadata\xea\x02\rMessaging::V1b\x06proto3"
 
@@ -145,19 +240,27 @@ func file_messaging_v1_messaging_proto_rawDescGZIP() []byte {
 	return file_messaging_v1_messaging_proto_rawDescData
 }
 
-var file_messaging_v1_messaging_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_messaging_v1_messaging_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_messaging_v1_messaging_proto_goTypes = []any{
-	(*DeliverRequest)(nil),  // 0: messaging.v1.DeliverRequest
-	(*DeliverResponse)(nil), // 1: messaging.v1.DeliverResponse
+	(*DeliverRequest)(nil),     // 0: messaging.v1.DeliverRequest
+	(*DeliverResponse)(nil),    // 1: messaging.v1.DeliverResponse
+	(*RecentLogsRequest)(nil),  // 2: messaging.v1.RecentLogsRequest
+	(*RecentLogsResponse)(nil), // 3: messaging.v1.RecentLogsResponse
+	(*v1.LogQuery)(nil),        // 4: logging.v1.LogQuery
+	(*v1.LogSnapshot)(nil),     // 5: logging.v1.LogSnapshot
 }
 var file_messaging_v1_messaging_proto_depIdxs = []int32{
-	0, // 0: messaging.v1.MessagingService.Deliver:input_type -> messaging.v1.DeliverRequest
-	1, // 1: messaging.v1.MessagingService.Deliver:output_type -> messaging.v1.DeliverResponse
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	4, // 0: messaging.v1.RecentLogsRequest.query:type_name -> logging.v1.LogQuery
+	5, // 1: messaging.v1.RecentLogsResponse.snapshot:type_name -> logging.v1.LogSnapshot
+	2, // 2: messaging.v1.MessagingService.RecentLogs:input_type -> messaging.v1.RecentLogsRequest
+	0, // 3: messaging.v1.MessagingService.Deliver:input_type -> messaging.v1.DeliverRequest
+	3, // 4: messaging.v1.MessagingService.RecentLogs:output_type -> messaging.v1.RecentLogsResponse
+	1, // 5: messaging.v1.MessagingService.Deliver:output_type -> messaging.v1.DeliverResponse
+	4, // [4:6] is the sub-list for method output_type
+	2, // [2:4] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_messaging_v1_messaging_proto_init() }
@@ -171,7 +274,7 @@ func file_messaging_v1_messaging_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_messaging_v1_messaging_proto_rawDesc), len(file_messaging_v1_messaging_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

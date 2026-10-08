@@ -33,6 +33,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/secretengine"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
+	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/ratelimit"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
@@ -72,6 +73,7 @@ type server struct {
 	catalog          *modelcatalog.Catalog
 	chatPool         *pgxpool.Pool
 	chatSessionStore gateway.SessionStore
+	logFeed          *logging.Feed
 	taskActionsConn  *natsio.Conn
 
 	bus              *events.Bus
@@ -165,7 +167,7 @@ func (b *server) loadConfig(cfgPath, overlayPath string) error {
 	b.catalog = modelcatalog.NewCatalog(cfgPath)
 	b.cfgHolder = config.NewHolder(b.cfg)
 	logs := servicekit.Logging(b.cfg, "gateway")
-	b.log = logs.Log
+	b.log, b.logFeed = logs.Log, logs.Feed
 	b.addCleanup(func() { _ = logs.Closer.Close() })
 	b.secrets = secret.NewRegistry()
 	return nil
