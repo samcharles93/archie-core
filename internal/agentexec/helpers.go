@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/google/jsonschema-go/jsonschema"
+
 	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 )
 
@@ -74,7 +76,50 @@ func ValidateCaptureArgs(spec agentrun.CaptureTool, value json.RawMessage) (stri
 			return rejection, false
 		}
 	}
+	// The derived checks above cover the common cases with friendly wording;
+	// the schema is what enforces the rest of what the tool advertised --
+	// enums, numeric types, nested objects, array shapes -- so a call the
+	// agent could only make valid is rejected with the reason, not recorded.
+	return checkSchema(spec, value)
+}
+
+// checkSchema validates the arguments against the tool's advertised JSON
+// Schema. A tool with no schema, or one that will not resolve, is accepted
+// here: a schema that never resolves is a definition bug, refused where the
+// tool is built (workflow's agentResultTool), so the agent is never blamed
+// for it.
+func checkSchema(spec agentrun.CaptureTool, value json.RawMessage) (string, bool) {
+	if len(spec.Parameters) == 0 {
+		return "", true
+	}
+	resolved, err := resolveCaptureSchema(spec.Parameters)
+	if err != nil {
+		return "", true
+	}
+	var instance any
+	if err := json.Unmarshal(value, &instance); err != nil {
+		return spec.Name + " rejected: arguments must be JSON", false
+	}
+	if err := resolved.Validate(instance); err != nil {
+		return fmt.Sprintf("%s rejected: %v", spec.Name, err), false
+	}
 	return "", true
+}
+
+// resolveCaptureSchema parses and resolves a capture tool's JSON Schema. The
+// workflow parser resolves the same schema when it builds the tool, so an
+// unusable schema is refused at definition time rather than silently skipped
+// here.
+func resolveCaptureSchema(params json.RawMessage) (*jsonschema.Resolved, error) {
+	var schema jsonschema.Schema
+	if err := json.Unmarshal(params, &schema); err != nil {
+		return nil, fmt.Errorf("capture tool schema: %w", err)
+	}
+	resolved, err := schema.Resolve(nil)
+	if err != nil {
+		return nil, fmt.Errorf("capture tool schema: %w", err)
+	}
+	return resolved, nil
 }
 
 func checkRequiredFields(spec agentrun.CaptureTool, object map[string]json.RawMessage) (string, bool) {

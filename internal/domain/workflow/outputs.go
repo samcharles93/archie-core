@@ -67,7 +67,11 @@ func (tc *TaskContext) WriteOutput(name string, value any) error {
 func outputCaptureTool(name string, spec task.OutputSpec) agentrun.CaptureTool {
 	value := map[string]any{"description": fmt.Sprintf("The value of the %q output.", name)}
 	if typ := jsonSchemaType(spec.Type); typ != "" {
-		value["type"] = typ
+		// Null is how the agent withdraws a value it cannot supply, and the
+		// run reads a null value as "not written" (decodeCapturedOutput), so
+		// the advertised schema has to permit it or the call would be
+		// rejected for the value the contract assigns a meaning to.
+		value["type"] = []string{typ, "null"}
 	}
 	params, err := json.Marshal(map[string]any{
 		"type":       "object",

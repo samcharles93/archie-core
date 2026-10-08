@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"gopkg.in/yaml.v3"
 
 	"github.com/samcharles93/archie-core/internal/domain/agentrun"
@@ -142,6 +143,16 @@ func agentResultTool(schema map[string]any) (*agentrun.CaptureTool, error) {
 	params, err := json.Marshal(schema)
 	if err != nil {
 		return nil, err
+	}
+	// A schema that will not resolve cannot be enforced at call time, so the
+	// definition is refused here rather than accepting results it never
+	// checked.
+	var resolved jsonschema.Schema
+	if err := json.Unmarshal(params, &resolved); err != nil {
+		return nil, fmt.Errorf("must be a valid JSON Schema: %w", err)
+	}
+	if _, err := resolved.Resolve(nil); err != nil {
+		return nil, fmt.Errorf("must be a valid JSON Schema: %w", err)
 	}
 	var required []string
 	if list, ok := schema["required"].([]any); ok {
