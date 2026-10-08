@@ -9,6 +9,7 @@ FROM (SELECT 1) intake LEFT JOIN sources s ON s.path = $2;
 -- name: ListCaptures :many
 SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned, event_type, org_id, workspace_id, delivery
 FROM captures
+WHERE org_id = @org_id
 ORDER BY received_at DESC
 LIMIT $1;
 

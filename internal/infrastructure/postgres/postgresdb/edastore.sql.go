@@ -756,12 +756,18 @@ func (q *Queries) ListBindings(ctx context.Context) ([]ListBindingsRow, error) {
 const listCaptures = `-- name: ListCaptures :many
 SELECT id, source, remote_addr, content_type, headers, body, authenticated, received_at, unsigned, event_type, org_id, workspace_id, delivery
 FROM captures
+WHERE org_id = $2
 ORDER BY received_at DESC
 LIMIT $1
 `
 
-func (q *Queries) ListCaptures(ctx context.Context, limit int32) ([]Capture, error) {
-	rows, err := q.db.Query(ctx, listCaptures, limit)
+type ListCapturesParams struct {
+	Limit int32
+	OrgID string
+}
+
+func (q *Queries) ListCaptures(ctx context.Context, arg ListCapturesParams) ([]Capture, error) {
+	rows, err := q.db.Query(ctx, listCaptures, arg.Limit, arg.OrgID)
 	if err != nil {
 		return nil, err
 	}

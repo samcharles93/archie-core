@@ -143,9 +143,12 @@ func captureValue(r postgresdb.Capture) storecontract.CapturedEvent {
 	}
 }
 
-// ListCaptures returns the newest captures first.
+// ListCaptures returns the newest captures first in the acting org.
 func (s *EDA) ListCaptures(ctx context.Context, limit int) ([]storecontract.CapturedEvent, error) {
-	rows, err := s.q.ListCaptures(ctx, int32(limit))
+	rows, err := s.q.ListCaptures(ctx, postgresdb.ListCapturesParams{
+		OrgID: string(org.OrgFromContext(ctx)),
+		Limit: int32(limit),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("edastore: list captures: %w", err)
 	}
