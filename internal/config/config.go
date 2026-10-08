@@ -155,6 +155,12 @@ type Provider struct {
 	APIKeyEnv string    `toml:"api_key_env" yaml:"api_key_env" json:"api_key_env"`
 	APIKey    SecretRef `toml:"api_key" yaml:"api_key" json:"-"`
 	BaseURL   string    `toml:"base_url" yaml:"base_url" json:"base_url"`
+	// Disabled marks a configured provider whose api_key could not be
+	// resolved at boot. It is runtime state, not a setting: without it a
+	// disabled provider is indistinguishable from one the operator never
+	// configured, and the model catalog would serve it from an ambient
+	// environment variable.
+	Disabled bool `toml:"-" yaml:"-" json:"-"`
 }
 
 // Forge intake modes for Forge.Intake. Poll is the default; webhook reacts to

@@ -162,12 +162,8 @@ func usableProvider(key string, source catalogProvider, opts Options) (Provider,
 		id = key
 	}
 	override, configured := opts.Configured[id]
-	envVar := firstSetEnv(source.Env, opts.Getenv)
-	if configured && override.APIKeyEnv != "" {
-		envVar = override.APIKeyEnv
-	}
-	if (!configured && envVar == "") ||
-		(configured && override.APIKeyEnv != "" && opts.Getenv(override.APIKeyEnv) == "") {
+	envVar, ok := providerCredentialEnv(configured, override, source, opts.Getenv)
+	if !ok {
 		return Provider{}, false
 	}
 	models := toolModels(source.Models)
@@ -191,6 +187,28 @@ func usableProvider(key string, source catalogProvider, opts Options) (Provider,
 		ID: id, Name: name, Class: class, APIKeyEnv: envVar,
 		BaseURL: baseURL, Models: models,
 	}, true
+}
+
+// providerCredentialEnv returns the environment variable whose value is the
+// provider's key, and whether the provider may be served at all. A configured
+// provider is disabled when its key failed to resolve and must never fall
+// back to the catalog's ambient environment, which would send a turn with a
+// key the operator did not choose: the catalog names the environment
+// variables it would use, and a configured provider overrides that with the
+// variable its own resolution exported.
+func providerCredentialEnv(configured bool, override config.Provider, source catalogProvider, getenv func(string) string) (string, bool) {
+	if configured && override.Disabled {
+		return "", false
+	}
+	envVar := firstSetEnv(source.Env, getenv)
+	if configured && override.APIKeyEnv != "" {
+		envVar = override.APIKeyEnv
+	}
+	if (!configured && envVar == "") ||
+		(configured && override.APIKeyEnv != "" && getenv(override.APIKeyEnv) == "") {
+		return "", false
+	}
+	return envVar, true
 }
 
 func providerRuntimeDefaults(source catalogProvider) (class, baseURL string) {

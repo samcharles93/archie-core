@@ -106,6 +106,9 @@ func mergeProviders(base, overrides map[string]config.Provider) map[string]confi
 		if override.BaseURL != "" {
 			resolved.BaseURL = override.BaseURL
 		}
+		if override.Disabled {
+			resolved.Disabled = true
+		}
 		merged[id] = resolved
 	}
 	return merged

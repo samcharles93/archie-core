@@ -75,6 +75,7 @@ func resolveProviderMap(scope string, providers map[string]config.Provider, regi
 func disableProvider(providers map[string]config.Provider, id string, provider config.Provider, log *slog.Logger, reason string, cause error) {
 	provider.APIKey = secret.SecretRef{}
 	provider.APIKeyEnv = ""
+	provider.Disabled = true
 	providers[id] = provider
 	if cause != nil {
 		log.Warn("provider disabled: "+reason, "provider", id, "err", cause)
