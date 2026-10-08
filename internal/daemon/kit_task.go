@@ -66,6 +66,7 @@ func (d *Daemon) runKitTask(ctx context.Context, task *workflow.Task, repo confi
 	// config.Config d.configFor already resolves for every other identity
 	// override (Forge, Budgets, ...).
 	taskCfg := d.configFor(task)
+	credentialOrg, grantedServices := taskCfg.CredentialAccess("")
 	run, err := d.KitLauncher.Launch(ctx, kitrun.Request{
 		Execution:       fmt.Sprintf("task-%d", task.ID),
 		Kit:             profile.Kit,
@@ -73,8 +74,8 @@ func (d *Daemon) runKitTask(ctx context.Context, task *workflow.Task, repo confi
 		WorkDir:         workDir,
 		WorkerEnv:       env,
 		GateRetries:     iface.Needs().GateRetries,
-		Org:             taskCfg.Org,
-		GrantedServices: taskCfg.GrantedCredentials,
+		Org:             credentialOrg,
+		GrantedServices: grantedServices,
 		RunCredential:   credential,
 	})
 	if err != nil {

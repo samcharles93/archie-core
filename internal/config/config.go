@@ -9,6 +9,8 @@ import (
 	"net"
 	"strings"
 	"time"
+
+	orgdomain "github.com/samcharles93/archie-core/internal/domain/org"
 )
 
 // Duration is a time.Duration that unmarshals from TOML strings ("60s").
@@ -693,6 +695,7 @@ type CredentialBinding struct {
 // BoundCredentials returns the bindings a run may use: services that are
 // declared, granted, and belong to org.
 func (c ContainerConfig) BoundCredentials(org string, granted, declared []string) map[string]CredentialBinding {
+	org = credentialOrg(org)
 	grantedSet := make(map[string]bool, len(granted))
 	for _, g := range granted {
 		grantedSet[g] = true
@@ -703,6 +706,7 @@ func (c ContainerConfig) BoundCredentials(org string, granted, declared []string
 	}
 	out := make(map[string]CredentialBinding)
 	for _, b := range c.Credentials {
+		b.Org = credentialOrg(b.Org)
 		if b.Org != org || !grantedSet[b.Service] || !declaredSet[b.Service] {
 			continue
 		}
@@ -727,7 +731,14 @@ func (c Config) CredentialAccess(name string) (org string, granted []string) {
 			granted = *id.GrantedCredentials
 		}
 	}
-	return org, granted
+	return credentialOrg(org), granted
+}
+
+func credentialOrg(value string) string {
+	if value == "" {
+		return string(orgdomain.DefaultOrgID)
+	}
+	return value
 }
 
 // ValidateCredentialBindings rejects a binding with an empty service name or
@@ -739,7 +750,7 @@ func (c ContainerConfig) ValidateCredentialBindings() error {
 		if strings.TrimSpace(b.Service) == "" {
 			return fmt.Errorf("containers.credentials: a service name must not be empty")
 		}
-		key := b.Org + "\x00" + b.Service
+		key := credentialOrg(b.Org) + "\x00" + b.Service
 		if seen[key] {
 			return fmt.Errorf("containers.credentials: service %q is bound more than once for org %q", b.Service, b.Org)
 		}
