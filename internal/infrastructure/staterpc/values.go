@@ -456,6 +456,11 @@ func unmapError(err error) error {
 		return context.Canceled
 	case codes.DeadlineExceeded:
 		return context.DeadlineExceeded
+	case codes.Unavailable:
+		// Wrap both, so a caller can retry on errors.Is(ErrUnavailable) and a
+		// caller that maps status codes still reads Unavailable through the
+		// chain.
+		return fmt.Errorf("%w: %w", storecontract.ErrUnavailable, err)
 	}
 	if sentinel := sentinelForStatus(st); sentinel != nil {
 		return sentinel

@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"regexp"
@@ -11,6 +12,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/taskstate"
@@ -31,6 +33,14 @@ const MaxCallDepth = 5
 // callPollInterval is how often a wait:true caller re-reads its callee's
 // status. A var so tests do not sleep.
 var callPollInterval = 2 * time.Second
+
+// callReadBackoff is the wait before re-reading a callee's status after a
+// transient dependency error, doubling each further failure up to
+// callReadMaxBackoff. Vars so tests do not sleep.
+var (
+	callReadBackoff    = 500 * time.Millisecond
+	callReadMaxBackoff = 5 * time.Second
+)
 
 // workflowCallSettings are the workflow.call step's settings. An inputs value is
 // a literal or "inputs.<name>", a reference to the calling workflow's declared
@@ -250,16 +260,34 @@ func callEnded(status string) bool {
 
 // awaitCallee polls the callee until it is terminal, failing the stage with
 // the callee's detail when the callee did not succeed, and returning the
-// callee's written outputs when it did. The caller's own wall clock bounds
-// the wait.
+// callee's written outputs when it did. The caller's own wall clock bounds the
+// wait.
+//
+// A status read that fails because the dependency is briefly unavailable is
+// retried rather than failed: the callee may still be running, and the caller
+// keeps the child it already started instead of starting another. Every retry
+// stays inside the caller's deadline.
 func awaitCallee(ctx context.Context, s workflowCallSettings, tc *TaskContext, path string, callTaskID int64) (map[string]any, error) {
-	var outputs map[string]any
+	retries := 0
 	for {
-		status, detail, latestOutputs, err := tc.Calls.CallStatus(ctx, tc.Task.ID, callTaskID)
+		status, detail, outputs, err := tc.Calls.CallStatus(ctx, tc.Task.ID, callTaskID)
 		if err != nil {
-			return nil, fmt.Errorf("%s: read task %d: %w", WorkflowCallStepName, callTaskID, err)
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			if !transientCallError(err) {
+				return nil, fmt.Errorf("%s: read task %d: %w", WorkflowCallStepName, callTaskID, err)
+			}
+			retries++
+			wait := callReadBackoffFor(retries)
+			tc.Log.Warn("callee status read failed; retrying",
+				"callee_task_id", callTaskID, "attempt", retries, "in", wait, "err", err)
+			if !sleepOrDone(ctx, wait) {
+				return nil, ctx.Err()
+			}
+			continue
 		}
-		outputs = latestOutputs
+		retries = 0
 		if callEnded(status) {
 			if callSucceeded(status) {
 				if err := tc.EmitDurable(ctx, events.KindWorkflowCallFinished, path,
@@ -271,12 +299,39 @@ func awaitCallee(ctx context.Context, s workflowCallSettings, tc *TaskContext, p
 			}
 			return nil, fmt.Errorf("%s: callee %q (task %d) ended %s: %s", WorkflowCallStepName, s.Workflow, callTaskID, status, detail)
 		}
-		select {
-		case <-ctx.Done():
+		if !sleepOrDone(ctx, callPollInterval) {
 			return nil, ctx.Err()
-		case <-time.After(callPollInterval):
 		}
 	}
+}
+
+// sleepOrDone waits for d, reporting false when the caller's context ended
+// first.
+func sleepOrDone(ctx context.Context, d time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(d):
+		return true
+	}
+}
+
+// transientCallError reports whether a failed callee status read is worth
+// retrying: the dependency could not serve the request now, or the read's own
+// timeout elapsed while the caller still had budget. A contract error -- the
+// call is not this caller's, or the caller is not running -- is not transient.
+func transientCallError(err error) bool {
+	return errors.Is(err, storecontract.ErrUnavailable) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// callReadBackoffFor is the wait before retry n (1-based): doubling from
+// callReadBackoff, capped at callReadMaxBackoff.
+func callReadBackoffFor(attempt int) time.Duration {
+	backoff := callReadBackoff << (attempt - 1)
+	if backoff <= 0 || backoff > callReadMaxBackoff {
+		return callReadMaxBackoff
+	}
+	return backoff
 }
 
 // callSucceeded reports whether a callee's terminal state satisfies its

@@ -2,13 +2,17 @@ package workflow
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"maps"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 )
@@ -356,5 +360,152 @@ steps:
 				t.Fatalf("err = %v, want %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// wobblyCaller models a dependency that is briefly unavailable: CallStatus
+// fails failReads times before it answers, and counts the reads and the
+// children it was asked to start.
+type wobblyCaller struct {
+	mu        sync.Mutex
+	failReads int
+	failWith  error
+	reads     int
+	started   int
+	status    string
+	detail    string
+	outputs   map[string]any
+}
+
+func (c *wobblyCaller) StartCall(_ context.Context, callerTaskID int64, _, _ string, _ map[string]any) (*task.Task, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.started++
+	return &task.Task{ID: 42, CallParentTaskID: callerTaskID}, nil
+}
+
+func (c *wobblyCaller) CallStatus(context.Context, int64, int64) (string, string, map[string]any, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.reads++
+	if c.reads <= c.failReads {
+		return "", "", nil, c.failWith
+	}
+	return c.status, c.detail, c.outputs, nil
+}
+
+func (c *wobblyCaller) counts() (reads, started int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.reads, c.started
+}
+
+// shortenCallWaits makes the caller's polls and retry backoff immediate, so a
+// test drives the retry loop without sleeping. Restored by t.Cleanup.
+func shortenCallWaits(t *testing.T) {
+	t.Helper()
+	oldPoll, oldBackoff, oldMax := callPollInterval, callReadBackoff, callReadMaxBackoff
+	callPollInterval, callReadBackoff, callReadMaxBackoff = time.Millisecond, time.Millisecond, 2*time.Millisecond
+	t.Cleanup(func() { callPollInterval, callReadBackoff, callReadMaxBackoff = oldPoll, oldBackoff, oldMax })
+}
+
+// TestAwaitCalleeRetriesTransientReadFailures pins that a callee status read
+// that fails because the dependency is briefly unavailable is retried, not
+// failed: the child is still running, and the caller reads it again.
+func TestAwaitCalleeRetriesTransientReadFailures(t *testing.T) {
+	shortenCallWaits(t)
+	caller := &wobblyCaller{
+		failReads: 2,
+		failWith:  fmt.Errorf("dial state store: %w", storecontract.ErrUnavailable),
+		status:    StatusCompleted,
+		detail:    "done",
+		outputs:   map[string]any{"report": "written"},
+	}
+	tc := &TaskContext{Task: &task.Task{ID: 7}, Calls: caller, Log: slog.Default()}
+	outputs, err := awaitCallee(context.Background(), workflowCallSettings{Workflow: "callee", Wait: true}, tc, "check", 42)
+	if err != nil {
+		t.Fatalf("awaitCallee: %v", err)
+	}
+	if outputs["report"] != "written" {
+		t.Fatalf("outputs = %v, want report=written", outputs)
+	}
+	if reads, _ := caller.counts(); reads != 3 {
+		t.Fatalf("reads = %d, want 3 (two retries, then the answer)", reads)
+	}
+}
+
+// TestAwaitCalleeFailsPermanentReadErrorAtOnce pins the other half: a contract
+// error is not retried, because it will fail the same way every time.
+func TestAwaitCalleeFailsPermanentReadErrorAtOnce(t *testing.T) {
+	shortenCallWaits(t)
+	caller := &wobblyCaller{failReads: 5, failWith: storecontract.ErrCallNotYours, status: StatusCompleted}
+	tc := &TaskContext{Task: &task.Task{ID: 7}, Calls: caller, Log: slog.Default()}
+	_, err := awaitCallee(context.Background(), workflowCallSettings{Workflow: "callee", Wait: true}, tc, "check", 42)
+	if !errors.Is(err, storecontract.ErrCallNotYours) {
+		t.Fatalf("err = %v, want ErrCallNotYours", err)
+	}
+	if reads, _ := caller.counts(); reads != 1 {
+		t.Fatalf("reads = %d, want 1 (no retry of a contract error)", reads)
+	}
+}
+
+// TestAwaitCalleeRetryStaysInsideTheDeadline pins the bound on recovery: an
+// outage that outlasts the caller's budget ends the wait there rather than
+// retrying past it.
+func TestAwaitCalleeRetryStaysInsideTheDeadline(t *testing.T) {
+	shortenCallWaits(t)
+	caller := &wobblyCaller{failReads: 1 << 30, failWith: fmt.Errorf("dial: %w", storecontract.ErrUnavailable)}
+	tc := &TaskContext{Task: &task.Task{ID: 7}, Calls: caller, Log: slog.Default()}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	_, err := awaitCallee(ctx, workflowCallSettings{Workflow: "callee", Wait: true}, tc, "check", 42)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want the caller's deadline", err)
+	}
+}
+
+// TestWorkflowCallRetriesARefusedReadWithoutASecondChild pins the whole step:
+// a wait:true call whose status reads are briefly refused still succeeds, the
+// caller starts exactly one child, and the call step is closed once.
+func TestWorkflowCallRetriesARefusedReadWithoutASecondChild(t *testing.T) {
+	shortenCallWaits(t)
+	registry := StepRegistry{WorkflowCallStepName: newWorkflowCallStage}
+	wf, err := ParseAndCompile(`id: caller
+repository: none
+steps:
+  - {id: check, type: workflow.call, settings: {workflow: callee, wait: true}}
+`, registry)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	store := &fakeStepStore{}
+	caller := &wobblyCaller{
+		failReads: 1,
+		failWith:  fmt.Errorf("dial: %w", storecontract.ErrUnavailable),
+		status:    StatusCompleted,
+		outputs:   map[string]any{"verdict": "go"},
+	}
+	tc := &TaskContext{Task: &task.Task{ID: 7, Attempt: 1}, Store: store, StepID: 3, Calls: caller, Log: slog.Default()}
+	if err := wf.Stages[0].Run(context.Background(), tc); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	reads, started := caller.counts()
+	if started != 1 {
+		t.Fatalf("started %d children, want 1: a retried read must not start another", started)
+	}
+	if reads != 2 {
+		t.Fatalf("reads = %d, want 2 (one refused, one answer)", reads)
+	}
+	if tc.stepResult.Result["verdict"] != "go" {
+		t.Fatalf("step result = %v, want the callee's outputs", tc.stepResult.Result)
+	}
+	calls := 0
+	for _, s := range store.started {
+		if s.Kind == task.StepKindCall {
+			calls++
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("recorded %d call steps, want 1", calls)
 	}
 }

@@ -527,6 +527,14 @@ var (
 	ErrResourceVersionConflict = errors.New("resource version conflict")
 )
 
+// ErrUnavailable means the store could not serve a request now: it is
+// restarting or unreachable. It is not paired with a canonical message the way
+// the sentinels above are -- staterpc derives it from the Unavailable code
+// alone, whose text varies by transport -- and it is the one store error a
+// caller with budget may answer by retrying rather than by failing its own
+// work. The wrapping keeps the gRPC status code readable through the chain.
+var ErrUnavailable = errors.New("store: state store unavailable")
+
 // Resource is one control-plane resource document: the stored value for an
 // org's kind, its revision, and the audit record written with the last write.
 // Resource and ResourceWrite live here so the UI-side consumers can reference
