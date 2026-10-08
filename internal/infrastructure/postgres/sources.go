@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/source"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/postgresdb"
@@ -14,7 +15,8 @@ import (
 
 var _ storecontract.SourceStore = (*EDA)(nil)
 
-// InsertSource stores a new source. The path is the primary key, so a taken
+// InsertSource stores a new source in the acting org's default workspace.
+// The path is the primary key, so a taken
 // path is refused by the database and surfaced as ErrSourcePathTaken.
 func (s *EDA) InsertSource(ctx context.Context, src source.Source) error {
 	secret, err := s.sealSecret(src.Secret)
@@ -23,6 +25,7 @@ func (s *EDA) InsertSource(ctx context.Context, src source.Source) error {
 	}
 	err = s.q.InsertSource(ctx, postgresdb.InsertSourceParams{
 		Path: src.Path, Signing: string(src.Signing), Secret: secret,
+		OrgID: string(org.OrgFromContext(ctx)), WorkspaceID: string(org.DefaultWorkspaceID),
 	})
 	if isUniqueViolation(err) {
 		return storecontract.ErrSourcePathTaken

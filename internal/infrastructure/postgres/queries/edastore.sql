@@ -152,7 +152,7 @@ DELETE FROM event_types WHERE id = $1;
 -- overlap check against a set that excludes the other.
 SELECT pg_advisory_xact_lock(hashtext('event_types:' || sqlc.arg(source)::text));
 -- name: InsertSource :exec
-INSERT INTO sources (path, signing, secret) VALUES ($1, $2, $3);
+INSERT INTO sources (path, signing, secret, org_id, workspace_id) VALUES ($1, $2, $3, $4, $5);
 
 -- name: GetSource :one
 SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id, name, delivery_header FROM sources WHERE path = $1;

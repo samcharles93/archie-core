@@ -586,17 +586,25 @@ func (q *Queries) InsertPlaybookDispatch(ctx context.Context, arg InsertPlaybook
 }
 
 const insertSource = `-- name: InsertSource :exec
-INSERT INTO sources (path, signing, secret) VALUES ($1, $2, $3)
+INSERT INTO sources (path, signing, secret, org_id, workspace_id) VALUES ($1, $2, $3, $4, $5)
 `
 
 type InsertSourceParams struct {
-	Path    string
-	Signing string
-	Secret  string
+	Path        string
+	Signing     string
+	Secret      string
+	OrgID       string
+	WorkspaceID string
 }
 
 func (q *Queries) InsertSource(ctx context.Context, arg InsertSourceParams) error {
-	_, err := q.db.Exec(ctx, insertSource, arg.Path, arg.Signing, arg.Secret)
+	_, err := q.db.Exec(ctx, insertSource,
+		arg.Path,
+		arg.Signing,
+		arg.Secret,
+		arg.OrgID,
+		arg.WorkspaceID,
+	)
 	return err
 }
 
