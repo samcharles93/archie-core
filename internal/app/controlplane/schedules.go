@@ -29,6 +29,9 @@ func scheduleDefinition() Definition {
 func validateSchedules(jobs []scheduling.JobSpec) error {
 	seen := make(map[string]struct{}, len(jobs))
 	for _, job := range jobs {
+		if err := scheduling.RefuseDangerousJob(job); err != nil {
+			return err
+		}
 		if strings.TrimSpace(job.ID) == "" {
 			return fmt.Errorf("schedule ID is required")
 		}
