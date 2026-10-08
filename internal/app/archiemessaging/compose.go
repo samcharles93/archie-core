@@ -160,13 +160,15 @@ func compose(ctx context.Context, d deps) (*Service, error) {
 // still restarted alone rather than through a process restart.
 func composeChannels(ctx context.Context, d deps) ([]*channelInstance, error) {
 	instances := make([]*channelInstance, 0, 3)
-	if d.Config.TelegramToken != "" {
-		instance, err := composeTelegram(ctx, d)
-		if err != nil {
-			return nil, err
-		}
-		instances = append(instances, instance)
+	// Telegram is composed whether or not it is enabled: a channel that
+	// enablement can turn on has to exist for the supervisor to start. Its
+	// channel is nil until a token is configured (composeTelegram). The other
+	// channels are fixed by what the process can build at startup.
+	telegramInstance, err := composeTelegram(ctx, d)
+	if err != nil {
+		return nil, err
 	}
+	instances = append(instances, telegramInstance)
 	for _, instance := range d.ExtensionChannels {
 		if slices.ContainsFunc(instances, func(have *channelInstance) bool { return have.name == instance.name }) {
 			d.Log.Warn("channel extension skipped: a built-in channel has the same name", "channel", instance.name)
@@ -181,13 +183,13 @@ func composeChannels(ctx context.Context, d deps) ([]*channelInstance, error) {
 }
 
 func composeTelegram(ctx context.Context, d deps) (*channelInstance, error) {
-	if len(d.Config.Telegram.AllowedUserIDs) == 0 {
-		d.Log.Warn("chat.telegram has no allowed_user_ids: every sender will be rejected. " +
-			"Add your Telegram user id to chat.telegram.allowed_user_ids to enable the bot.")
-	}
 	build := func(cfg ResolvedConfig) (channels.Channel, error) {
 		if cfg.TelegramToken == "" {
 			return nil, nil
+		}
+		if len(cfg.Telegram.AllowedUserIDs) == 0 {
+			d.Log.Warn("chat.telegram has no allowed_user_ids: every sender will be rejected. " +
+				"Add your Telegram user id to chat.telegram.allowed_user_ids to enable the bot.")
 		}
 		tg := telegram.New(cfg.TelegramToken, cfg.Telegram.AllowedUserIDs, d.Log)
 		tg.Settings = d.Settings

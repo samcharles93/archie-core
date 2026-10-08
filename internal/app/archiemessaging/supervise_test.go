@@ -23,10 +23,13 @@ type fakeChannel struct {
 
 func (f *fakeChannel) Name() string { return "fake" }
 
-func (f *fakeChannel) Start(ctx context.Context, _ messaging.ChatContract, _ channels.Lifecycle) error {
+func (f *fakeChannel) Start(ctx context.Context, _ messaging.ChatContract, lifecycle channels.Lifecycle) error {
 	f.mu.Lock()
 	f.starts++
 	f.mu.Unlock()
+	if lifecycle.Starting != nil {
+		lifecycle.Starting()
+	}
 	if f.runErr != nil {
 		return f.runErr
 	}

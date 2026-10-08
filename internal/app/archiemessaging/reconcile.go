@@ -85,35 +85,55 @@ func resolveChatSecrets(base ResolvedConfig, layered config.ChatConfig, secrets 
 	return next, nil
 }
 
-// applyChannelSettings restarts only channels whose transport settings
-// changed and reports whether every restart succeeded. Enabling or
-// disabling a channel or changing a listen address needs a process restart.
+// applyChannelSettings applies the changed channel settings: channels whose
+// enablement changed are started or stopped, channels whose transport settings
+// changed are restarted, and the report is success only once every change is in
+// effect.
 func (s *Service) applyChannelSettings(next ResolvedConfig) (bool, error) {
 	current := s.currentConfig()
-	effective, outstanding := pinProcessBindings(current, next)
 
 	if next.ShowToolCalls != current.ShowToolCalls {
 		s.applyShowToolCalls(next.ShowToolCalls)
 	}
 
 	applied := true
-	for _, id := range channelChanges(current, effective) {
-		if err := s.restartChannel(id, effective); err != nil {
+	outstanding := s.applyChannelEnablement(current, next)
+	if len(outstanding) > 0 {
+		applied = false
+	}
+	for _, id := range channelChanges(current, next) {
+		if err := s.restartChannel(id, next); err != nil {
 			outstanding = append(outstanding, err.Error())
 			applied = false
 		}
 	}
-	// A failed restart leaves the running configuration in place, so the next
-	// tick sees the same change and retries it. A change that was carried out
-	// (including a binding change that was refused and reported) is recorded, so
-	// it is not applied again on every tick.
+	// A failed change leaves the running configuration in place, so the next
+	// tick sees the same difference and retries it.
 	if applied {
-		s.setConfig(effective)
+		s.setConfig(next)
 	}
 	if len(outstanding) == 0 {
 		return applied, nil
 	}
 	return applied, errors.New(strings.Join(outstanding, "; "))
+}
+
+// applyChannelEnablement starts or stops the channels whose enablement the
+// stored settings changed, and reports only once the requested state is in
+// effect. A channel whose enablement did not change is left alone.
+func (s *Service) applyChannelEnablement(current, next ResolvedConfig) []string {
+	var outstanding []string
+	switch {
+	case current.TelegramToken != "" && next.TelegramToken == "":
+		if err := s.disableChannel("telegram"); err != nil {
+			outstanding = append(outstanding, err.Error())
+		}
+	case current.TelegramToken == "" && next.TelegramToken != "":
+		if err := s.enableChannel("telegram", next); err != nil {
+			outstanding = append(outstanding, err.Error())
+		}
+	}
+	return outstanding
 }
 
 // applyShowToolCalls updates the running Telegram gateways in place. Nothing
@@ -126,28 +146,14 @@ func (s *Service) applyShowToolCalls(show bool) {
 	}
 }
 
-// pinProcessBindings holds the values a running process cannot change in place:
-// the set of channels it composed.
-// The returned configuration keeps the running value for each, and the returned
-// problems name what the operator changed and when it takes effect.
-func pinProcessBindings(current, next ResolvedConfig) (ResolvedConfig, []string) {
-	effective := next
-	var problems []string
-
-	if (current.TelegramToken != "") != (next.TelegramToken != "") {
-		problems = append(problems, "chat.telegram enabled/disabled; takes effect on restart")
-		effective.Telegram, effective.TelegramToken = current.Telegram, current.TelegramToken
-	}
-	return effective, problems
-}
-
 // channelChanges returns the composed channels whose transport settings differ
-// between the running and the effective configuration. A channel absent from
-// current (not composed) never appears, and an unchanged channel is not
-// restarted.
+// between the running and the next configuration while remaining enabled. A
+// channel absent from current (not composed) never appears, an unchanged
+// channel is not restarted, and an enable or disable is applied as enablement
+// rather than as a transport change.
 func channelChanges(current, next ResolvedConfig) []string {
 	var changed []string
-	if current.TelegramToken != "" &&
+	if current.TelegramToken != "" && next.TelegramToken != "" &&
 		(current.TelegramToken != next.TelegramToken || !slices.Equal(current.Telegram.AllowedUserIDs, next.Telegram.AllowedUserIDs)) {
 		changed = append(changed, "telegram")
 	}

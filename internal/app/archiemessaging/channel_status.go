@@ -21,7 +21,7 @@ func channelDescriptors(instances []*channelInstance) []status.Descriptor {
 		descriptors = append(descriptors, status.Descriptor{
 			ID:         instance.name,
 			Name:       instance.name,
-			Configured: true,
+			Configured: instance.current() != nil,
 			// The capability comes from the same place the action does, so a
 			// channel cannot declare reload support and then answer nothing.
 			ReloadSupported: reloadable(instance),
@@ -35,7 +35,14 @@ func channelDescriptors(instances []*channelInstance) []status.Descriptor {
 // a reload performs; deriving them separately is how a dashboard ends up offering
 // a button that reports success and changes nothing.
 func reloadable(instance *channelInstance) bool {
-	gateway, ok := instance.current().(*telegram.Gateway)
+	return channelReloadable(instance.current())
+}
+
+// channelReloadable reports whether a built channel can re-read its
+// configuration in place. A disabled channel (nil) cannot, which is what a
+// channel that enablement turned off should declare.
+func channelReloadable(ch channels.Channel) bool {
+	gateway, ok := ch.(*telegram.Gateway)
 	return ok && gateway.Reload != nil
 }
 

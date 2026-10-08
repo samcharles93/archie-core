@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/channels"
+	"github.com/samcharles93/archie-core/internal/channels/status"
 )
 
 // runChannel supervises one channel for the service's lifetime. It starts the
@@ -22,12 +23,23 @@ func (s *Service) runChannel(ctx context.Context, c *channelInstance) {
 	for {
 		c.mu.Lock()
 		ch := c.channel
+		if ch == nil {
+			// Disabled: there is no channel to run until an enable builds one.
+			c.mu.Unlock()
+			s.status.MarkStopped(c.name, "")
+			if s.awaitChannel(ctx, c, 0) == channelShutdown {
+				return
+			}
+			attempts = 0
+			continue
+		}
 		runCtx, cancel := context.WithCancel(ctx)
 		c.cancel = cancel
 		c.mu.Unlock()
 
 		s.log.Info("starting channel", "name", c.name)
 		err := ch.Start(runCtx, s.chat, s.lifecycleFor(c.name))
+		attempts++
 
 		// Decide the next state under the same lock a restart takes, so a
 		// restart racing this exit is either seen here (restartPending) or
@@ -47,50 +59,87 @@ func (s *Service) runChannel(ctx context.Context, c *channelInstance) {
 		// idempotent tail for the paths that leave a listener behind.
 		s.stopChannel(ctx, c.name, ch)
 
-		if shutdown {
-			if err != nil && !errors.Is(err, context.Canceled) {
-				s.status.MarkFailed(c.name, err.Error())
-			} else {
-				s.status.MarkStopped(c.name, "")
-			}
+		next, wait := s.afterChannelRun(c, err, shutdown, restart, attempts)
+		if next == nextStop {
 			return
 		}
-		if restart {
+		if next == nextReplaced {
 			attempts = 0
 			continue
 		}
-		if err == nil {
-			// The channel stopped itself. Hold it stopped rather than
-			// spending the failure retry budget on a run that chose to end.
-			s.status.MarkStopped(c.name, "")
-			s.log.Info("channel stopped", "name", c.name)
-			if s.awaitChannel(ctx, c, 0) == channelShutdown {
-				return
-			}
-			attempts = 0
-			continue
-		}
-		attempts++
-		s.status.MarkFailed(c.name, err.Error())
-		if attempts >= s.retry.attempts {
-			s.log.Error("channel failed repeatedly; parked until an explicit restart",
-				"name", c.name, "attempts", attempts, "err", err)
-			if s.awaitChannel(ctx, c, 0) == channelShutdown {
-				return
-			}
-			attempts = 0
-			continue
-		}
-		backoff := s.retry.backoffFor(attempts)
-		s.log.Warn("channel failed; restarting", "name", c.name,
-			"attempt", attempts, "of", s.retry.attempts, "in", backoff, "err", err)
-		switch s.awaitChannel(ctx, c, backoff) {
-		case channelShutdown:
+		if attempts, next = s.holdAfterRun(ctx, c, next, wait, attempts); next == nextStop {
 			return
-		case channelRestart:
-			attempts = 0
 		}
 	}
+}
+
+// channelNext is what a supervisor does after one channel run ended.
+type channelNext int
+
+const (
+	// nextStop: the service is stopping; the supervisor returns.
+	nextStop channelNext = iota
+	// nextReplaced: a replacement is already in the instance; run it now.
+	nextReplaced
+	// nextPark: hold, with no timer, until an explicit restart or shutdown.
+	nextPark
+	// nextRetry: wait the backoff, then run the same channel again.
+	nextRetry
+)
+
+// afterChannelRun records the ended run's state and decides what the supervisor
+// does next. shutdown is the service stopping; restart is an explicit
+// replacement already waiting in the instance.
+func (s *Service) afterChannelRun(c *channelInstance, err error, shutdown, restart bool, attempts int) (channelNext, time.Duration) {
+	switch {
+	case shutdown:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			s.status.MarkFailed(c.name, err.Error())
+		} else {
+			s.status.MarkStopped(c.name, "")
+		}
+		return nextStop, 0
+	case restart:
+		return nextReplaced, 0
+	case err == nil:
+		// The channel stopped itself. Hold it stopped rather than spending the
+		// failure retry budget on a run that chose to end.
+		s.status.MarkStopped(c.name, "")
+		s.log.Info("channel stopped", "name", c.name)
+		return nextPark, 0
+	case attempts >= s.retry.attempts:
+		s.status.MarkFailed(c.name, err.Error())
+		s.log.Error("channel failed repeatedly; parked until an explicit restart",
+			"name", c.name, "attempts", attempts, "err", err)
+		return nextPark, 0
+	default:
+		s.status.MarkFailed(c.name, err.Error())
+		wait := s.retry.backoffFor(attempts)
+		s.log.Warn("channel failed; restarting", "name", c.name,
+			"attempt", attempts, "of", s.retry.attempts, "in", wait, "err", err)
+		return nextRetry, wait
+	}
+}
+
+// holdAfterRun waits out a park or a retry backoff, and reports the attempt
+// count to carry into the next run and whether the supervisor keeps going. A
+// restart delivered during a backoff starts the replacement with a fresh
+// budget; a shutdown ends the supervisor.
+func (s *Service) holdAfterRun(ctx context.Context, c *channelInstance, next channelNext, wait time.Duration, attempts int) (int, channelNext) {
+	if next == nextRetry {
+		switch s.awaitChannel(ctx, c, wait) {
+		case channelShutdown:
+			return attempts, nextStop
+		case channelRestart:
+			return 0, nextReplaced
+		default:
+			return attempts, nextRetry
+		}
+	}
+	if s.awaitChannel(ctx, c, 0) == channelShutdown {
+		return attempts, nextStop
+	}
+	return 0, nextReplaced
 }
 
 // channelRetry bounds how a supervisor retries a channel that fails on its own
@@ -187,10 +236,17 @@ func (s *Service) restartChannel(id string, next ResolvedConfig) error {
 	if replacement == nil {
 		return fmt.Errorf("channel %q has no configuration", id)
 	}
+	return s.setChannelState(c, replacement)
+}
+
+// setChannelState swaps the channel a supervisor runs; a nil replacement stops
+// it. It returns once the supervisor has been told, not once the channel is up:
+// a caller that needs the observable state awaits it (awaitChannelActive).
+func (s *Service) setChannelState(c *channelInstance, replacement channels.Channel) error {
 	c.mu.Lock()
 	if !c.supervised {
 		c.mu.Unlock()
-		return fmt.Errorf("channel %q is not running", id)
+		return fmt.Errorf("channel %q is not running", c.name)
 	}
 	c.channel = replacement
 	cancel := c.cancel
@@ -213,6 +269,75 @@ func (s *Service) restartChannel(id string, next ResolvedConfig) error {
 	default:
 	}
 	return nil
+}
+
+// enableChannel builds and starts a channel that a settings change turned on,
+// and reports only once it is no longer stopped.
+func (s *Service) enableChannel(id string, next ResolvedConfig) error {
+	c := s.instanceByID(id)
+	if c == nil {
+		return fmt.Errorf("no channel %q", id)
+	}
+	if c.rebuild == nil {
+		return fmt.Errorf("channel %q cannot be rebuilt", id)
+	}
+	replacement, err := c.rebuild(next)
+	if err != nil {
+		return fmt.Errorf("build %q: %w", id, err)
+	}
+	if replacement == nil {
+		return fmt.Errorf("channel %q has no configuration", id)
+	}
+	if err := s.setChannelState(c, replacement); err != nil {
+		return err
+	}
+	s.status.Declare(id, true, channelReloadable(replacement))
+	s.signalPublish()
+	return s.awaitChannelActive(id, true)
+}
+
+// disableChannel stops a channel that a settings change turned off, and reports
+// only once it has stopped.
+func (s *Service) disableChannel(id string) error {
+	c := s.instanceByID(id)
+	if c == nil || c.current() == nil {
+		return nil
+	}
+	if err := s.setChannelState(c, nil); err != nil {
+		return err
+	}
+	s.status.Declare(id, false, false)
+	s.signalPublish()
+	return s.awaitChannelActive(id, false)
+}
+
+// channelApplyTimeout bounds how long reconcile waits for an enable or disable
+// to take effect before reporting it unapplied, which leaves the next tick to
+// retry it.
+const channelApplyTimeout = 5 * time.Second
+
+// channelApplyPoll is how often that wait re-reads the channel's state.
+const channelApplyPoll = 10 * time.Millisecond
+
+// awaitChannelActive waits, up to channelApplyTimeout, for a channel to leave
+// or reach the stopped state, so an enable or disable is reported applied only
+// once the channel is actually running (or not) rather than merely queued.
+func (s *Service) awaitChannelActive(id string, active bool) error {
+	deadline := time.Now().Add(channelApplyTimeout)
+	for {
+		for _, st := range s.status.Snapshot() {
+			if st.ID == id && (st.State != status.StateStopped) == active {
+				return nil
+			}
+		}
+		if time.Now().After(deadline) {
+			if active {
+				return fmt.Errorf("channel %q did not start", id)
+			}
+			return fmt.Errorf("channel %q did not stop", id)
+		}
+		time.Sleep(channelApplyPoll)
+	}
 }
 
 // stopChannel closes one channel's listener with its own bounded context, so a

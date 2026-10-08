@@ -74,6 +74,24 @@ func (m *Manager) MarkDegraded(id, detail string) {
 func (m *Manager) MarkFailed(id, detail string)  { m.set(id, StateFailed, detail) }
 func (m *Manager) MarkStopped(id, detail string) { m.set(id, StateStopped, detail) }
 
+// Declare records whether a composed channel is currently configured and
+// reloadable. A live enable or disable changes both without changing the
+// channel's identity, so the operator-facing declaration follows the channel
+// rather than being fixed at composition.
+func (m *Manager) Declare(id string, configured, reloadSupported bool) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	i, ok := m.index[id]
+	if !ok {
+		return
+	}
+	m.channels[i].Configured = configured
+	m.channels[i].ReloadSupported = reloadSupported
+}
+
 func (m *Manager) set(id string, state State, detail string) {
 	if m == nil {
 		return
