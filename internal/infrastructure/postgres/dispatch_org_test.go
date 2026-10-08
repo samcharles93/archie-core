@@ -54,10 +54,12 @@ func TestPendingDispatchInCallerOrg(t *testing.T) {
 	for _, owner := range []org.OrgID{org.DefaultOrgID, "acme"} {
 		path := "webhook-" + string(owner)
 		paths = append(paths, path)
-		if err := eda.InsertSource(ctx, source.Source{Path: path, Signing: source.SigningUnsigned}); err != nil {
+		if err := eda.InsertSource(org.WithOrg(ctx, owner), source.Source{Path: path, Signing: source.SigningUnsigned}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := db.Pool.Exec(ctx, "UPDATE sources SET org_id=$1, workspace_id='incoming' WHERE path=$2", owner, path); err != nil {
+		// Workspace selection is not yet a write path, so only the workspace
+		// needs a fixture fixup; the source org comes from the insert itself.
+		if _, err := db.Pool.Exec(ctx, "UPDATE sources SET workspace_id='incoming' WHERE path=$1", path); err != nil {
 			t.Fatal(err)
 		}
 		typeID, err := eda.InsertEventType(ctx, eventtype.EventType{Source: path, Name: string(owner), Rule: eventtype.Rule{Headers: []eventtype.HeaderCondition{{Name: "X-Org", Value: string(owner)}}}})
