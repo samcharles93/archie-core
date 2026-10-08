@@ -22,6 +22,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
+	"github.com/samcharles93/archie-core/internal/infrastructure/harnessrpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
@@ -58,7 +59,6 @@ func Run(ctx context.Context, options Options) error {
 			cleanup()
 		}
 	}()
-
 	tasks, closeState, err := staterpc.Dial(opts.State.Target, presence.UI, opts.State.Token)
 	if err != nil {
 		return err
@@ -100,6 +100,9 @@ func Run(ctx context.Context, options Options) error {
 		Principals:   tasks,
 		Denials:      tasks,
 	})
+	if err := wireHarness(opts, srv, &cleanups); err != nil {
+		return err
+	}
 
 	// Live activity has no in-process bus in this process: the pump reads
 	// events back out of the State Store over the same cursor SSE catch-up
@@ -130,6 +133,21 @@ func Run(ctx context.Context, options Options) error {
 	log.Info("archie-ui running", attrs...)
 
 	return serve(ctx, listener, srv.Handler(), opts)
+}
+
+// wireHarness attaches the setup terminal to the daemon's session contract
+// when the operator configured one, and registers its cleanup.
+func wireHarness(opts Options, srv *webui.Server, cleanups *[]func()) error {
+	if opts.Harness.Target == "" {
+		return nil
+	}
+	harness, closeHarness, err := harnessrpc.Dial(opts.Harness.Target, opts.Harness.Token)
+	if err != nil {
+		return err
+	}
+	srv.HarnessTerminal = harness
+	*cleanups = append(*cleanups, closeHarness)
+	return nil
 }
 
 // serve runs handler until ctx ends, then shuts down within

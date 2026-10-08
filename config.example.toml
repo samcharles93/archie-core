@@ -292,6 +292,19 @@ target = "127.0.0.1:9090"          # REQUIRED. The State Store gRPC address arch
 #                                       # same remote store. See deployments/README.md for how to
 #                                       # start archie-state-store.
 
+# The daemon's harness session contract: the dashboard's setup terminal opens
+# a PTY into an ephemeral Kit container over it. Both ends are optional and
+# the dashboard's setup terminal degrades to 503 without them: the daemon
+# serves the contract only when target_token (or HARNESS_TOKEN) is set, and
+# archie-ui dials it only when a target is set.
+# [services.harness]
+# target = "127.0.0.1:8587"              # The address archie-ui dials. Empty leaves the
+#                                          # setup terminal unwired.
+# target_token = "..."                    # REQUIRED, even on loopback: a session is a
+#                                          # shell in a container that holds an org credential.
+#                                          # The daemon reads the same value to authenticate its
+#                                          # clients. Leave unset to disable the listener.
+
 # NATS is the sole autonomous workflow handoff. mode changes only where the
 # broker runs; every workflow still runs in a managed task container:
 #   "embedded"  – in-process nats-server (the default; no external server)

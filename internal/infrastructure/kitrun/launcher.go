@@ -5,6 +5,8 @@ package kitrun
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"maps"
@@ -44,12 +46,24 @@ const (
 	caPath    = "/opt/archie/ca.pem"
 )
 
+// GrantRegistry records a live session's granted credential services, so the
+// egress proxy can resolve a session token that names no task. It is optional:
+// a Launcher without one serves task runs only.
+type GrantRegistry interface {
+	Grant(token, org string, services []string)
+	Revoke(token string)
+}
+
 // Launcher starts Kit task containers.
 type Launcher struct {
 	Pool     *container.Pool
 	Fetch    *fetch.Client
 	Proxy    *egress.Proxy
 	Networks *egress.Networks
+	// Grants records a setup session's granted services while it is open.
+	// Nil refuses a setup session rather than opening one whose token the
+	// egress proxy cannot resolve.
+	Grants GrantRegistry
 	// AgentBinary and CAFile are host paths mounted read-only into every
 	// Kit container: the worker's own binary and the egress CA.
 	AgentBinary string
@@ -103,6 +117,122 @@ type Run struct {
 	network   string
 	token     string
 	execution string
+	grants    GrantRegistry
+	// ephemeral marks a setup session, whose volumes are never reused by a
+	// later run and so are removed with it.
+	ephemeral bool
+}
+
+// SetupRequest is one ephemeral setup session to start: a Kit-profile
+// container whose only job is to run a CLI's own login so the proxy captures
+// the tokens at the token endpoint.
+type SetupRequest struct {
+	// Session keys the container, network and volumes, and roots its
+	// container name.
+	Session string
+	// Kit is the profile's digest-pinned Kit or published Kit set.
+	Kit string
+	// Org is the org whose credential bindings the session may use. A setup
+	// session carries no task and no identity grant, so its bound services
+	// are the org's bindings for the Kit's declared services.
+	Org string
+}
+
+// LaunchSetup starts an ephemeral setup session's container. Unlike Launch it
+// mounts no worktree and runs no worker: the container holds a keepalive and
+// the operator's PTY runs the CLI's login inside it. The launch runs the
+// Kit's install hooks at the install phase and then enters runtime, exactly
+// as a task run does, so a runtime-phase credential's token endpoint is the
+// one the proxy intercepts.
+func (l *Launcher) LaunchSetup(ctx context.Context, req SetupRequest) (*Run, error) {
+	if req.Kit == "" {
+		return nil, errors.New("kit profile names no kit")
+	}
+	if l.Grants == nil || l.Config == nil {
+		return nil, errors.New("setup sessions need a session grant registry and a configuration holder")
+	}
+	if err := l.startEgress(ctx); err != nil {
+		return nil, err
+	}
+	k, err := l.read(ctx, req.Kit, 0)
+	if err != nil {
+		return nil, err
+	}
+	bound, services := orgCredentialKinds(l.Config.Get().Containers.Credentials, req.Org, k.creds)
+	token, err := newProxyToken()
+	if err != nil {
+		return nil, err
+	}
+	session, err := l.Proxy.Register(egress.SessionOptions{Token: token, Org: req.Org, Network: k.network, Credentials: k.creds, Bound: bound})
+	if err != nil {
+		return nil, err
+	}
+	run := &Run{network: "archie-kit-" + req.Session, token: session.Token(), execution: req.Session, grants: l.Grants, ephemeral: true}
+	// Bound is deliberately empty here: a credential file renders the stored
+	// scopes and expiry, and there is no stored token set yet -- that is the
+	// state this session exists to change. The Kit's sentinels still reach the
+	// harness environment.
+	launch, err := kit.Assemble(k.plan, k.img, kit.LaunchParams{Execution: req.Session, ProxyToken: session.Token(), CAPath: caPath})
+	if err != nil {
+		l.release(run)
+		return nil, err
+	}
+	run.Harness, run.Volumes = launch.Harness, launch.Volumes
+	l.Grants.Grant(session.Token(), req.Org, services)
+	if err := l.Networks.Create(ctx, run.network); err != nil {
+		l.release(run)
+		return nil, err
+	}
+	// The image's own entrypoint is the harness CLI and would exit or run a
+	// task; a setup container holds still until the PTY's shell ends. The
+	// container environment stays empty (WorkerEnv nil): the harness env is
+	// passed explicitly on the exec, and no worker credential reaches it.
+	run.Container, err = l.Pool.AcquireKit(ctx, container.KitSpec{
+		Name:        "archie-kit-" + req.Session,
+		Image:       req.Kit,
+		Network:     run.network,
+		Worker:      []string{"sleep", "infinity"},
+		Binds:       append([]string{l.CAFile + ":" + caPath + ":ro"}, skillsBinds(k.skills, l.skillsDir())...),
+		Launch:      launch,
+		InstallDone: session.EnterRuntime,
+	})
+	if err != nil {
+		l.release(run)
+		return nil, errors.Join(err, l.Networks.Remove(context.WithoutCancel(ctx), run.network))
+	}
+	return run, nil
+}
+
+// orgCredentialKinds is the kind of each of the Kit's declared services the
+// org binds, with no identity grant in the intersection: a setup session acts
+// on the org's secret, not on a run's grant.
+func orgCredentialKinds(bindings []config.CredentialBinding, org string, creds []spec.CredentialCapability) (map[string]egress.CredentialKind, []string) {
+	declared := make([]string, len(creds))
+	for i, c := range creds {
+		declared[i] = c.Service
+	}
+	bound := config.ContainerConfig{Credentials: bindings}.BoundCredentials(org, declared, declared)
+	kinds := make(map[string]egress.CredentialKind, len(bound))
+	services := make([]string, 0, len(bound))
+	for service, b := range bound {
+		if b.Secret == (config.SecretRef{}) {
+			kinds[service] = egress.CredentialOAuth
+		} else {
+			kinds[service] = egress.CredentialAPIKey
+		}
+		services = append(services, service)
+	}
+	return kinds, services
+}
+
+// newProxyToken mints a setup session's run credential. It is unguessable
+// because it is the container's proxy password.
+func newProxyToken() (string, error) {
+	var b [32]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("mint session credential: %w", err)
+	}
+	return hex.EncodeToString(b[:]), nil
 }
 
 // Launch reads the request's Kit and starts its container.
@@ -224,6 +354,9 @@ func (l *Launcher) oauthFacts(ctx context.Context, org string, creds []spec.Cred
 // failure, so it takes no error to join.
 func (l *Launcher) release(run *Run) {
 	l.Proxy.Revoke(run.token)
+	if run.grants != nil {
+		run.grants.Revoke(run.token)
+	}
 }
 
 // kitNeeds is what a profile's Kit asks of its run, read from its admitted
@@ -277,11 +410,17 @@ func (l *Launcher) skillsDir() string {
 }
 
 // Release stops the run's container, then removes its network, revokes its
-// credential grant and ends its egress session.
+// credential grant and ends its egress session. A setup session's volumes are
+// removed too: they are keyed to one ephemeral session and no later run reuses
+// them. A task run keeps its volumes for the life of its execution.
 func (l *Launcher) Release(ctx context.Context, run *Run) error {
 	l.Pool.Release(ctx, run.Container)
 	l.release(run)
-	return l.Networks.Remove(context.WithoutCancel(ctx), run.network)
+	err := l.Networks.Remove(context.WithoutCancel(ctx), run.network)
+	if run.ephemeral {
+		err = errors.Join(err, l.RemoveVolumes(context.WithoutCancel(ctx), run.Volumes))
+	}
+	return err
 }
 
 // RemoveVolumes removes an ended execution's Kit volumes.

@@ -38,6 +38,8 @@ func run() int {
 	flag.StringVar(&options.Gateway.Token, "gateway-token", "", "bearer token presented to archie-gateway")
 	flag.StringVar(&options.State.Target, "state-target", "", "archie-state-store gRPC address (defaults to [services.state].target)")
 	flag.StringVar(&options.State.Token, "state-token", "", "bearer token presented to archie-state-store")
+	flag.StringVar(&options.Harness.Target, "harness-target", "", "archied harness session gRPC address (defaults to [services.harness].target); empty leaves the setup terminal unwired")
+	flag.StringVar(&options.Harness.Token, "harness-token", "", "bearer token presented to the daemon's harness contract")
 	flag.DurationVar(&options.DependencyTimeout, "dependency-timeout", 0, "per-dependency readiness probe timeout (default 5s)")
 	flag.DurationVar(&options.EventPollInterval, "event-poll-interval", 0, "how often the activity feed polls the State Store for new events (default 1s)")
 	// BoolFunc rather than BoolVar so an unset flag stays distinguishable

@@ -58,6 +58,7 @@ type projection struct {
 	trustForwardedHeaders bool
 	gateway               ServiceTarget
 	state                 ServiceTarget
+	harness               ServiceTarget
 	capture               CaptureOptions
 }
 
@@ -67,6 +68,7 @@ func project(cfg config.Config) projection {
 		trustForwardedHeaders: cfg.Web.TrustForwardedHeaders,
 		gateway:               ServiceTarget{Target: cfg.Services.Get(config.ServiceNameGateway).Target, Token: cfg.Services.Get(config.ServiceNameGateway).TargetToken},
 		state:                 ServiceTarget{Target: cfg.Services.Get(config.ServiceNameState).Target, Token: cfg.Services.Get(config.ServiceNameState).TargetToken},
+		harness:               ServiceTarget{Target: cfg.Services.Get(config.ServiceNameHarness).Target, Token: cfg.Services.Get(config.ServiceNameHarness).TargetToken},
 		capture: CaptureOptions{
 			Retention:     cfg.Capture.Retention.Std(),
 			MaxEvents:     cfg.Capture.MaxEvents,
@@ -84,6 +86,9 @@ func withEnvTokens(o Options) Options {
 	}
 	if o.State.Token == "" {
 		o.State.Token = os.Getenv("STATE_STORE_TOKEN")
+	}
+	if o.Harness.Token == "" {
+		o.Harness.Token = os.Getenv("HARNESS_TOKEN")
 	}
 	return o
 }
@@ -108,6 +113,12 @@ func merge(o Options, p projection) Options {
 	}
 	if o.State.Token == "" {
 		o.State.Token = p.state.Token
+	}
+	if o.Harness.Target == "" {
+		o.Harness.Target = p.harness.Target
+	}
+	if o.Harness.Token == "" {
+		o.Harness.Token = p.harness.Token
 	}
 	if o.Capture.Retention <= 0 {
 		o.Capture.Retention = p.capture.Retention

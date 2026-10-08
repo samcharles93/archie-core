@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"sort"
@@ -197,10 +198,17 @@ func (s *Server) handleHarnessTerminal(w http.ResponseWriter, r *http.Request) {
 // bridgeTerminal pumps bytes between the dashboard WebSocket and the setup
 // session until either side closes, then closes both so the surviving copy
 // unblocks. It is a free function so a test can drive it without a listener.
+// A session failure is written to the socket first: the terminal would
+// otherwise only close, leaving the operator no reason.
 func bridgeTerminal(ws *websocket.Conn, session io.ReadWriteCloser) {
 	done := make(chan struct{}, 2)
 	go func() { _, _ = io.Copy(session, ws); done <- struct{}{} }()
-	go func() { _, _ = io.Copy(ws, session); done <- struct{}{} }()
+	go func() {
+		if _, err := io.Copy(ws, session); err != nil {
+			_, _ = fmt.Fprintf(ws, "\r\n\x1b[31m%s\x1b[0m\r\n", err)
+		}
+		done <- struct{}{}
+	}()
 	<-done
 	_ = ws.Close()
 	_ = session.Close()

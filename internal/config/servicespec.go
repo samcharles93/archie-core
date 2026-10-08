@@ -47,6 +47,7 @@ const (
 	ServiceNameGateway   = "gateway"
 	ServiceNameState     = "state"
 	ServiceNameMessaging = "messaging"
+	ServiceNameHarness   = "harness"
 )
 
 var (
@@ -115,4 +116,9 @@ func init() {
 	RegisterService(ServiceBoth, ServiceNameGateway, "127.0.0.1:8585", "127.0.0.1:8585", "GATEWAY_TOKEN")
 	RegisterService(ServiceClient, ServiceNameState, "", "127.0.0.1:9090", "STATE_STORE_TOKEN")
 	RegisterService(ServiceBoth, ServiceNameMessaging, "127.0.0.1:8586", "127.0.0.1:8586", "MESSAGING_TOKEN")
+	// The daemon hosts the harness session contract in this repository; the
+	// dashboard dials it, and its target is the operator's to supply, so a
+	// deployment with no [services.harness].target leaves the setup terminal
+	// unwired rather than dialling a default nothing owns.
+	RegisterService(ServiceBoth, ServiceNameHarness, "", "127.0.0.1:8587", "HARNESS_TOKEN")
 }

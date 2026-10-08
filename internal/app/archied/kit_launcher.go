@@ -60,8 +60,10 @@ func (b *boot) setupKitLauncher(ctx context.Context) {
 		return
 	}
 	// The proxy resolves each credential from the run credential the
-	// container logs in with, against the live grants and bindings.
-	resolver := runCredentialResolver{runs: b.stateStoreGrants.Client, config: b.cfgHolder, secrets: b.secrets}
+	// container logs in with, against the live grants and bindings; a setup
+	// session's token resolves through the session grants instead.
+	b.sessionGrants = &sessionGrants{}
+	resolver := runCredentialResolver{runs: b.stateStoreGrants.Client, sessions: b.sessionGrants, config: b.cfgHolder, secrets: b.secrets}
 	// Without a harness secret store, Register refuses a Kit with a
 	// required OAuth credential.
 	oauthStore, _ := b.stateStore.(egress.OAuthStore)
@@ -77,11 +79,14 @@ func (b *boot) setupKitLauncher(ctx context.Context) {
 		Entrypoint: []string{"archie-agent"}, Cmd: cmd, Network: pool.NetworkName(),
 	})
 	b.addCleanup(shutdownEgress(networks, srv, log))
-	b.kitLauncher = &kitrun.Launcher{
+	kitLauncher := &kitrun.Launcher{
 		Pool: pool, Fetch: fetcher, Proxy: proxy, Networks: networks,
 		AgentBinary: agentBinary, CAFile: egress.CACertPath(caDir),
 		Config: b.cfgHolder, Secrets: b.secrets, OAuth: oauthStore,
+		Grants: b.sessionGrants,
 	}
+	b.kitLauncher = kitLauncher
+	b.setupHarness(ctx)
 	log.Info("kit harness runs enabled", "proxy", ln.Addr().String())
 }
 

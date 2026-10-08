@@ -48,6 +48,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	"github.com/samcharles93/archie-core/internal/infrastructure/extension"
+	"github.com/samcharles93/archie-core/internal/infrastructure/kitrun"
 	"github.com/samcharles93/archie-core/internal/infrastructure/messagingrpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
@@ -158,8 +159,11 @@ type boot struct {
 	containerPool *container.Pool
 	// kitLauncher starts Kit profile tasks; nil when the egress path cannot
 	// be built on this host.
-	kitLauncher  daemon.KitLauncher
-	storeBackend storage.Backend
+	kitLauncher *kitrun.Launcher
+	// sessionGrants records live setup sessions' granted credential services
+	// for the egress proxy's resolver.
+	sessionGrants *sessionGrants
+	storeBackend  storage.Backend
 
 	// runtimeVersions records the version of every control-plane kind boot's
 	// layering applied. Set once at boot before the runtime-resource watches
@@ -805,12 +809,14 @@ func (b *boot) startServices(ctx context.Context) error {
 
 func (b *boot) setupBackends(ctx context.Context) error {
 	closeContainers := b.setupContainers(ctx)
+	// Registered before the Kit launcher so its cleanups (the harness
+	// listener and the egress relay) run first: cleanups unwind LIFO, and a
+	// session teardown needs the Docker client the pool still owns.
+	b.addCleanup(closeContainers)
 	err := b.connectNATS(ctx)
 	if err == nil {
 		b.setupKitLauncher(ctx)
 	}
-
-	b.addCleanup(closeContainers)
 	return err
 }
 

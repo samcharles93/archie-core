@@ -69,6 +69,10 @@ type Options struct {
 	// Gateway and State are the two remote contracts the dashboard consumes.
 	Gateway ServiceTarget
 	State   ServiceTarget
+	// Harness is the daemon's session contract. Optional: empty leaves the
+	// setup terminal unwired, and /api/harness reports terminal:false rather
+	// than offering a control that would fail.
+	Harness ServiceTarget
 
 	// DependencyTimeout bounds each readiness probe's call to a dependency.
 	DependencyTimeout time.Duration
