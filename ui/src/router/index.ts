@@ -119,7 +119,7 @@ const routes = [
       settings: true,
       label: "Status",
       description:
-        "Update state, configuration sources, and the listen address.",
+        "Service presence, dependency health, and build versions.",
       section: "settings",
     },
   },
@@ -394,6 +394,12 @@ const routes = [
     meta: {
       label: "Settings",
     },
+  },
+  {
+    path: "/:pathMatch(.*)*",
+    name: "not-found",
+    component: () => import("@/base/NotFoundPage.vue"),
+    meta: { nav: false },
   },
   // Paths from before Settings existed, kept for bookmarks and chat history.
   ...Object.entries({
