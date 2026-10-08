@@ -77,6 +77,7 @@ func (rt *Runtime) Start(ctx context.Context) error {
 	rt.started = true
 	loopCtx, cancel := context.WithCancel(ctx)
 	rt.cancel = cancel
+	rt.nudges = make(map[string]chan struct{})
 	for _, name := range rt.registry.Names() {
 		c, _ := rt.registry.Get(name)
 		if c.Manifest().OnInput {
@@ -331,4 +332,30 @@ func (rt *Runtime) emitRun(name string, at time.Time, result PassResult) {
 			"at":      a.At,
 		})
 	}
+}
+
+// ReplaceDefinitions drains current passes before replacing data-defined
+// curators. Built-in engines and the registry's observation surface survive.
+func (rt *Runtime) ReplaceDefinitions(ctx context.Context, definitions []Definition) error {
+	candidate := NewRegistry(rt.registry.Host())
+	for _, def := range definitions {
+		if !def.Enabled {
+			continue
+		}
+		if held, ok := rt.registry.Get(def.Name); ok {
+			if _, custom := held.(*DefinitionEngine); !custom {
+				return fmt.Errorf("%w: %s", ErrDuplicate, def.Name)
+			}
+		}
+		if err := candidate.Register(NewDefinitionEngine(def)); err != nil {
+			return err
+		}
+	}
+	stopCtx, cancel := context.WithTimeout(ctx, defaultPassTimeout)
+	defer cancel()
+	if err := rt.Stop(stopCtx); err != nil {
+		return err
+	}
+	rt.registry.replaceDefinitions(candidate)
+	return rt.Start(ctx)
 }

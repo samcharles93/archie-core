@@ -191,9 +191,11 @@ export type ControlPlanePage =
   | "workflows"
   | "profiles"
   | "credentials"
-  | "playbooks";
+  | "playbooks"
+  | "curators";
 
 const PAGE_RESOURCES: Record<ControlPlanePage, string[]> = {
+  curators: ["curators"],
   profiles: ["agent-profiles"],
   credentials: ["credential-bindings"],
   playbooks: ["eda-playbooks"],

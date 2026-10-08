@@ -199,7 +199,7 @@ func (r *Registry) Names() []string {
 // error. This is the family's failure-isolation boundary for lifecycle.
 func (r *Registry) Start(ctx context.Context) error {
 	r.mu.Lock()
-	if r.state != stateIdle {
+	if r.state == stateRunning {
 		r.mu.Unlock()
 		return ErrStarted
 	}
@@ -311,4 +311,21 @@ func isNilEngine(c CuratorEngine) bool {
 		return v.IsNil()
 	}
 	return false
+}
+
+func (r *Registry) replaceDefinitions(candidate *Registry) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.order = slices.DeleteFunc(r.order, func(name string) bool {
+		if _, custom := r.curators[name].(*DefinitionEngine); !custom {
+			return false
+		}
+		delete(r.curators, name)
+		delete(r.status, name)
+		return true
+	})
+	for _, name := range candidate.order {
+		r.curators[name] = candidate.curators[name]
+		r.order = append(r.order, name)
+	}
 }

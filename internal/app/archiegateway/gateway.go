@@ -8,6 +8,7 @@ import (
 
 	"google.golang.org/grpc"
 
+	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
@@ -66,6 +67,18 @@ func (b *server) startGatewayRuntime(ctx context.Context, actor gateway.ChatTask
 	if err := b.curatorRuntime.Start(ctx); err != nil {
 		b.log.Error("curator runtime startup", "err", err)
 	}
+	defs, version, err := b.controlPlane.Curators(ctx)
+	if err == nil {
+		err = b.applyCurators(ctx, defs)
+	}
+	b.applyStatus.Report(ctx, controlplane.CuratorsKind, version, err)
+	if err != nil {
+		b.log.Error("curator definitions apply failed", "err", err)
+	}
+	if err := b.watchCurators(ctx, version); err != nil {
+		return nil, fmt.Errorf("watch curators: %w", err)
+	}
+
 	return contract, nil
 }
 

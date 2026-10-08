@@ -11,6 +11,8 @@ import (
 	"github.com/samcharles93/ai-sdk/runtime"
 
 	"github.com/samcharles93/archie-core/internal/agentexec/modelloop"
+	"github.com/samcharles93/archie-core/internal/app/controlplane"
+	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/events"
 	infraMemory "github.com/samcharles93/archie-core/internal/infrastructure/memory"
@@ -42,30 +44,6 @@ func (b *server) setupCurators(ctx context.Context) {
 
 	if err := b.curatorRegistry.Register(sessioncurator.New(sessioncurator.DefaultInterval, infraMemory.EngineName)); err != nil {
 		log.Error("session-memory curator registration failed", "err", err)
-	}
-
-	for _, def := range b.cfg.Curators {
-		if !def.Enabled {
-			continue
-		}
-		engine := curator.NewDefinitionEngine(curator.Definition{
-			Name:         def.Name,
-			Enabled:      def.Enabled,
-			Instructions: def.Instructions,
-			Manifest: curator.Manifest{
-				Interval:      def.Interval.Std(),
-				Cooldown:      def.Cooldown.Std(),
-				OnInput:       def.OnInput,
-				Tools:         def.Tools,
-				Skills:        def.Skills,
-				MemoryEngine:  def.MemoryEngine,
-				Conversations: def.Conversations,
-				Model:         def.Model,
-			},
-		})
-		if err := b.curatorRegistry.Register(engine); err != nil {
-			log.Error("config curator registration failed", "curator", def.Name, "err", err)
-		}
 	}
 
 	b.curatorRuntime = curator.NewRuntime(b.curatorRegistry, curator.RuntimeConfig{})
@@ -167,4 +145,24 @@ func (r curatorLLMRunner) Chat(ctx context.Context, req curator.ChatRequest) (cu
 		calls = append(calls, curator.ToolCall{Name: call.ToolName, Input: call.Input})
 	}
 	return curator.ChatResult{Text: res.Text, ToolCalls: calls}, nil
+}
+
+func (b *server) applyCurators(ctx context.Context, defs []config.CuratorDefinition) error {
+	definitions := make([]curator.Definition, 0, len(defs))
+	for _, def := range defs {
+		definitions = append(definitions, controlplane.CuratorDefinition(def))
+	}
+	return b.curatorRuntime.ReplaceDefinitions(ctx, definitions)
+}
+
+func (b *server) watchCurators(ctx context.Context, version int64) error {
+	updates, err := b.controlPlane.WatchCurators(ctx, version)
+	if err != nil {
+		return err
+	}
+	watchStatus(ctx, b.applyStatus.Report, b.log, controlplane.CuratorsKind, "curators", version, updates, b.controlPlane.WatchCurators,
+		func(update controlplane.AppliedCurators) int64 { return update.Version },
+		func(update controlplane.AppliedCurators) error { return update.Err },
+		func(update controlplane.AppliedCurators) error { return b.applyCurators(ctx, update.Definitions) })
+	return nil
 }

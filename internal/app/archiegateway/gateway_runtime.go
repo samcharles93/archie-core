@@ -115,7 +115,7 @@ func watchStatus[T any](
 	open func(ctx context.Context, after int64) (<-chan T, error),
 	versionOf func(T) int64,
 	errOf func(T) error,
-	deliver func(T),
+	deliver func(T) error,
 ) {
 	var lastApplyErr, streamErr error
 	watchOpen := func(ctx context.Context, after int64) (<-chan T, error) {
@@ -140,7 +140,8 @@ func watchStatus[T any](
 				log.Error("control-plane watch failed", "kind", kind, "err", err)
 				return
 			}
-			deliver(update)
+			lastApplyErr = deliver(update)
+			report(ctx, kind, versionOf(update), lastApplyErr)
 		},
 		func() {
 			// A refusal already on the record outranks the outage; it is the
@@ -171,9 +172,9 @@ func (b *server) watchPersonas(ctx context.Context, version int64) error {
 		b.controlPlane.WatchPersonas,
 		func(update controlplane.AppliedPersonas) int64 { return update.Version },
 		func(update controlplane.AppliedPersonas) error { return update.Err },
-		func(update controlplane.AppliedPersonas) {
+		func(update controlplane.AppliedPersonas) error {
 			b.applyPersonas(update.Collection, update.Version)
-			b.applyStatus.Report(ctx, controlplane.PersonasKind, update.Version, nil)
+			return nil
 		})
 	return nil
 }
@@ -200,9 +201,9 @@ func (b *server) watchSoul(ctx context.Context, version int64) error {
 		b.controlPlane.WatchSoul,
 		func(update controlplane.AppliedSoul) int64 { return update.Version },
 		func(update controlplane.AppliedSoul) error { return update.Err },
-		func(update controlplane.AppliedSoul) {
+		func(update controlplane.AppliedSoul) error {
 			b.applySoul(update.Soul, update.Version)
-			b.applyStatus.Report(ctx, controlplane.SoulKind, update.Version, nil)
+			return nil
 		})
 	return nil
 }

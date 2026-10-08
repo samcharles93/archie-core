@@ -33,7 +33,7 @@ func Applicability() map[string][]string {
 	for _, kind := range []string{"provider-settings", "model-role-assignments", "repository-policies", "scheduling-policy", "tool-settings", "plugin-settings", "review-settings", "channel-settings", "container-runtime-policies", "credential-bindings", "identity-grants", "agent-profiles", "workflow-execution-settings", "extension-settings", "workflow-definitions", "workflow-enablement", "schedules", "eda-playbooks"} {
 		kinds[kind] = []string{Daemon}
 	}
-	for _, kind := range []string{"provider-settings", "model-role-assignments", "tool-settings", "channel-settings", "plugin-settings", "extension-settings", "personas", "soul", "skills"} {
+	for _, kind := range []string{"provider-settings", "model-role-assignments", "tool-settings", "channel-settings", "plugin-settings", "extension-settings", "personas", "soul", "skills", "curators"} {
 		kinds[kind] = append(kinds[kind], Gateway)
 	}
 	for _, kind := range []string{"channel-settings", "extension-settings"} {
