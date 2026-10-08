@@ -171,6 +171,7 @@ func (s *EDA) sourceValue(r postgresdb.Source) (source.Source, error) {
 	}
 	return source.Source{
 		Path: r.Path, Name: r.Name, DeliveryHeader: r.DeliveryHeader, Signing: source.Signing(r.Signing), Secret: secret,
+		OrgID: org.OrgID(r.OrgID), WorkspaceID: org.WorkspaceID(r.WorkspaceID),
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}, nil
 }

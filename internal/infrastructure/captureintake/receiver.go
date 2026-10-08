@@ -86,12 +86,15 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if rc.refused(r, path) {
+	// Resolved before the delivery check so the check runs against the
+	// source's owning org, not always the default org. An unknown source
+	// authorizes as the default org.
+	src := rc.resolveSource(r, path)
+
+	if rc.refused(r, path, orgOf(src)) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-
-	src := rc.resolveSource(r, path)
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytesOrFallback(rc.MaxBodyBytes))
 	body, err := io.ReadAll(r.Body)
@@ -157,12 +160,12 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // refused applies the network rules before the body is read. A refused event
 // is not stored, only counted on its source with the sender's address.
-func (rc *Receiver) refused(r *http.Request, path string) bool {
+func (rc *Receiver) refused(r *http.Request, path string, owner org.OrgID) bool {
 	if rc.Delivery == nil {
 		return false
 	}
 	addr := remoteAddrHost(r)
-	if rc.Delivery.AuthorizeDelivery(org.DefaultOrgID, path, addr).Allowed {
+	if rc.Delivery.AuthorizeDelivery(owner, path, addr).Allowed {
 		return false
 	}
 	if rc.Refusals != nil {
@@ -171,6 +174,15 @@ func (rc *Receiver) refused(r *http.Request, path string) bool {
 		}
 	}
 	return true
+}
+
+// orgOf reports the org that owns src, or the default org when the source
+// is unknown: an unknown source has no owner to authorize against.
+func orgOf(src *source.Source) org.OrgID {
+	if src == nil || src.OrgID == "" {
+		return org.DefaultOrgID
+	}
+	return src.OrgID
 }
 
 // resolveSource looks up the source a path names. A lookup error is logged

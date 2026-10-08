@@ -571,6 +571,9 @@ message Source {
   google.protobuf.Timestamp updated_at = 5;
   string name = 6;
   string delivery_header = 7;
+  // org_id and workspace_id are the source's owning org; read-only here.
+  string org_id = 8;
+  string workspace_id = 9;
 }
 
 // WorkflowStat mirrors storecontract.WorkflowStat.

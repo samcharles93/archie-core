@@ -34,11 +34,11 @@ func TestCaptureCountPruneStaysInOrg(t *testing.T) {
 		return id
 	}
 	// Quiet org first: its captures must survive the loud org's volume.
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		insert("prune-b", base.Add(time.Duration(i)*time.Second))
 	}
 	var loud []string
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		loud = append(loud, insert("prune-a", base.Add(time.Duration(10+i)*time.Second)))
 	}
 	count := func(owner string) int {

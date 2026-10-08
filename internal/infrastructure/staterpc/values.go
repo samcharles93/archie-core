@@ -212,6 +212,7 @@ func capturedEventValue(c *pb.CapturedEvent) storecontract.CapturedEvent {
 func sourceProto(s source.Source) *pb.Source {
 	return &pb.Source{
 		Path: s.Path, Name: s.Name, DeliveryHeader: s.DeliveryHeader, Signing: string(s.Signing), Secret: s.Secret,
+		OrgId: string(s.OrgID), WorkspaceId: string(s.WorkspaceID),
 		CreatedAt: timestamp(s.CreatedAt), UpdatedAt: timestamp(s.UpdatedAt),
 	}
 }
@@ -222,6 +223,7 @@ func sourceValue(s *pb.Source) source.Source {
 	}
 	return source.Source{
 		Path: s.Path, Name: s.Name, DeliveryHeader: s.DeliveryHeader, Signing: source.Signing(s.Signing), Secret: s.Secret,
+		OrgID: org.OrgID(s.OrgId), WorkspaceID: org.WorkspaceID(s.WorkspaceId),
 		CreatedAt: timeValue(s.CreatedAt), UpdatedAt: timeValue(s.UpdatedAt),
 	}
 }

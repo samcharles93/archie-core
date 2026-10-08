@@ -5,6 +5,8 @@ package source
 import (
 	"errors"
 	"time"
+
+	"github.com/samcharles93/archie-core/internal/domain/org"
 )
 
 // Signing is a source's signing state. A source is signed by default; turning
@@ -35,11 +37,14 @@ var (
 
 // Source is one capture endpoint. Path is its URL segment and its identity:
 // captures and binding matchers reference it, so it does not change after
-// creation. Secret is the HMAC key a signed sender signs with.
+// creation. Secret is the HMAC key a signed sender signs with. OrgID is the
+// org that owns the source, set from the acting org on creation.
 type Source struct {
 	Path string `json:"path"`
 	// Name is the operator's label; Path stays the source's identity.
-	Name string `json:"name,omitempty"`
+	Name        string          `json:"name,omitempty"`
+	OrgID       org.OrgID       `json:"org_id,omitempty"`
+	WorkspaceID org.WorkspaceID `json:"workspace_id,omitempty"`
 	// DeliveryHeader is the header the sender repeats unchanged on every
 	// retry of one delivery, so a retry dispatches no second run. Empty
 	// counts every arrival as its own delivery.

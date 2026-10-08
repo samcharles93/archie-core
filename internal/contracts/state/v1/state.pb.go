@@ -2988,8 +2988,11 @@ type Source struct {
 	UpdatedAt      *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	Name           string                 `protobuf:"bytes,6,opt,name=name,proto3" json:"name,omitempty"`
 	DeliveryHeader string                 `protobuf:"bytes,7,opt,name=delivery_header,json=deliveryHeader,proto3" json:"delivery_header,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// org_id and workspace_id are the source's owning org; read-only here.
+	OrgId         string `protobuf:"bytes,8,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	WorkspaceId   string `protobuf:"bytes,9,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Source) Reset() {
@@ -3067,6 +3070,20 @@ func (x *Source) GetName() string {
 func (x *Source) GetDeliveryHeader() string {
 	if x != nil {
 		return x.DeliveryHeader
+	}
+	return ""
+}
+
+func (x *Source) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *Source) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
 	}
 	return ""
 }
@@ -15424,7 +15441,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\n" +
 	"repo_param\x18\x0f \x01(\tR\trepoParam\x12\x15\n" +
 	"\x06org_id\x18\x10 \x01(\tR\x05orgIdJ\x04\b\n" +
-	"\x10\vR\x06secret\"\x81\x02\n" +
+	"\x10\vR\x06secret\"\xbb\x02\n" +
 	"\x06Source\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
 	"\asigning\x18\x02 \x01(\tR\asigning\x12\x16\n" +
@@ -15434,7 +15451,9 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x12\n" +
 	"\x04name\x18\x06 \x01(\tR\x04name\x12'\n" +
-	"\x0fdelivery_header\x18\a \x01(\tR\x0edeliveryHeader\"\x84\x02\n" +
+	"\x0fdelivery_header\x18\a \x01(\tR\x0edeliveryHeader\x12\x15\n" +
+	"\x06org_id\x18\b \x01(\tR\x05orgId\x12!\n" +
+	"\fworkspace_id\x18\t \x01(\tR\vworkspaceId\"\x84\x02\n" +
 	"\fWorkflowStat\x12\x1a\n" +
 	"\bworkflow\x18\x01 \x01(\tR\bworkflow\x12\x12\n" +
 	"\x04runs\x18\x02 \x01(\x03R\x04runs\x12\x16\n" +

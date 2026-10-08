@@ -14,10 +14,15 @@ func TestAuthorizeDelivery(t *testing.T) {
 		ID: "github-only", Level: access.LevelObject, OrgID: org.DefaultOrgID, ObjectKind: access.KindSource, ObjectID: "github",
 		Text: `permit(principal, action == Archie::Action::"deliver", resource) when { context.addr.isInRange(ip("140.82.112.0/20")) };`,
 	}
+	acmeOnly := access.Policy{
+		ID: "acme-only", Level: access.LevelObject, OrgID: "acme", ObjectKind: access.KindSource, ObjectID: "hook",
+		Text: `permit(principal, action == Archie::Action::"deliver", resource) when { context.addr.isInRange(ip("10.0.0.0/8")) };`,
+	}
 	shipped := access.ShippedOrgPolicies(org.DefaultOrgID)
 
 	tests := []struct {
 		name     string
+		org      org.OrgID
 		policies []access.Policy
 		source   string
 		addr     string
@@ -29,6 +34,9 @@ func TestAuthorizeDelivery(t *testing.T) {
 		{name: "source policy refuses another sender", policies: append(shipped, sourceOnly), source: "github", addr: "203.0.113.9"},
 		{name: "source policy admits its sender", policies: append(shipped, sourceOnly), source: "github", addr: "140.82.112.5", allowed: true},
 		{name: "source policy leaves other sources alone", policies: append(shipped, sourceOnly), source: "ci", addr: "203.0.113.9", allowed: true},
+		{name: "other org's source policy refuses an out-of-range sender", org: "acme", policies: append(shipped, acmeOnly), source: "hook", addr: "203.0.113.9"},
+		{name: "other org's source policy admits its sender", org: "acme", policies: append(shipped, acmeOnly), source: "hook", addr: "10.1.2.3", allowed: true},
+		{name: "other org's source policy leaves the default org alone", policies: append(shipped, acmeOnly), source: "hook", addr: "203.0.113.9", allowed: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -36,7 +44,11 @@ func TestAuthorizeDelivery(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := engine.AuthorizeDelivery(org.DefaultOrgID, tt.source, tt.addr); got.Allowed != tt.allowed {
+			acting := tt.org
+			if acting == "" {
+				acting = org.DefaultOrgID
+			}
+			if got := engine.AuthorizeDelivery(acting, tt.source, tt.addr); got.Allowed != tt.allowed {
 				t.Fatalf("allowed = %v, want %v (%+v)", got.Allowed, tt.allowed, got)
 			}
 		})
