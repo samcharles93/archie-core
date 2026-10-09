@@ -5,6 +5,34 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.52.0] - 2026-10-09
+
+### archied
+
+- The harness page's setup terminal opens a real session: it starts an ephemeral container from a Kit profile, runs the CLI's own login and captures the OAuth tokens at the provider's token endpoint. Point the dashboard at the daemon with `[services.harness].target` and a `HARNESS_TOKEN` and it stops answering 503; the terminal is created at your browser's size. Takeover of a live task is not in this release.
+- A credential's token endpoint is refused when the run is not granted that service, instead of proxy-ing the provider's real tokens into the container.
+- Settings → Profiles, Credential bindings and Playbooks are editable from the dashboard, and curator definitions can be changed and applied without a restart.
+- Settings say whether each one applies live or needs a restart, show what is consuming resources, and report whether an apply landed.
+- Status shows each service's dependency checks, the agent workers and the broker.
+- The Logs page reads recent logs from every service, not just the daemon.
+- Captures and webhook sources are scoped to the org that owns them: the list, retention and delivery authorization all act in the right org, and a workflow definition resolves in its own org.
+- Chat settings are attributed to the signed-in user, and Settings → Tokens explains when a personal token cannot be created.
+- A channel enabled after Archie started works immediately; a channel that fails on its own recovers; a failed channel is no longer reported as enabled, and stored channel settings no longer save duplicate or unnormalized values.
+- The task table sorts, the command palette no longer scrolls sideways or loses its highlight, unknown routes render a not-found page, and configuration reload failures are shown instead of passing silently.
+- A scheduled job whose payload names a dangerous command is refused.
+- A disabled model provider is never served from the ambient API key.
+- `generate_video` is backed by ai-sdk's MiniMax video provider.
+- A dashboard token is no longer written to the startup log.
+
+### archie-agent
+
+- `workflow.call`: a call is keyed on its declared step path, its key is freed once the callee reaches a terminal state, and a caller waiting on a callee releases its capacity instead of holding it.
+- `command.run` honours step retry and `on_failure`.
+- A value passed between steps keeps its declared type, and optional result booleans are enforced only when the workflow declares them.
+- Capture tools have their results checked against the declared schema.
+- A single-cycle run waits for its in-flight tasks before exiting, and identity tasks inherit live settings.
+- Kit containers run Docker's init as PID 1, so orphaned processes are reaped instead of accumulating inside a long task.
+
 ## [1.51.1] - 2026-10-08
 
 ### archied
