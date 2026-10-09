@@ -4,7 +4,7 @@
 
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "shadcn-vue/tailwind.css";
+@import "./shadcn.css";
 
 /* ui/dist is committed, so nothing ignores it and Tailwind's automatic content
    detection scans it. That makes every build an input to the next one: class
