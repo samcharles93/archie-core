@@ -1,5 +1,6 @@
 import { parseDocument } from "yaml";
 
+import { branchingOf } from "./workflow-edit.ts";
 import type { WorkflowTrigger } from "./workflow-triggers";
 
 /**
@@ -26,6 +27,8 @@ export interface StepNodeData {
   retry?: number;
   continues?: boolean;
   branch?: string;
+  /** Whether the branch is one of several that all run, or a switch case. */
+  lane?: "parallel" | "switch";
   /** The name the engine records this step's run under, and which run of
    * that name it is: two unnamed repo.commit steps are commit 0 and 1. */
   stage?: string;
@@ -45,7 +48,7 @@ export interface StepNodeData {
 export type StepRole = "work" | "decision" | "waiting" | "exit";
 
 function stepRole(type: string): StepRole {
-  if (type.startsWith("gate.")) return "decision";
+  if (type.startsWith("gate.") || type === "switch") return "decision";
   if (type === "human.approve") return "waiting";
   if (type === "workflow.finish" || type === "workflow.handoff") return "exit";
   return "work";
@@ -119,7 +122,10 @@ export function restartAt(graph: WorkflowGraph, path: (string | number)[]): Rest
 
 export interface GraphNode {
   id: string;
-  type: "step" | "add";
+  type: "step" | "add" | "lane";
+  /** A lane's size, drawn behind its steps. */
+  style?: { width: string; height: string };
+  zIndex?: number;
   position: { x: number; y: number };
   data: StepNodeData;
 }
@@ -130,6 +136,8 @@ export interface GraphEdge {
   target: string;
   /** "flow" is run order; "data" is a reference to an earlier result. */
   kind: "flow" | "data";
+  /** A flow edge that skips past a switch none of whose cases matched. */
+  otherwise?: boolean;
   label?: string;
   sourceHandle?: string;
   targetHandle?: string;
@@ -148,6 +156,7 @@ const COLUMN = 280;
 
 const TYPE_TITLES: Record<string, string> = {
   parallel: "Parallel",
+  switch: "Switch",
   "agent.run": "Agent",
   "command.run": "Run commands",
   "repo.prepare": "Prepare worktree",
@@ -231,6 +240,7 @@ export function workflowGraph(source: string): WorkflowGraph {
   const edges: GraphEdge[] = [];
   const byStepID = new Map<string, string>();
   const pendingData: { from: string; to: string }[] = [];
+  const otherwise = new Set<string>();
 
   const start = "start";
   nodes.push({
@@ -256,9 +266,11 @@ export function workflowGraph(source: string): WorkflowGraph {
     branch?: string,
     resume?: string,
     path?: (string | number)[],
+    lane?: "parallel" | "switch",
   ): string => {
     const record = isMapping(step) ? step : {};
-    const type = isMapping(record.parallel) ? "parallel" : typeof record.type === "string" ? record.type : "";
+    const branching = branchingOf(record);
+    const type = branching?.kind ?? (typeof record.type === "string" ? record.type : "");
     const settings = isMapping(record.settings) ? record.settings : {};
     const stepID = typeof record.id === "string" ? record.id : "";
     const id = `step-${key}`;
@@ -276,12 +288,13 @@ export function workflowGraph(source: string): WorkflowGraph {
         type,
         role: stepRole(type),
         step: path?.length === 2 ? String(Number(path[1]) + 1).padStart(2, "0") : undefined,
-        detail: stepDetail(type, settings),
+        detail: branching?.on ? `on ${branching.on.replace(/^steps\./, "")}` : stepDetail(type, settings),
         summary: stepSummary(settings),
         when: typeof record.when === "string" ? record.when : undefined,
         retry: isMapping(record.retry) && typeof record.retry.attempts === "number" ? record.retry.attempts : undefined,
         continues: record.on_failure === "continue",
         branch,
+        lane,
         path,
         stage: recordName,
         occurrence: occurrenceOf(recordName),
@@ -289,7 +302,8 @@ export function workflowGraph(source: string): WorkflowGraph {
       },
     });
     if (stepID) byStepID.set(stepID, id);
-    for (const ref of referencedSteps(record.settings, record.when)) pendingData.push({ from: ref, to: id });
+    const on = branching?.on ? `{{ ${branching.on} }}` : "";
+    for (const ref of referencedSteps([record.settings, on], record.when)) pendingData.push({ from: ref, to: id });
     return id;
   };
   const link = (from: string[], to: string, insertAfter?: (string | number)[]) => {
@@ -300,38 +314,61 @@ export function workflowGraph(source: string): WorkflowGraph {
         source,
         target: to,
         kind: "flow",
+        ...(otherwise.has(source) ? { otherwise: true } : {}),
         insertAfter: n === from.length - 1 ? insertAfter : undefined,
       }),
     );
   };
 
   for (const [i, step] of steps.entries()) {
-    if (isMapping(step) && isMapping(step.parallel)) {
-      const branches = Object.entries(step.parallel);
+    const branching = branchingOf(step);
+    if (branching) {
+      const { kind, base, branches } = branching;
       const parent = addStep(step, String(i + 1), 0, row * ROW, undefined, undefined, ["steps", i]);
       link(previous, parent, ["steps", i - 1]);
       row++;
-      // Each branch step records its own row under the parallel step, so the
-      // canvas lights every branch node from its own run.
-      const parallelName = typeof step.id === "string" ? step.id : "parallel";
+      // Each branch step records its own row under the parallel or switch
+      // step, so the canvas lights every branch node from its own run.
+      const parentName = isMapping(step) && typeof step.id === "string" ? step.id : kind;
+      // A switch with no default case lets the run go straight on when no
+      // case matches; that way out is drawn as a lane of its own.
+      const passes = kind === "switch" && !branches.some(([name]) => name === "default");
+      const lanes = branches.length + (passes ? 1 : 0);
       const ends: string[] = [];
       let depth = 0;
       branches.forEach(([name, branchSteps], column) => {
-        const x = (column - (branches.length - 1) / 2) * COLUMN;
+        const x = (column - (lanes - 1) / 2) * COLUMN;
         let tail = [parent];
-        const path = ["steps", i, "parallel", name];
-        (Array.isArray(branchSteps) ? branchSteps : []).forEach((branchStep, j) => {
-          const id = addStep(branchStep, `${i + 1}-${name}-${j + 1}`, x, (row + j) * ROW, name, parallelName, ["steps", i, "parallel", name, j]);
+        const path = ["steps", i, ...base, name];
+        branchSteps.forEach((branchStep, j) => {
+          const id = addStep(branchStep, `${i + 1}-${name}-${j + 1}`, x, (row + j) * ROW, name, parentName, [...path, j], kind);
           link(tail, id, [...path, j - 1]);
           tail = [id];
-          depth = Math.max(depth, j + 1);
         });
-        const count = Array.isArray(branchSteps) ? branchSteps.length : 0;
+        depth = Math.max(depth, branchSteps.length);
         const end = `add-${i}-${name}`;
-        nodes.push({ id: end, type: "add", position: { x: x + 104, y: (row + count) * ROW }, data: { kind: "step", key: end, title: "", type: "", detail: "", branch: name, insertAfter: [...path, count - 1] } });
+        nodes.push({ id: end, type: "add", position: { x: x + 104, y: (row + branchSteps.length) * ROW }, data: { kind: "step", key: end, title: "", type: "", detail: "", branch: name, lane: kind, insertAfter: [...path, branchSteps.length - 1] } });
         link(tail, end);
         ends.push(end);
       });
+      const height = (Math.max(depth, 1) + 1) * ROW - 24;
+      branches.forEach(([name], column) => {
+        const x = (column - (lanes - 1) / 2) * COLUMN;
+        nodes.push({
+          id: `lane-${i}-${name}`,
+          type: "lane",
+          position: { x: x - 12, y: row * ROW - 40 },
+          style: { width: `${COLUMN - 16}px`, height: `${height}px` },
+          zIndex: -1,
+          data: { kind: "step", key: name, title: name, type: "", detail: "", lane: kind },
+        });
+      });
+      if (passes) {
+        // The run's way past an unmatched switch: an edge from the switch to
+        // the step after it, drawn down the last column.
+        ends.push(parent);
+        otherwise.add(parent);
+      }
       previous = ends;
       row += Math.max(depth, 1) + 1;
       continue;

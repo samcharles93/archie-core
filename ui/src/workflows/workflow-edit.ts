@@ -7,10 +7,38 @@ import { isMap, isScalar, isSeq, parseDocument } from "yaml";
  */
 
 /** Where a step lives in the document: ["steps", 2], or
- * ["steps", 1, "parallel", "docs", 0] for a step inside a branch. */
+ * ["steps", 1, "parallel", "docs", 0] for a step inside a branch, or
+ * ["steps", 1, "switch", "cases", "false", 0] for a step inside a case. */
 export type StepPath = (string | number)[];
 
 export type StepRecord = Record<string, unknown>;
+
+/** A step's nested step lists: parallel branches, which all run, or switch
+ * cases, of which one runs. base is where the lists sit under the step. */
+export interface Branching {
+  kind: "parallel" | "switch";
+  base: string[];
+  on?: string;
+  branches: [string, unknown[]][];
+}
+
+const isRecord = (value: unknown): value is StepRecord => typeof value === "object" && value !== null && !Array.isArray(value);
+const lists = (value: unknown): [string, unknown[]][] =>
+  isRecord(value) ? Object.entries(value).map(([name, steps]) => [name, Array.isArray(steps) ? steps : []]) : [];
+
+export function branchingOf(step: unknown): Branching | undefined {
+  if (!isRecord(step)) return undefined;
+  if (isRecord(step.parallel)) return { kind: "parallel", base: ["parallel"], branches: lists(step.parallel) };
+  if (isRecord(step.switch))
+    return { kind: "switch", base: ["switch", "cases"], on: typeof step.switch.on === "string" ? step.switch.on : "", branches: lists(step.switch.cases) };
+  return undefined;
+}
+
+/** Parallel branches share a worktree, so only read-only agents and calls run
+ * there. A switch case runs alone and takes any step. */
+export function inParallel(path: StepPath): boolean {
+  return path.slice(2).includes("parallel");
+}
 
 /** A step as plain data, or undefined when the path names none. */
 export function stepAt(source: string, path: StepPath): StepRecord | undefined {
@@ -31,7 +59,7 @@ export function replaceStep(source: string, path: StepPath, step: StepRecord): s
 export function insertStep(source: string, after: StepPath, type: string): { source: string; path: StepPath } {
   const document = parseDocument(source);
   const list = after.slice(0, -1);
-  const inBranch = list.length > 1;
+  const inBranch = inParallel(list);
   if (inBranch && !["agent.run", "workflow.call"].includes(type)) throw new Error("Branches allow only read-only agents and workflow calls.");
   let steps = document.getIn(list, true);
   if (!isSeq(steps)) {
@@ -40,30 +68,42 @@ export function insertStep(source: string, after: StepPath, type: string): { sou
   }
   if (!isSeq(steps)) return { source, path: [] };
   const index = Math.min(Math.max(Number(after.at(-1)) + 1, 0), steps.items.length);
-  const step = type === "parallel" ? { parallel: { "branch-1": [], "branch-2": [] } } : { type, ...(inBranch && type === "agent.run" ? { settings: { read_only: true } } : {}) };
+  const step = type === "parallel" ? { parallel: { "branch-1": [], "branch-2": [] } }
+    : type === "switch" ? { switch: { on: "", cases: { "true": [], default: [] } } } : { type, ...(inBranch && type === "agent.run" ? { settings: { read_only: true } } : {}) };
   steps.items.splice(index, 0, document.createNode(step));
   return { source: document.toString(), path: [...list, index] };
 }
 
-function checkBranchName(name: string): void {
+function checkBranchName(name: string, kind: Branching["kind"]): void {
+  if (kind === "switch") {
+    if (!name || name.includes("/")) throw new Error("A case is the value it matches, without a slash.");
+    return;
+  }
   if (!/^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/.test(name)) throw new Error("Use a lowercase branch name with letters, digits, dots or dashes.");
 }
 
+/** The map of a step's branches or cases, with what kind of step holds it. */
+function branchMap(document: ReturnType<typeof parseDocument>, path: StepPath) {
+  const step = document.getIn(path, true);
+  const branching = branchingOf(isMap(step) ? step.toJSON() : undefined);
+  const branches = branching ? document.getIn([...path, ...branching.base], true) : undefined;
+  if (!branching || !isMap(branches)) throw new Error("This step has no branches.");
+  return { kind: branching.kind, branches };
+}
+
 export function addBranch(source: string, path: StepPath, name: string): string {
-  checkBranchName(name);
   const document = parseDocument(source);
-  const branches = document.getIn([...path, "parallel"], true);
-  if (!isMap(branches)) throw new Error("This step has no branches.");
+  const { kind, branches } = branchMap(document, path);
+  checkBranchName(name, kind);
   if (branches.has(name)) throw new Error(`Branch ${name} already exists.`);
   branches.set(name, document.createNode([]));
   return document.toString();
 }
 
 export function renameBranch(source: string, path: StepPath, name: string, next: string): string {
-  checkBranchName(next);
   const document = parseDocument(source);
-  const branches = document.getIn([...path, "parallel"], true);
-  if (!isMap(branches)) throw new Error("This step has no branches.");
+  const { kind, branches } = branchMap(document, path);
+  checkBranchName(next, kind);
   if (name !== next && branches.has(next)) throw new Error(`Branch ${next} already exists.`);
   const pair = branches.items.find((pair) => isScalar(pair.key) && pair.key.value === name);
   if (!pair || !isScalar(pair.key)) throw new Error(`Branch ${name} does not exist.`);
@@ -73,8 +113,9 @@ export function renameBranch(source: string, path: StepPath, name: string, next:
 
 export function deleteBranch(source: string, path: StepPath, name: string): string {
   const document = parseDocument(source);
-  const branches = document.getIn([...path, "parallel"], true);
-  if (!isMap(branches) || branches.items.length <= 2) throw new Error("Parallel needs at least two branches.");
+  const { kind, branches } = branchMap(document, path);
+  if (kind === "parallel" && branches.items.length <= 2) throw new Error("Parallel needs at least two branches.");
+  if (branches.items.length <= 1) throw new Error("A switch needs at least one case.");
   branches.delete(name);
   return document.toString();
 }
@@ -124,15 +165,13 @@ export function earlierStepIDs(source: string, path: StepPath): string[] {
     if (typeof step !== "object" || step === null) return;
     const record = step as StepRecord;
     if (typeof record.id === "string") ids.push(record.id);
-    if (typeof record.parallel === "object" && record.parallel !== null)
-      for (const branch of Object.values(record.parallel as Record<string, unknown[]>))
-        if (Array.isArray(branch)) branch.forEach(collect);
+    for (const [, branch] of branchingOf(record)?.branches ?? []) branch.forEach(collect);
   };
   steps.slice(0, top).forEach(collect);
-  if (path.length === 5) {
-    const branch = (steps[top] as StepRecord | undefined)?.parallel as Record<string, unknown[]> | undefined;
-    const own = branch?.[path[3] as string];
-    if (Array.isArray(own)) own.slice(0, path[4] as number).forEach(collect);
+  if (path.length > 2) {
+    const name = path.at(-2) as string;
+    const own = branchingOf(steps[top])?.branches.find(([branch]) => branch === name)?.[1];
+    own?.slice(0, path.at(-1) as number).forEach(collect);
   }
   return ids;
 }

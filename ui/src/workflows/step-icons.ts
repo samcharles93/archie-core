@@ -1,4 +1,4 @@
-import { Bot, FileSearch, GitBranch, MessageSquare, ShieldCheck, Terminal, UserCheck, Workflow } from "@lucide/vue";
+import { Bot, FileSearch, GitBranch, MessageSquare, ShieldCheck, Split, Terminal, UserCheck, Workflow } from "@lucide/vue";
 import type { Component } from "vue";
 
 const GROUP_ICONS: Record<string, Component> = {
@@ -25,6 +25,8 @@ const GROUP_TITLES: Record<string, string> = {
 
 /** The icon for a step type, by the area its name starts with. */
 export function stepIcon(type: string): Component {
+  if (type === "parallel") return GitBranch;
+  if (type === "switch") return Split;
   return GROUP_ICONS[type.split(".")[0]] ?? Workflow;
 }
 

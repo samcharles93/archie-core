@@ -22,7 +22,8 @@ import AddNode from "./AddNode.vue";
 import InsertEdge from "./InsertEdge.vue";
 import StepNode from "./StepNode.vue";
 import StepTypeItems from "./StepTypeItems.vue";
-import type { StepPath } from "./workflow-edit";
+import { inParallel, type StepPath } from "./workflow-edit";
+import LaneNode from "./LaneNode.vue";
 import { restartAt, stepTitle, withRuns, workflowGraph, type StageRun, type StepNodeData } from "./workflow-graph";
 import type { WorkflowTrigger } from "./workflow-triggers";
 
@@ -48,9 +49,9 @@ const emit = defineEmits<{
 
 const NODE_WIDTH = 240;
 const editable = computed(() => !!props.types?.length);
-const types = computed(() => [...(props.types ?? []), "parallel"]);
+const types = computed(() => [...(props.types ?? []), "parallel", "switch"]);
 const branchTypes = computed(() => types.value.filter((type) => ["agent.run", "workflow.call"].includes(type)));
-const typesAt = (path?: StepPath) => path && path.length > 2 ? branchTypes.value : types.value;
+const typesAt = (path?: StepPath) => (path && inParallel(path) ? branchTypes.value : types.value);
 
 const container = ref<HTMLElement | null>(null);
 const graph = computed(() => withRuns(workflowGraph(props.yaml), props.stages ?? []));
@@ -64,6 +65,7 @@ const nodes = computed(() =>
     // Each trigger past the second makes the start node a line taller.
     const drop = Math.max(0, (props.triggers?.length ?? 0) - 2) * 18;
     if (drop) node = { ...node, position: { ...node.position, y: node.position.y + drop } };
+    if (node.type === "lane") return node;
     return JSON.stringify(node.data.path ?? null) === selectedKey.value && props.selected
       ? { ...node, data: { ...node.data, selected: true } }
       : node;
@@ -73,12 +75,13 @@ const nodes = computed(() =>
 // colour of how that step went, and moves while the step is running.
 const runs = computed(() => new Map(graph.value.nodes.map((node) => [node.id, node.data.run?.status])));
 const edges = computed(() =>
-  graph.value.edges.map(({ label, offset, insertAfter, ...edge }) =>
+  graph.value.edges.map(({ label, offset, insertAfter, otherwise, ...edge }) =>
     edge.kind === "flow"
       ? {
           ...edge,
           type: "insert",
-          data: { trace: runs.value.get(edge.target), insertAfter, types: typesAt(insertAfter), editable: editable.value, onInsert: (after: StepPath, type: string) => emit("insert", after, type) },
+          ...(otherwise ? { sourceHandle: "otherwise" } : {}),
+          data: { trace: runs.value.get(edge.target), otherwise, insertAfter, types: typesAt(insertAfter), editable: editable.value, onInsert: (after: StepPath, type: string) => emit("insert", after, type) },
         }
       : {
           ...edge,
@@ -121,7 +124,7 @@ function openMenu(event: MouseEvent, step?: StepNodeData): void {
   menu.value = { open: true, x: event.clientX - (box?.left ?? 0), y: event.clientY - (box?.top ?? 0), step };
 }
 function onNodeMenu({ event, node }: NodeMouseEvent): void {
-  if (node.type === "add") return;
+  if (node.type !== "step") return;
   openMenu(event as MouseEvent, node.data as StepNodeData);
 }
 function onNodeClick({ node }: NodeMouseEvent): void {
@@ -155,6 +158,9 @@ const beforePath = computed(() => menuPath.value ? [...menuPath.value.slice(0, -
       <template #node-step="nodeProps">
         <StepNode v-bind="nodeProps" />
       </template>
+      <template #node-lane="nodeProps">
+        <LaneNode v-bind="nodeProps" />
+      </template>
       <template #node-add="nodeProps">
         <AddNode v-bind="nodeProps" />
       </template>
@@ -185,7 +191,7 @@ const beforePath = computed(() => menuPath.value ? [...menuPath.value.slice(0, -
             <DropdownMenuSubTrigger>Insert after</DropdownMenuSubTrigger>
             <DropdownMenuSubContent class="w-52"><StepTypeItems :types="typesAt(menuPath)" @pick="emit('insert', menuPath, $event)" /></DropdownMenuSubContent>
           </DropdownMenuSub>
-          <DropdownMenuItem v-if="menu.step.type !== 'parallel'" @select="emit('duplicate', menuPath)"><Copy />Duplicate</DropdownMenuItem>
+          <DropdownMenuItem v-if="!['parallel', 'switch'].includes(menu.step.type)" @select="emit('duplicate', menuPath)"><Copy />Duplicate</DropdownMenuItem>
           <DropdownMenuItem @select="emit('move', menuPath, -1)"><ArrowUp />Move up</DropdownMenuItem>
           <DropdownMenuItem @select="emit('move', menuPath, 1)"><ArrowDown />Move down</DropdownMenuItem>
           <DropdownMenuSeparator />

@@ -2,6 +2,7 @@ import { computed, onMounted, ref, type Ref } from "vue";
 import { parse } from "yaml";
 
 import { api } from "@/lib/api";
+import { branchingOf } from "./workflow-edit.ts";
 import { useControlPlaneStore } from "@/stores/control-plane";
 import type { Binding } from "@/bindings/binding-draft";
 
@@ -72,7 +73,7 @@ export function triggersFor(id: string, sources: TriggerSources): WorkflowTrigge
 function startsVia(value: unknown, target: string): string {
   const steps = isMapping(value) && Array.isArray(value.steps) ? value.steps : [];
   const all = steps.flatMap((step) =>
-    isMapping(step) && isMapping(step.parallel) ? Object.values(step.parallel).flat() : [step],
+    branchingOf(step)?.branches.flatMap(([, branch]) => branch) ?? [step],
   );
   for (const step of all) {
     if (!isMapping(step) || !isMapping(step.settings)) continue;

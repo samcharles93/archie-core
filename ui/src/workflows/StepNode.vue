@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { Handle, Position } from "@vue-flow/core";
-import { Flag, GitBranch, Play, Repeat, SkipForward, Webhook, CircleDot, BookOpen, Workflow } from "@lucide/vue";
+import { Flag, Play, Repeat, SkipForward, Webhook, CircleDot, BookOpen, Workflow } from "@lucide/vue";
 
 import { stepIcon } from "./step-icons";
 import type { StepNodeData } from "./workflow-graph";
@@ -57,9 +57,6 @@ function duration(ms?: number): string {
       <component :is="stepIcon(data.type)" v-else class="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
       <span v-if="data.step" class="font-mono text-[11px] text-fg-subtle">{{ data.step }}</span>
       <span class="truncate text-sm font-medium" :title="data.title">{{ data.title }}</span>
-      <span v-if="data.branch" class="ml-auto flex items-center gap-0.5 text-[11px] text-fg-subtle">
-        <GitBranch class="size-3" aria-hidden="true" />{{ data.branch }}
-      </span>
     </div>
     <div v-if="data.type && data.type !== data.title" class="truncate font-mono text-[11px] text-fg-subtle">{{ data.type }}</div>
     <ul v-if="data.kind === 'start' && data.triggers?.length" class="mt-1 space-y-0.5">
@@ -96,5 +93,6 @@ function duration(ms?: number): string {
     </div>
     <Handle type="source" :position="Position.Bottom" />
     <Handle id="data-out" type="source" :position="Position.Right" class="!opacity-0" />
+    <Handle v-if="data.type === 'switch'" id="otherwise" type="source" :position="Position.Right" class="!opacity-0" />
   </div>
 </template>

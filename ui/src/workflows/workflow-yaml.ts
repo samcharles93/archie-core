@@ -1,4 +1,5 @@
 import { parseDocument } from "yaml";
+import { branchingOf } from "./workflow-edit.ts";
 
 /**
  * The workflow YAML editor's reading of what is typed.
@@ -86,10 +87,15 @@ export function parseWorkflowYaml(
   const declared = new Set<string>();
   for (const [i, step] of steps.entries()) {
     const where = `workflow ${id} step ${i + 1}`;
-    if (isMapping(step) && isMapping(step.parallel)) {
-      for (const [branch, branchSteps] of Object.entries(step.parallel)) {
-        if (!Array.isArray(branchSteps) || !branchSteps.length)
-          return { ok: false, message: `${where}: branch ${branch} needs a list of steps` };
+    const branching = branchingOf(step);
+    if (branching) {
+      if (branching.kind === "switch" && !branching.on)
+        return { ok: false, message: `${where}: switch.on names nothing` };
+      if (branching.on && !declared.has(branching.on.split(".")[1] ?? "") && branching.on.startsWith("steps."))
+        return { ok: false, message: `${where}: no earlier step has id "${branching.on.split(".")[1]}"` };
+      for (const [branch, branchSteps] of branching.branches) {
+        if (!branchSteps.length)
+          return { ok: false, message: `${where}: ${branching.kind === "switch" ? "case" : "branch"} ${branch} needs a list of steps` };
         const visible = new Set(declared);
         for (const [j, branchStep] of branchSteps.entries()) {
           const branchWhere = `${where} branch ${branch} step ${j + 1}`;
@@ -102,7 +108,7 @@ export function parseWorkflowYaml(
         for (const branchStep of branchSteps) declareID(branchStep, declared);
       }
       declareID(step, declared);
-      chips.push({ index: i + 1, type: "parallel" });
+      chips.push({ index: i + 1, type: branching.kind });
       continue;
     }
     const problem = checkStepType(step, where, known, repository) || laterReference(step, where, declared);
