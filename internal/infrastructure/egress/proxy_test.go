@@ -49,8 +49,8 @@ func TestTokenEndpointRefusedWhenNotGranted(t *testing.T) {
 			proxy := NewProxy(nil, ProxyOptions{
 				Resolver:   ResolverFunc(func(context.Context, string, string) (string, error) { return "", ErrUnbound }),
 				OAuthStore: stubOAuthStore{},
-				Dial: func(context.Context, string, string) (net.Conn, error) {
-					return net.Dial("tcp", upstream.Listener.Addr().String())
+				Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+					return (&net.Dialer{}).DialContext(ctx, "tcp", upstream.Listener.Addr().String())
 				},
 			})
 			session := &Session{
@@ -63,7 +63,7 @@ func TestTokenEndpointRefusedWhenNotGranted(t *testing.T) {
 			}
 			session.atRun.Store(true)
 
-			req := httptest.NewRequest(http.MethodPost, "http://token.example/token", strings.NewReader("grant_type=authorization_code"))
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "http://token.example/token", strings.NewReader("grant_type=authorization_code"))
 			rec := httptest.NewRecorder()
 			proxy.forward(context.Background(), rec, req, session, "http", "token.example", 80)
 
