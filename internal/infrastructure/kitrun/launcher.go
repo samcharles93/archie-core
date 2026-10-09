@@ -183,16 +183,20 @@ func (l *Launcher) LaunchSetup(ctx context.Context, req SetupRequest) (*Run, err
 		l.release(run)
 		return nil, err
 	}
-	// The image's own entrypoint is the harness CLI and would exit or run a
-	// task; a setup container holds still until the PTY's shell ends. The
-	// container environment stays empty (WorkerEnv nil): the harness env is
-	// passed explicitly on the exec, and no worker credential reaches it.
+	// The container runs archie's own agent as a keepalive rather than the
+	// image's entrypoint (the harness CLI, which would exit) and rather than an
+	// image binary such as sleep, which a Kit image need not provide. The
+	// environment stays empty (WorkerEnv nil): the harness env is passed
+	// explicitly on the exec, and no worker credential reaches it.
 	run.Container, err = l.Pool.AcquireKit(ctx, container.KitSpec{
-		Name:        "archie-kit-" + req.Session,
-		Image:       req.Kit,
-		Network:     run.network,
-		Worker:      []string{"sleep", "infinity"},
-		Binds:       append([]string{l.CAFile + ":" + caPath + ":ro"}, skillsBinds(k.skills, l.skillsDir())...),
+		Name:    "archie-kit-" + req.Session,
+		Image:   req.Kit,
+		Network: run.network,
+		Worker:  []string{agentPath, "hold"},
+		Binds: append([]string{
+			l.AgentBinary + ":" + agentPath + ":ro",
+			l.CAFile + ":" + caPath + ":ro",
+		}, skillsBinds(k.skills, l.skillsDir())...),
 		Launch:      launch,
 		InstallDone: session.EnterRuntime,
 	})

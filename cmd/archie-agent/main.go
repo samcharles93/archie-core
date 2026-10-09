@@ -19,6 +19,17 @@ import (
 
 type workerRunner func(context.Context, agentworker.Settings, *slog.Logger) error
 
+// runHold blocks until signalled and exits 0. It is the keepalive for a Kit
+// container that runs no worker: the agent binary is archie's own and is
+// mounted into every Kit, so the container needs no binary the image may not
+// ship, and holds no environment of its own.
+func runHold() int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	<-ctx.Done()
+	return 0
+}
+
 func main() {
 	os.Exit(run())
 }
@@ -28,6 +39,9 @@ func run() int {
 }
 
 func runCommand(args []string, getenv func(string) string, stderr io.Writer, runWorker workerRunner) int {
+	if len(args) > 0 && args[0] == "hold" {
+		return runHold()
+	}
 	if len(args) > 0 && args[0] == "relay" {
 		return runRelay(args[1:], stderr, agentworker.RunRelay)
 	}

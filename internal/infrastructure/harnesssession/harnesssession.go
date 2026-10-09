@@ -25,6 +25,9 @@ import (
 var (
 	ErrProfileUnknown = errors.New("agent profile is not configured")
 	ErrProfileNotKit  = errors.New("agent profile is not a Kit profile")
+	// ErrNoShell reports a Kit image that provides no login shell, so a setup
+	// terminal cannot be opened in it.
+	ErrNoShell = errors.New("the Kit image provides no shell")
 )
 
 // Launcher starts and ends a setup session's container. *kitrun.Launcher
@@ -63,7 +66,15 @@ func (m *Manager) Open(ctx context.Context, org, profile string) (*Session, erro
 	if err != nil {
 		return nil, err
 	}
-	pty, err := container.ExecPTY(ctx, m.Client, run.Container.ID, run.Harness.User, run.Harness.Env, []string{"sh", "-l"}, 24, 80)
+	shell, err := pickShell(func(argv []string) (int, error) {
+		code, _, err := container.ExecIn(ctx, m.Client, run.Container.ID, run.Harness.User, run.Harness.Env, argv)
+		return code, err
+	})
+	if err != nil {
+		_ = m.Launcher.Release(context.WithoutCancel(ctx), run)
+		return nil, fmt.Errorf("%w: %s", ErrNoShell, p.Kit)
+	}
+	pty, err := container.ExecPTY(ctx, m.Client, run.Container.ID, run.Harness.User, run.Harness.Env, shell, 24, 80)
 	if err != nil {
 		_ = m.Launcher.Release(context.WithoutCancel(ctx), run)
 		return nil, err
@@ -105,6 +116,18 @@ func (s *Session) Close() error {
 		err = s.release(context.Background(), s.run)
 	})
 	return err
+}
+
+// pickShell returns the login shell the image provides, preferring bash over
+// sh, or ErrNoShell when it provides neither. The image, not archie, decides
+// what is installed, so the probe runs in the container.
+func pickShell(probe func(argv []string) (int, error)) ([]string, error) {
+	for _, shell := range []string{"bash", "sh"} {
+		if code, err := probe([]string{shell, "-c", "exit 0"}); err == nil && code == 0 {
+			return []string{shell, "-l"}, nil
+		}
+	}
+	return nil, ErrNoShell
 }
 
 // sessionID is the per-session key for the container, network and volumes. It
