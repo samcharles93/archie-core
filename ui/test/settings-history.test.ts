@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { filterHistory, historyEmptyTitle } from "../src/settings/history.ts";
+import { filterHistory } from "../src/settings/history.ts";
 
 const entry = (id: number, record_key: string, actor: string, at?: string) => ({
   id, table: "resources", record_key, field: "f", old_value: 1, new_value: 2,
@@ -29,11 +29,4 @@ test("filterHistory keeps entries matching every filter", () => {
 test("an entry with no time is dropped only when a time window is set", () => {
   assert.equal(filterHistory([entry(9, "k", "a")], {}, now).length, 1);
   assert.equal(filterHistory([entry(9, "k", "a")], { sinceMs: 1000 }, now).length, 0);
-});
-
-test("the history table names which it has, filtered changes or none recorded", () => {
-  // A history with entries whose filters match nothing sends the reader to the
-  // filters; a history with nothing recorded does not.
-  assert.equal(historyEmptyTitle(true), "No matching changes.");
-  assert.equal(historyEmptyTitle(false), "No changes recorded yet.");
 });

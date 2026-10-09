@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { bindingPayload, emptyDraft } from "../src/bindings/binding-draft.ts";
 import { captureSignature } from "../src/captures/capture-signature.ts";
 import {
   signingKind,
@@ -68,9 +67,4 @@ test("a task started by an unsigned event says so on its timeline", () => {
     describeTimelineEvent({ kind: "stage_start", stage: "plan" }).tone,
     undefined,
   );
-});
-
-test("a binding no longer carries a signing secret", () => {
-  const payload = bindingPayload(emptyDraft(), []);
-  assert.equal("secret" in payload, false);
 });

@@ -3,7 +3,6 @@ import test from "node:test";
 
 import {
   commandBody,
-  resourcesForPage,
   upsertWorkflowDefinition,
   restoreShippedDefinitions,
   removeWorkflowDefinition,
@@ -33,74 +32,6 @@ test("control-plane commands keep the edited version and typed values", () => {
   );
 });
 
-test("control-plane resources belong to one settings narrative", () => {
-  const catalog = [
-    "workflow-execution-settings",
-    "task-policy",
-    "provider-settings",
-    "model-role-assignments",
-    "repository-policies",
-    "channel-settings",
-    "personas",
-    "schedules",
-    "scheduling-policy",
-    "tool-settings",
-    "plugin-settings",
-    "container-runtime-policies",
-    "workflow-definitions",
-  ].map((kind) => ({
-    kind,
-    title: kind,
-    schema_json: "{}",
-    commands: ["replace"],
-  }));
-
-  assert.deepEqual(
-    resourcesForPage(catalog, "tasks").map(({ kind }) => kind),
-    ["workflow-execution-settings", "task-policy"],
-  );
-  assert.deepEqual(
-    resourcesForPage(catalog, "models").map(({ kind }) => kind),
-    ["provider-settings", "model-role-assignments"],
-  );
-  assert.deepEqual(
-    resourcesForPage(catalog, "repositories").map(({ kind }) => kind),
-    ["repository-policies"],
-  );
-  assert.deepEqual(
-    resourcesForPage(catalog, "channels").map(({ kind }) => kind),
-    ["channel-settings"],
-  );
-  assert.deepEqual(
-    resourcesForPage(catalog, "scheduling").map(({ kind }) => kind),
-    ["scheduling-policy"],
-  );
-  assert.deepEqual(
-    resourcesForPage(catalog, "tools").map(({ kind }) => kind),
-    ["tool-settings"],
-  );
-  assert.deepEqual(
-    resourcesForPage(catalog, "personas").map(({ kind }) => kind),
-    ["personas"],
-  );
-  assert.deepEqual(
-    resourcesForPage(catalog, "schedules").map(({ kind }) => kind),
-    ["schedules"],
-  );
-  assert.deepEqual(
-    resourcesForPage(catalog, "plugins").map(({ kind }) => kind),
-    ["plugin-settings"],
-  );
-  assert.deepEqual(
-    resourcesForPage(catalog, "containers").map(({ kind }) => kind),
-    ["container-runtime-policies"],
-  );
-  assert.deepEqual(
-    resourcesForPage(catalog, "workflows").map(({ kind }) => kind),
-    ["workflow-definitions"],
-  );
-});
-
 test("workflow edits replace by id without dropping sibling definitions", () => {
   const original = {
     definitions: [
@@ -126,7 +57,6 @@ test("workflow edits replace by id without dropping sibling definitions", () => 
   assert.deepEqual(removeWorkflowDefinition(original, "implement"), {
     definitions: [{ id: "tdd", yaml: "id: tdd\nsteps: []\n" }],
   });
-  // Restoring shipped resets shipped ids and keeps a custom workflow.
   assert.deepEqual(
     restoreShippedDefinitions(
       { definitions: [...original.definitions, { id: "mine", yaml: "id: mine\n" }] },

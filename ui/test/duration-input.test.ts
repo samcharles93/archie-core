@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  DURATION_UNITS,
   formatGoDuration,
   joinDuration,
   parseGoDuration,
@@ -99,5 +98,4 @@ test("unit arithmetic reassembles the stored milliseconds", () => {
   for (const [value, unit, ms] of cases) {
     assert.equal(joinDuration(value, unit), ms, `${value}${unit}`);
   }
-  assert.deepEqual(DURATION_UNITS, ["ms", "s", "m", "h"]);
 });

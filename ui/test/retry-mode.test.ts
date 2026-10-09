@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-const { initialRetryChoice, initialRetryMode, retryChoices, retryPayload } =
+const { initialRetryChoice, initialRetryMode, retryChoices } =
   await import("../src/tasks/retry-mode.ts");
 
 const MODES = [
@@ -19,45 +19,26 @@ const MODES = [
   },
 ];
 
-test("continue is disabled when the task has no pushed branch", () => {
-  const choices = retryChoices(MODES, "");
-  assert.equal(choices[0].disabled, false);
-  assert.equal(choices[1].disabled, true);
+test("retry modes requiring a branch are disabled without one", () => {
+  for (const [branch, disabled] of [["", true], ["   ", true], ["fix/7-thing", false]] as const) {
+    const choices = retryChoices(MODES, branch);
+    assert.equal(choices[0].disabled, false, branch);
+    assert.equal(choices[1].disabled, disabled, branch);
+  }
 });
 
-test("continue is offered when the task has a pushed branch", () => {
-  const choices = retryChoices(MODES, "fix/7-thing");
-  assert.equal(choices[1].disabled, false);
-});
-
-test("a whitespace branch is no branch", () => {
-  assert.equal(retryChoices(MODES, "   ")[1].disabled, true);
-});
-
-test("the dialog opens on the task's persisted mode", () => {
-  assert.equal(initialRetryMode(MODES, "continue_pushed_work"), "continue_pushed_work");
-});
-
-test("an unknown persisted mode falls back to the explicit server default", () => {
-  assert.equal(initialRetryMode(MODES, "reset_to_head"), "refresh_onto_base");
-  assert.equal(initialRetryMode(MODES, ""), "refresh_onto_base");
-});
-
-test("the payload carries the chosen mode under the wire key", () => {
-  assert.deepEqual(retryPayload("continue_pushed_work"), {
-    retry_mode: "continue_pushed_work",
-  });
-});
-
-test("a persisted mode the task can no longer use is not preselected", () => {
-  const choices = retryChoices(MODES, "");
-  assert.equal(initialRetryChoice(choices, "continue_pushed_work"), "refresh_onto_base");
-});
-
-test("a persisted enabled mode is preselected", () => {
-  const choices = retryChoices(MODES, "fix/7-thing");
-  assert.equal(
-    initialRetryChoice(choices, "continue_pushed_work"),
-    "continue_pushed_work",
-  );
+test("retry selection preserves usable persisted modes and otherwise falls back", () => {
+  for (const [persisted, expected] of [
+    ["continue_pushed_work", "continue_pushed_work"],
+    ["reset_to_head", "refresh_onto_base"],
+    ["", "refresh_onto_base"],
+  ]) {
+    assert.equal(initialRetryMode(MODES, persisted), expected, persisted);
+  }
+  for (const [branch, persisted, expected] of [
+    ["", "continue_pushed_work", "refresh_onto_base"],
+    ["fix/7-thing", "continue_pushed_work", "continue_pushed_work"],
+  ]) {
+    assert.equal(initialRetryChoice(retryChoices(MODES, branch), persisted), expected, branch);
+  }
 });

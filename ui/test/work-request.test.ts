@@ -5,7 +5,6 @@ import {
   declaredInputs,
   inputValues,
   missingRequiredInputs,
-  type DeclaredInput,
 } from "../src/workflows/work-request.ts";
 
 // The shape GET /api/workflows reports for a definition, as far as the
@@ -20,45 +19,33 @@ const prReview = {
   },
 };
 
-test("the form renders one field per declared input, in a stable order", () => {
+test("declared workflow inputs produce stable fields, including an empty form", () => {
   assert.deepEqual(declaredInputs(prReview), [
     { name: "depth", type: "string", required: false },
     { name: "pr_number", type: "number", required: true },
   ]);
-});
-
-test("a workflow that declares no inputs renders no fields", () => {
   assert.deepEqual(declaredInputs({ id: "implement" }), []);
   assert.deepEqual(declaredInputs(undefined), []);
 });
 
-test("a declared number is sent as a number, not as the typed text", () => {
-  assert.deepEqual(
-    inputValues(declaredInputs(prReview), { pr_number: "77", depth: "deep" }),
-    { pr_number: 77, depth: "deep" },
-  );
+test("workflow input payloads convert declared types and omit empty inputs", () => {
+  const cases: Array<[Record<string, string>, Record<string, unknown>]> = [
+    [{ pr_number: "77", depth: "deep" }, { pr_number: 77, depth: "deep" }],
+    [{ pr_number: "77" }, { pr_number: 77 }],
+    [{ pr_number: "seventy-seven" }, { pr_number: "seventy-seven" }],
+  ];
+  for (const [values, expected] of cases) {
+    assert.deepEqual(inputValues(declaredInputs(prReview), values), expected, JSON.stringify(values));
+  }
 });
 
-test("an input left empty is absent rather than an empty string", () => {
-  assert.deepEqual(inputValues(declaredInputs(prReview), { pr_number: "77" }), {
-    pr_number: 77,
-  });
-});
-
-test("text that is not the declared type is sent as typed, for the server to name", () => {
-  assert.deepEqual(inputValues(declaredInputs(prReview), { pr_number: "seventy-seven" }), {
-    pr_number: "seventy-seven",
-  });
-});
-
-test("required inputs that are still empty are named", () => {
-  const declared = declaredInputs(prReview);
-  assert.deepEqual(missingRequiredInputs(declared, {}), ["pr_number"]);
-  assert.deepEqual(missingRequiredInputs(declared, { pr_number: "  " }), ["pr_number"]);
-  assert.deepEqual(missingRequiredInputs(declared, { pr_number: "77" }), []);
-});
-
-test("an optional input does not hold the form back", () => {
-  const declared: DeclaredInput[] = declaredInputs(prReview);
-  assert.deepEqual(missingRequiredInputs(declared, { pr_number: "1" }), []);
+test("only missing required workflow inputs block submission", () => {
+  const cases: Array<[Record<string, string>, string[]]> = [
+    [{}, ["pr_number"]],
+    [{ pr_number: "  " }, ["pr_number"]],
+    [{ pr_number: "77" }, []],
+  ];
+  for (const [values, expected] of cases) {
+    assert.deepEqual(missingRequiredInputs(declaredInputs(prReview), values), expected, JSON.stringify(values));
+  }
 });

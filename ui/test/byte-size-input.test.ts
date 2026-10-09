@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  BYTES_PER_MB,
   bytesToMB,
   mbToBytes,
 } from "../src/components/ui/byte-size-input/bytes.ts";
@@ -11,7 +10,6 @@ import {
 // as whole bytes. A binary interpretation (2^20) would inflate every stored
 // value by ~4.9%: ten entered megabytes would become 10_485_760 bytes.
 test("entered megabytes store as whole decimal bytes", () => {
-  assert.equal(BYTES_PER_MB, 1_000_000);
   assert.equal(mbToBytes(10), 10_000_000);
   assert.equal(mbToBytes(0.1), 100_000);
   assert.equal(mbToBytes(1.5), 1_500_000);

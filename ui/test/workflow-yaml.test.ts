@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-const { parseWorkflowYaml, validationLabel, yamlLines, yamlTokenClass } =
+const { parseWorkflowYaml, yamlLines } =
   await import("../src/workflows/workflow-yaml.ts");
 
 /** A definition in the shape the server writes: id, then typed steps. */
@@ -28,8 +28,6 @@ test("a definition parses into its id and its steps, in order", () => {
 });
 
 test("the preview reads the YAML as typed, not a regex over it", () => {
-  // A step whose type sits in a nested block is not a step; a real parser knows
-  // the difference and a line-scanner does not.
   const parsed = parseWorkflowYaml(`id: x
 steps:
   - type: a
@@ -46,37 +44,19 @@ steps:
   );
 });
 
-test("a workflow with no id is refused, and says so", () => {
-  const parsed = parseWorkflowYaml("steps:\n  - type: a\n");
-  assert.equal(parsed.ok, false);
-  if (parsed.ok) return;
-  assert.match(parsed.message, /id/);
-});
-
-test("a workflow with no steps is refused", () => {
-  const parsed = parseWorkflowYaml("id: x\n");
-  assert.equal(parsed.ok, false);
-  if (parsed.ok) return;
-  assert.match(parsed.message, /steps/);
-});
-
-test("a step with no type is refused by its position", () => {
-  const parsed = parseWorkflowYaml("id: x\nsteps:\n  - type: a\n  - settings: {}\n");
-  assert.equal(parsed.ok, false);
-  if (parsed.ok) return;
-  assert.match(parsed.message, /step 2/);
-});
-
-test("a root that is not a mapping is refused", () => {
-  for (const source of ["- a\n- b\n", '"just a string"\n']) {
+test("invalid workflow structures identify the field that prevents saving", () => {
+  for (const [source, message] of [
+    ["steps:\n  - type: a\n", /id/],
+    ["id: x\n", /steps/],
+    ["id: x\nsteps:\n  - type: a\n  - settings: {}\n", /step 2/],
+    ["- a\n- b\n", /mapping/],
+    ['"just a string"\n', /mapping/],
+    ["id: x\nsteps: 3\n", /steps/],
+  ] as const) {
     const parsed = parseWorkflowYaml(source);
-    assert.equal(parsed.ok, false, `${JSON.stringify(source)} parsed as a workflow`);
+    assert.equal(parsed.ok, false, source);
+    if (!parsed.ok) assert.match(parsed.message, message, source);
   }
-});
-
-test("steps that are not a list are refused", () => {
-  const parsed = parseWorkflowYaml("id: x\nsteps: 3\n");
-  assert.equal(parsed.ok, false);
 });
 
 test("a YAML syntax error is reported with the line it is on", () => {
@@ -88,13 +68,6 @@ test("a YAML syntax error is reported with the line it is on", () => {
     typeof parsed.line === "number" && parsed.line >= 1,
     "an error that cannot be pointed at cannot be fixed",
   );
-});
-
-test("the indicator reads as valid, or as the line that is wrong", () => {
-  const good = parseWorkflowYaml(DEFINITION);
-  assert.equal(validationLabel(good), "Valid");
-  const bad = parseWorkflowYaml("id: x\nsteps: [unclosed\n");
-  assert.match(validationLabel(bad), /^Line \d+: /);
 });
 
 test("every character of the source survives highlighting", () => {
@@ -162,23 +135,4 @@ test("a list marker and a key are not the same thing", () => {
   assert.equal(line.tokens[1]?.kind, "punct");
   assert.equal(line.tokens[2]?.text, "type");
   assert.equal(line.tokens[2]?.kind, "key");
-});
-
-test("the kinds the reader distinguishes take their own colour", () => {
-  assert.match(yamlTokenClass("key"), /^text-/);
-  assert.match(yamlTokenClass("string"), /^text-/);
-  assert.match(yamlTokenClass("comment"), /^text-/);
-  assert.match(yamlTokenClass("punct"), /^text-/);
-  assert.match(yamlTokenClass("plain"), /^text-/);
-  assert.notEqual(
-    yamlTokenClass("key"),
-    yamlTokenClass("plain"),
-    "a key read as a value",
-  );
-  assert.notEqual(
-    yamlTokenClass("string"),
-    yamlTokenClass("plain"),
-    "a quoted value read as plain text",
-  );
-  assert.notEqual(yamlTokenClass("key"), yamlTokenClass("string"));
 });

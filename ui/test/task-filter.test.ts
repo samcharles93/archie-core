@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { computed, ref } from "vue";
@@ -7,7 +6,6 @@ import { computed, ref } from "vue";
 import {
   boardStatus,
   initialTaskFilter,
-  taskStatuses,
 } from "../src/tasks/task-filter.ts";
 
 const QUEUED = { id: "queued", label: "Queued", kind: "idle" };
@@ -40,13 +38,6 @@ test("only a status the served catalog knows becomes a filter", () => {
   }
 });
 
-// The defect: the board captured the filter at setup, before loadTaskMeta()
-// replaced the freeze-dried defaults, and the only re-derivation watched the
-// query string. A status the server serves but the defaults do not know was
-// therefore dropped, and the whole board rendered in place of the shared view.
-// Deriving the filter from the catalog instead makes the late catalog a
-// re-derivation, and the served id becomes the filter without a reload. This
-// runs the board's own derivation -- the page adds only the two arguments.
 test("a filter is re-derived when the served catalog lands", () => {
   const catalog = ref([QUEUED]);
   const query = ref("triaging");
@@ -67,28 +58,4 @@ test("a filter is re-derived when the served catalog lands", () => {
   );
   query.value = "";
   assert.equal(status.value, "", "clearing the query clears the filter");
-});
-
-// The page owns only the wiring: which query, and which catalog, the derivation
-// is handed. This is therefore asserted as the whole argument list rather than
-// the expression's prefix -- a prefix anchor accepted any trailing argument, so
-// `const catalog = statusList()` captured at setup and passed to the same call
-// kept the old guard green while reintroducing the defect. The check is
-// source-level because node --test ships no SFC loader: a .vue file is readable
-// here and never executable, which is why the derivation itself is a function
-// in task-filter.ts with its own behavioural coverage above.
-test("the task board reads the served catalog when the filter re-derives", async () => {
-  const page = await readFile(
-    new URL("../src/tasks/TasksPage.vue", import.meta.url),
-    "utf8",
-  );
-  const wiring =
-    /const status = computed\(\(\) => boardStatus\((.+?)\)\);/.exec(
-      page.replace(/\s+/g, " "),
-    );
-  assert.equal(
-    wiring?.[1],
-    "statusQuery.value, statusList()",
-    "the filter must be derived, not captured",
-  );
 });

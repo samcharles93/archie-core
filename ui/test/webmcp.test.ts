@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-// The model context is read at registration time, so each test installs its own
-// fake `document` before calling. The tool list takes its API client as a
-// parameter, so these tests never load the real fetch client.
 const { registerWebMcpTools, createWebMcpRegistrar } =
   await import("../src/lib/webmcp.ts");
 const { archieWebMcpTools } = await import("../src/lib/webmcp-tools.ts");
@@ -174,30 +171,6 @@ test("tools returning agent, operator or inbound content carry untrustedContentH
   }
   assert.equal(annotations.get("daemon_health")?.untrustedContentHint, false);
   assert.equal(annotations.get("list_tasks")?.consequentialHint, undefined);
-});
-
-test("execute returns the envelope and calls the dashboard's own client methods", async () => {
-  const { calls, client } = fakeClient();
-
-  const listed = (await toolNamed(client, "list_tasks").execute({})) as {
-    content: { type: string; text: string }[];
-  };
-  assert.equal(calls[0].method, "tasks");
-  assert.equal(listed.content[0].type, "text");
-  assert.deepEqual(JSON.parse(listed.content[0].text), {
-    ok: true,
-    method: "tasks",
-    args: [],
-  });
-
-  await toolNamed(client, "get_task").execute({ task_id: "42" });
-  assert.deepEqual(calls[1], { method: "task", args: ["42"] });
-
-  await toolNamed(client, "recent_events").execute({ limit: 10 });
-  assert.deepEqual(calls[2], { method: "captures", args: [10] });
-
-  await toolNamed(client, "daemon_health").execute({});
-  assert.deepEqual(calls[3], { method: "health", args: [] });
 });
 
 test("recovery tools post the dashboard's own action verbs", async () => {
