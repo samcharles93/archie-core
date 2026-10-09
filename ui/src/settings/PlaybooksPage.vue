@@ -27,7 +27,7 @@ function add() {
  <div>
   <PageHeader title="Playbooks"><HistoryLink :kinds="[KIND]" /></PageHeader>
   <ApplyStatusRows :kind="KIND" class="mb-4" />
-  <p v-if="store.catalogError || store.stateFor(KIND).error" class="mb-4 text-sm text-destructive" role="alert">{{ store.catalogError || store.stateFor(KIND).error }}</p>
+  <p v-if="store.catalogError || store.pageErrorFor(KIND)" class="mb-4 text-sm text-destructive" role="alert">{{ store.catalogError || store.pageErrorFor(KIND) }}</p>
   <form class="mb-4 flex gap-2" @submit.prevent="add"><Input v-model="id" aria-label="Playbook ID" placeholder="Playbook ID" class="max-w-xs" /><Button type="submit" :disabled="!id.trim() || collection?.playbooks.some(entry => entry.id === id.trim())">Add playbook</Button></form>
   <p v-if="!collection?.playbooks.length" class="text-sm text-fg-muted">No playbooks installed.</p>
   <section v-for="(entry, index) in collection?.playbooks" :key="index" class="mb-6 border-t pt-4">

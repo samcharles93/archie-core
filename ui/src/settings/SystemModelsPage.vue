@@ -43,7 +43,7 @@ const resources = computed(() => resourcesForPage(resourceCatalog.value, "models
 const providers = computed(() => store.drafts["provider-settings"]?.value as Record<string, Provider> | undefined);
 const roles = computed(() => store.drafts["model-role-assignments"]?.value as Record<string, string> | undefined);
 const errors = computed(() =>
-  ["provider-settings", "model-role-assignments"].map((k) => store.stateFor(k).error).filter(Boolean),
+  ["provider-settings", "model-role-assignments"].map((k) => store.pageErrorFor(k)).filter(Boolean),
 );
 
 const modelCatalog = computed(() => config.value?.catalog ?? []);

@@ -70,7 +70,7 @@ onMounted(load);
   <div>
     <PageHeader title="Curators"><HistoryLink :kinds="[KIND]" /><Button variant="outline" @click="editing = !editing">{{ editing ? "Hide definitions" : "Edit definitions" }}</Button></PageHeader>
     <ApplyStatusRows :kind="KIND" class="mb-4" />
-    <p v-if="store.catalogError || store.stateFor(KIND).error" class="mb-4 text-sm text-destructive" role="alert">{{ store.catalogError || store.stateFor(KIND).error }}</p>
+    <p v-if="store.catalogError || store.pageErrorFor(KIND)" class="mb-4 text-sm text-destructive" role="alert">{{ store.catalogError || store.pageErrorFor(KIND) }}</p>
     <div v-if="editing" class="mb-6">
       <form class="mb-4 flex gap-2" @submit.prevent="add"><Input v-model="newName" aria-label="Curator name" placeholder="Curator name" class="max-w-xs" /><Button type="submit" :disabled="!newName.trim() || definitions?.some(def => def.name === newName.trim())">Add curator</Button></form>
       <p v-if="!definitions?.length" class="text-sm text-fg-muted">No custom curator definitions.</p>

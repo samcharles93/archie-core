@@ -14,7 +14,7 @@ const store = useControlPlaneStore();
 onMounted(store.load);
 
 const draft = computed(() => store.drafts[KIND]?.value as UpdateSettings | undefined);
-const error = computed(() => store.stateFor(KIND).error);
+const error = computed(() => store.pageErrorFor(KIND));
 
 const channels = [
   { value: "stable", label: "Stable" },

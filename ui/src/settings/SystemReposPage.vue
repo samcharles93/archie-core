@@ -58,7 +58,7 @@ onMounted(store.load);
 const resources = computed(() => resourcesForPage(catalog.value, "repositories"));
 const draft = computed(() => store.drafts[KIND]);
 const repos = computed(() => (draft.value?.value ?? []) as Repo[]);
-const error = computed(() => store.stateFor(KIND).error);
+const error = computed(() => store.pageErrorFor(KIND));
 
 const ecosystems = ["go", "python", "node", "rust", "custom"];
 const newRepo = ref("");

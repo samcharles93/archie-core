@@ -31,7 +31,7 @@ function tools(profile: Profile, value: string | number) {
  <div>
   <PageHeader title="Agent profiles"><HistoryLink :kinds="[KIND]" /></PageHeader>
   <ApplyStatusRows :kind="KIND" class="mb-4" />
-  <p v-if="store.catalogError || store.stateFor(KIND).error" class="mb-4 text-sm text-destructive" role="alert">{{ store.catalogError || store.stateFor(KIND).error }}</p>
+  <p v-if="store.catalogError || store.pageErrorFor(KIND)" class="mb-4 text-sm text-destructive" role="alert">{{ store.catalogError || store.pageErrorFor(KIND) }}</p>
   <form class="mb-4 flex gap-2" @submit.prevent="add">
    <Input v-model="name" aria-label="Profile name" placeholder="Profile name" class="max-w-xs" />
    <Button type="submit" :disabled="!name.trim() || !!profiles?.[name.trim()]">Add profile</Button>

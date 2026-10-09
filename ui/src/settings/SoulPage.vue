@@ -17,7 +17,7 @@ onMounted(store.load);
 
 const resources = computed(() => resourcesForPage(catalog.value, "soul"));
 const soul = computed(() => store.drafts[KIND]?.value as { text: string } | undefined);
-const error = computed(() => store.stateFor(KIND).error);
+const error = computed(() => store.pageErrorFor(KIND));
 const chars = computed(() => soul.value?.text.length ?? 0);
 </script>
 

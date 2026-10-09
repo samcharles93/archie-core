@@ -24,7 +24,7 @@ function add() {
  <div>
   <PageHeader title="Credential bindings"><HistoryLink :kinds="[KIND]" /><Button @click="add">Add binding</Button></PageHeader>
   <ApplyStatusRows :kind="KIND" class="mb-4" />
-  <p v-if="store.catalogError || store.stateFor(KIND).error" class="mb-4 text-sm text-destructive" role="alert">{{ store.catalogError || store.stateFor(KIND).error }}</p>
+  <p v-if="store.catalogError || store.pageErrorFor(KIND)" class="mb-4 text-sm text-destructive" role="alert">{{ store.catalogError || store.pageErrorFor(KIND) }}</p>
   <p v-if="!bindings?.length" class="text-sm text-fg-muted">No credential bindings.</p>
   <section v-for="(binding, index) in bindings" :key="index" class="mb-6 border-t pt-4">
    <div class="flex justify-end"><Button variant="ghost" size="sm" @click="bindings!.splice(index, 1)">Remove binding</Button></div>

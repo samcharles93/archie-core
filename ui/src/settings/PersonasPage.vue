@@ -29,7 +29,7 @@ onMounted(store.load);
 
 const resources = computed(() => resourcesForPage(catalog.value, "personas"));
 const collection = computed(() => store.drafts[KIND]?.value as PersonaCollection | undefined);
-const error = computed(() => store.stateFor(KIND).error);
+const error = computed(() => store.pageErrorFor(KIND));
 
 const filter = ref("");
 const selected = ref(0);

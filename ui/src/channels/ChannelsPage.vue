@@ -59,7 +59,7 @@ const store = useControlPlaneStore();
 const { catalog, catalogError } = storeToRefs(store);
 const resources = computed(() => resourcesForPage(catalog.value, "channels"));
 const chat = computed(() => store.drafts[KIND]?.value as ChannelSettings | undefined);
-const error = computed(() => store.stateFor(KIND).error);
+const error = computed(() => store.pageErrorFor(KIND));
 
 const statuses = ref<ChannelStatus[]>([]);
 async function loadStatus() {

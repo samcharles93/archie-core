@@ -22,7 +22,7 @@ onMounted(store.load);
 
 const resources = computed(() => resourcesForPage(catalog.value, "plugins"));
 const dirs = computed(() => store.drafts[KIND]?.value as PluginSettings | undefined);
-const error = computed(() => store.stateFor(KIND).error);
+const error = computed(() => store.pageErrorFor(KIND));
 </script>
 
 <template>

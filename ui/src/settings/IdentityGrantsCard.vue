@@ -19,7 +19,7 @@ const store = useControlPlaneStore();
 onMounted(() => store.load());
 
 const grants = computed(() => store.drafts[KIND]?.value as IdentityGrants | undefined);
-const error = computed(() => store.stateFor(KIND).error);
+const error = computed(() => store.pageErrorFor(KIND));
 
 const split = (text: string) =>
   text

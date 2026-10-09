@@ -206,6 +206,10 @@ func (s *Server) Watch(request *pb.WatchRequest, stream pb.ControlPlaneService_W
 func (s *Server) resource(ctx context.Context, orgID, kind string) (storecontract.Resource, error) {
 	resource, err := s.store.Resource(ctx, orgID, kind)
 	if !errors.Is(err, storecontract.ErrResourceNotFound) || (kind != WorkflowDefinitionsKind && kind != WorkflowEnablementKind) {
+		// Serve the current channel schema so stored settings remain editable.
+		if err == nil && kind == ChannelSettingsKind {
+			resource.Value, err = normalizeChannels(resource.Value)
+		}
 		return resource, err
 	}
 	if _, err := s.seedKind(ctx, orgID, s.definitions[kind], config.Config{}); err != nil && !errors.Is(err, storecontract.ErrResourceVersionConflict) {

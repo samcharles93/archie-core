@@ -42,7 +42,7 @@ onMounted(store.load);
 
 const resources = computed(() => resourcesForPage(catalog.value, "schedules"));
 const jobs = computed(() => store.drafts[KIND]?.value as Job[] | undefined);
-const error = computed(() => store.stateFor(KIND).error);
+const error = computed(() => store.pageErrorFor(KIND));
 const issues = computed(() => store.issuesFor(KIND));
 const jobIssue = (i: number) => issues.value.find((entry) => entry.path === `${i}.id`);
 

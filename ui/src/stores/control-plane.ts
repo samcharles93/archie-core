@@ -283,6 +283,7 @@ interface Draft {
 export const useControlPlaneStore = defineStore("control-plane", () => {
   const catalog = ref<ResourceDescriptor[]>([]);
   const catalogError = ref("");
+  const reviewing = ref(false);
   const states = reactive<Record<string, ResourceState>>({});
   const live = useLiveUpdatesStore();
   const applyStatus = ref<ApplyStatusResponse>({ records: [], processes: [] });
@@ -305,6 +306,12 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
         stream: live.streamState === "live" ? "live" : "connecting",
       };
     return states[kind];
+  }
+
+  function pageErrorFor(kind: string): string | undefined {
+    return reviewing.value && changesFor(kind).length > 0
+      ? undefined
+      : stateFor(kind).error;
   }
 
   function apply(resource: ControlPlaneResource): void {
@@ -540,6 +547,8 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
   }
 
   return {
+    reviewing,
+    pageErrorFor,
     stepTypes,
     intakeRoutes,
     applyStatusFor,

@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createPinia, setActivePinia } from "pinia";
 
 import {
+  useControlPlaneStore,
   commandBody,
   upsertWorkflowDefinition,
   restoreShippedDefinitions,
@@ -144,4 +146,22 @@ test("apply status shows a process that has never reported, and one that rejecte
       error: "", storedVersion: 7,
     },
   ]);
+});
+
+test("save errors appear on the page only when not presented in the review drawer", () => {
+  setActivePinia(createPinia());
+  const store = useControlPlaneStore();
+  const kind = "channel-settings";
+  store.drafts[kind] = {
+    base: { kind, version: 1, value: { operator: "" } },
+    value: { operator: "changed" },
+  };
+  store.stateFor(kind).error = "Save failed";
+  store.stateFor("provider-settings").error = "Load failed";
+  for (const [reviewing, expected] of [[false, "Save failed"], [true, undefined], [false, "Save failed"]] as const) {
+    store.reviewing = reviewing;
+    assert.equal(store.pageErrorFor(kind), expected);
+    assert.equal(store.stateFor(kind).error, "Save failed", "drawer retains the error");
+    assert.equal(store.pageErrorFor("provider-settings"), "Load failed", "unreviewed errors stay visible");
+  }
 });

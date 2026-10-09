@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onUnmounted, ref } from "vue";
+import { storeToRefs } from "pinia";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -16,7 +17,8 @@ import { useControlPlaneStore } from "@/stores/control-plane";
 import { formatValue } from "./changes";
 
 const store = useControlPlaneStore();
-const reviewing = ref(false);
+const { reviewing } = storeToRefs(store);
+onUnmounted(() => { reviewing.value = false; });
 const saving = ref(false);
 
 const titleOf = (kind: string) =>

@@ -20,7 +20,7 @@ onMounted(() => Promise.all([store.load(), loadConfig()]));
 
 const resources = computed(() => resourcesForPage(catalog.value, "review"));
 const dials = computed(() => store.drafts[KIND]?.value as ReviewDials | undefined);
-const error = computed(() => store.stateFor(KIND).error);
+const error = computed(() => store.pageErrorFor(KIND));
 // What the daemon has in force, read from the published config projection, so
 // a draft edit is visibly not yet the effective policy.
 const status = computed(() => (dials.value ? reviewDialStatus(config.value, dials.value) : undefined));

@@ -35,7 +35,7 @@ onMounted(store.load);
 const resources = computed(() => resourcesForPage(catalog.value, "tasks"));
 const policy=computed(()=>store.drafts[POLICY]?.value as {diff_cap_lines:number;notify_webhook:string}|undefined);
 const limits = computed(() => store.drafts[KIND]?.value as ExecutionSettings | undefined);
-const error = computed(() => store.stateFor(KIND).error);
+const error = computed(() => store.pageErrorFor(KIND));
 
 // The document counts seconds; the input speaks durations.
 function seconds(key: "max_runtime_seconds" | "max_task_runtime_seconds") {
@@ -58,8 +58,8 @@ const taskRuntime = seconds("max_task_runtime_seconds");
     </PageHeader>
     <ApplyStatusRows v-for="resource in resources" :key="resource.kind" :kind="resource.kind" class="mb-4" />
 
-    <p v-if="catalogError || error || store.stateFor(POLICY).error" class="mb-4 text-sm text-danger" role="alert">
-      {{ catalogError || error || store.stateFor(POLICY).error }}
+    <p v-if="catalogError || error || store.pageErrorFor(POLICY)" class="mb-4 text-sm text-danger" role="alert">
+      {{ catalogError || error || store.pageErrorFor(POLICY) }}
     </p>
 
     <template v-if="policy">

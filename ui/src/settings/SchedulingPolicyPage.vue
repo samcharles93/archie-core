@@ -34,7 +34,7 @@ onMounted(store.load);
 
 const resources = computed(() => resourcesForPage(catalog.value, "scheduling"));
 const policy = computed(() => store.drafts[KIND]?.value as SchedulingPolicy | undefined);
-const error = computed(() => store.stateFor(KIND).error);
+const error = computed(() => store.pageErrorFor(KIND));
 
 const triggers = [
   { value: "assignee", label: "Assignee" },

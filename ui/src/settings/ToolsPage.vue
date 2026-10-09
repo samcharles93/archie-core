@@ -38,7 +38,7 @@ onMounted(store.load);
 
 const resources = computed(() => resourcesForPage(catalog.value, "tools"));
 const tools = computed(() => store.drafts[KIND]?.value as ToolSettings | undefined);
-const error = computed(() => store.stateFor(KIND).error);
+const error = computed(() => store.pageErrorFor(KIND));
 
 // An unset web_fetch.enabled means on.
 const webFetchOn = computed({
