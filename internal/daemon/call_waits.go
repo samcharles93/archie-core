@@ -2,8 +2,12 @@ package daemon
 
 import (
 	"context"
+	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
 // callWaitBuffer is the watcher's subscription buffer. The bus carries the
@@ -16,13 +20,16 @@ const callWaitBuffer = 1024
 // daemon's own bus, republished from the container running the workflow, and
 // carry the caller's task id.
 func (d *Daemon) watchCallWaits(ctx context.Context) {
-	if d.Bus == nil {
+	reader, ok := d.Store.(storecontract.StepReader)
+	if d.Bus == nil || !ok {
 		return
 	}
 	sub := d.Bus.Subscribe(callWaitBuffer)
 	dispatcher := d.taskDispatcher()
 	go func() {
 		defer sub.Close()
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
@@ -31,23 +38,38 @@ func (d *Daemon) watchCallWaits(ctx context.Context) {
 				if !ok {
 					return
 				}
-				applyCallWait(dispatcher, e)
+				if e.Kind == events.KindWorkflowCallStarted || e.Kind == events.KindWorkflowCallFinished || e.Kind == events.KindStageStart || e.Kind == events.KindStageFinish {
+					d.reconcileCallWaits(ctx, dispatcher, reader)
+				}
+			case <-ticker.C:
+				d.reconcileCallWaits(ctx, dispatcher, reader)
 			}
 		}
 	}()
 }
 
-// applyCallWait suspends the run a call start names and resumes it when the
-// call finishes. It stays non-blocking: a full subscriber buffer drops events,
-// and a dropped start leaves a waiting run holding the capacity its callee
-// needs, so this must never wait on anything.
-func applyCallWait(dispatcher *taskDispatcher, e events.Event) {
-	switch e.Kind {
-	case events.KindWorkflowCallStarted:
-		if waiting, _ := e.Data["wait"].(bool); waiting {
-			dispatcher.Suspend(e.TaskID)
+// Events only prompt a read; periodic reads recover dropped starts and finishes.
+func (d *Daemon) reconcileCallWaits(ctx context.Context, dispatcher *taskDispatcher, reader storecontract.StepReader) {
+	dispatcher.mu.Lock()
+	holds := make([]*taskHold, 0, len(dispatcher.holds))
+	for _, hold := range dispatcher.holds {
+		holds = append(holds, hold)
+	}
+	dispatcher.mu.Unlock()
+	for _, hold := range holds {
+		readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		steps, err := reader.ListSteps(readCtx, hold.id, hold.attempt)
+		cancel()
+		if err != nil {
+			d.Log.Warn("read call waits", "task", hold.id, "err", err)
+			continue
 		}
-	case events.KindWorkflowCallFinished:
-		dispatcher.Resume(e.TaskID)
+		waits := 0
+		for _, step := range steps {
+			if step.Kind == task.StepKindCall && step.CalledExecutionID != 0 && (step.Status == taskstate.StepPending || step.Status == taskstate.StepRunning) {
+				waits++
+			}
+		}
+		dispatcher.setCallWaits(hold, waits)
 	}
 }

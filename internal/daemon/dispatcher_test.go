@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"runtime"
 	"sync"
@@ -12,8 +11,10 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/eventbus"
 	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
 // runDeadline bounds a wait for something that must happen. Only a broken
@@ -139,12 +140,25 @@ func slotHolders(d *taskDispatcher) int {
 	return held
 }
 
+func changeCallWaits(d *taskDispatcher, delta int, id int64) {
+	d.mu.Lock()
+	hold := d.holds[id]
+	waits := 0
+	if hold != nil {
+		waits = max(0, hold.waits+delta)
+	}
+	d.mu.Unlock()
+	if hold != nil {
+		d.setCallWaits(hold, waits)
+	}
+}
+
 // submitRun queues a task whose process reports its start on started and then
 // blocks until released. Naming the run's capacity is what the daemon's own
 // process does, where the task's id first exists.
 func submitRun(d *taskDispatcher, id int64, repo string, started chan<- int64, released <-chan struct{}) {
 	d.Submit(context.Background(), &workflow.Task{ID: id, Owner: "acme", Repo: repo}, func(_ context.Context, task *workflow.Task, hold *taskHold) {
-		hold.name(task.ID)
+		hold.name(task.ID, task.Attempt)
 		started <- task.ID
 		<-released
 	})
@@ -164,11 +178,11 @@ func TestSuspendReleasesCapacityForTheTaskBehindIt(t *testing.T) {
 	submitRun(d, 2, "app", started, b)
 	awaitNoStart(t, started, "while the waiting run held the only slot and the repo's place")
 
-	d.Suspend(1)
+	changeCallWaits(d, 1, 1)
 	awaitStart(t, started, 2)
 	close(b)
 
-	d.Resume(1)
+	changeCallWaits(d, -1, 1)
 	awaitState(t, "task 1 did not take its slot and its place back", func() bool { return holdsCapacity(d, 1) })
 
 	submitRun(d, 3, "app", started, c)
@@ -193,11 +207,11 @@ func TestResumedRunKeepsItsPlaceInTheReposChain(t *testing.T) {
 	submitRun(d, 2, "app", started, b)
 	awaitNoStart(t, started, "while the repo's place was another run's")
 
-	d.Suspend(1)
+	changeCallWaits(d, 1, 1)
 	awaitStart(t, started, 2)
 	close(b)
 
-	d.Resume(1)
+	changeCallWaits(d, -1, 1)
 	awaitState(t, "task 1 did not take its slot and its place back", func() bool { return holdsCapacity(d, 1) })
 	submitRun(d, 3, "app", started, c)
 	awaitNoStart(t, started, "while the resumed run held the repo's place, with slots free")
@@ -217,8 +231,8 @@ func TestResumeTakesCapacityBackOnlyAfterTheLastWait(t *testing.T) {
 
 	submitRun(d, 1, "app", started, a)
 	awaitStart(t, started, 1)
-	d.Suspend(1)
-	d.Suspend(1)
+	changeCallWaits(d, 1, 1)
+	changeCallWaits(d, 1, 1)
 
 	// The callee queued behind it runs, and returns.
 	submitRun(d, 2, "app", started, b)
@@ -228,11 +242,11 @@ func TestResumeTakesCapacityBackOnlyAfterTheLastWait(t *testing.T) {
 
 	// One wait outstanding: the run keeps no capacity while its other callee
 	// runs.
-	d.Resume(1)
+	changeCallWaits(d, -1, 1)
 	awaitNoState(t, "task 1 took capacity back with a callee still running", func() bool { return holdsCapacity(d, 1) })
 
 	// With the last wait done it takes capacity back.
-	d.Resume(1)
+	changeCallWaits(d, -1, 1)
 	awaitState(t, "task 1 did not take its capacity back", func() bool { return holdsCapacity(d, 1) })
 
 	close(a)
@@ -253,13 +267,13 @@ func TestResumeTwiceDoesNotCountASecondSlot(t *testing.T) {
 
 	submitRun(d, 1, "app", started, a)
 	awaitStart(t, started, 1)
-	d.Suspend(1)
+	changeCallWaits(d, 1, 1)
 
 	// X takes the repo's place while A waits on its callee, so A's first
 	// re-acquire queues its next place behind X.
 	submitRun(d, 2, "app", started, x)
 	awaitStart(t, started, 2)
-	d.Resume(1)
+	changeCallWaits(d, -1, 1)
 	awaitState(t, "task 1 did not queue its place back", func() bool {
 		_, place, _ := capacity(d, 1)
 		return place
@@ -268,8 +282,8 @@ func TestResumeTwiceDoesNotCountASecondSlot(t *testing.T) {
 	// That callee ends and the run starts its next call at once: the place the
 	// first re-acquire claimed is given back with it, and the second re-acquire
 	// takes a slot immediately.
-	d.Suspend(1)
-	d.Resume(1)
+	changeCallWaits(d, 1, 1)
+	changeCallWaits(d, -1, 1)
 	awaitState(t, "task 1 did not take its slot back", func() bool { return holdsCapacity(d, 1) })
 
 	// X leaves, so the first re-acquire can take a slot as well.
@@ -308,13 +322,13 @@ func TestSecondReacquireDoesNotQueueASecondPlace(t *testing.T) {
 
 	submitRun(d, 1, "app", started, a)
 	awaitStart(t, started, 1)
-	d.Suspend(1)
+	changeCallWaits(d, 1, 1)
 
 	// X holds the repo's place, so the run's re-acquire queues behind it and
 	// stays there.
 	submitRun(d, 2, "app", started, x)
 	awaitStart(t, started, 2)
-	d.Resume(1)
+	changeCallWaits(d, -1, 1)
 	awaitState(t, "task 1 did not queue its place back", func() bool {
 		_, place, _ := capacity(d, 1)
 		return place
@@ -363,14 +377,14 @@ func TestResumeAfterTheRunReturnedLeavesNoCapacity(t *testing.T) {
 
 	submitRun(d, 1, "app", started, a)
 	awaitStart(t, started, 1)
-	d.Suspend(1)
+	changeCallWaits(d, 1, 1)
 
 	submitRun(d, 2, "app", started, b)
 	awaitStart(t, started, 2)
 
 	// The resume is queued for a slot and a place in the chain, and overtaken by
 	// the run returning before either comes free.
-	d.Resume(1)
+	changeCallWaits(d, -1, 1)
 	awaitState(t, "task 1 did not take its place in the chain back", func() bool {
 		_, place, _ := capacity(d, 1)
 		return place
@@ -394,49 +408,7 @@ func TestResumeAfterTheRunReturnedLeavesNoCapacity(t *testing.T) {
 	close(c)
 
 	// A Resume arriving after the run returned is a no-op.
-	d.Resume(1)
-	d.Wait()
-}
-
-// callEvent builds one call step's event as the daemon receives it: the event
-// the container's workflow engine published, JSON-encoded and decoded again by
-// the agent-event bridge, so the wait flag arrives as a decoded bool.
-func callEvent(t *testing.T, kind string, taskID int64, wait bool) events.Event {
-	t.Helper()
-	raw, err := json.Marshal(events.Event{Kind: kind, TaskID: taskID, Data: map[string]any{"wait": wait}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var e events.Event
-	if err := json.Unmarshal(raw, &e); err != nil {
-		t.Fatal(err)
-	}
-	return e
-}
-
-// Only a call the caller waits on releases its capacity, and the call
-// finishing takes it back.
-func TestCallWaitEventsReleaseCapacity(t *testing.T) {
-	d := newTaskDispatcher(1, nil)
-	started := make(chan int64, 4)
-	a, b := make(chan struct{}), make(chan struct{})
-
-	submitRun(d, 1, "app", started, a)
-	awaitStart(t, started, 1)
-	submitRun(d, 2, "app", started, b)
-
-	// A call that does not wait is not waited on: nothing is released.
-	applyCallWait(d, callEvent(t, events.KindWorkflowCallStarted, 1, false))
-	awaitNoStart(t, started, "while the call that started does not wait")
-
-	applyCallWait(d, callEvent(t, events.KindWorkflowCallStarted, 1, true))
-	awaitStart(t, started, 2)
-	close(b)
-
-	applyCallWait(d, callEvent(t, events.KindWorkflowCallFinished, 1, false))
-	awaitState(t, "task 1 did not take its capacity back", func() bool { return holdsCapacity(d, 1) })
-
-	close(a)
+	changeCallWaits(d, -1, 1)
 	d.Wait()
 }
 
@@ -445,6 +417,65 @@ func TestCallWaitsWithoutABus(t *testing.T) {
 	d := &Daemon{Cfg: config.NewHolder(config.Config{}), Log: slog.New(slog.DiscardHandler)}
 	d.watchCallWaits(t.Context())
 	d.WaitForTasks()
+}
+
+type callWaitStore struct {
+	storecontract.TaskStore
+	mu    sync.Mutex
+	steps []task.StepExecution
+}
+
+func (s *callWaitStore) ListSteps(_ context.Context, id int64, _ int) ([]task.StepExecution, error) {
+	if id != 1 {
+		return nil, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]task.StepExecution(nil), s.steps...), nil
+}
+
+func TestCallWaitsRecoverDroppedStart(t *testing.T) {
+	store := &callWaitStore{steps: []task.StepExecution{
+		{Kind: task.StepKindCall, Status: taskstate.StepRunning, CalledExecutionID: 2},
+		{Kind: task.StepKindCall, Status: taskstate.StepRunning, CalledExecutionID: 3},
+	}}
+	cfg := config.Config{}
+	cfg.Containers.MaxConcurrency = 1
+	d := &Daemon{Cfg: config.NewHolder(cfg), Store: store, Bus: events.NewBus(), Log: slog.New(slog.DiscardHandler)}
+	dispatcher := d.taskDispatcher()
+	started := make(chan int64, 2)
+	a, b := make(chan struct{}), make(chan struct{})
+	defer func() { close(a); dispatcher.Wait() }()
+	defer func() {
+		if b != nil {
+			close(b)
+		}
+	}()
+	submitRun(dispatcher, 1, "app", started, a)
+	awaitStart(t, started, 1)
+	submitRun(dispatcher, 2, "app", started, b)
+	// The live start event was dropped; only the recorded call remains.
+	d.watchCallWaits(t.Context())
+	awaitStart(t, started, 2)
+	close(b)
+	b = nil
+	// Repeated reads must not accumulate waits; a partial finish stays suspended.
+	store.mu.Lock()
+	store.steps[0].Status = taskstate.StepSucceeded
+	store.mu.Unlock()
+	awaitState(t, "remaining call was not reconciled", func() bool {
+		dispatcher.mu.Lock()
+		defer dispatcher.mu.Unlock()
+		return dispatcher.holds[1].waits == 1
+	})
+	if holdsCapacity(dispatcher, 1) {
+		t.Fatal("parent reacquired capacity with a call still open")
+	}
+	// The finish event is also missing; the durable close restores capacity.
+	store.mu.Lock()
+	store.steps[1].Status = taskstate.StepSucceeded
+	store.mu.Unlock()
+	awaitState(t, "parent did not recover its capacity", func() bool { return holdsCapacity(dispatcher, 1) })
 }
 
 // stubTasks is a task bus with an empty stream, so a drain pass falls through

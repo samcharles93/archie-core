@@ -1026,25 +1026,27 @@ type taskHold struct {
 	baton chan struct{}
 	// slot is true while the run counts against the global limit.
 	slot bool
-	// waits counts the callees the run is waiting on: the first Suspend gives
-	// capacity back and the last Resume takes it again.
+	// waits counts the callees the run is waiting on: an open call gives capacity
+	// back and the last closed call takes it again.
 	waits int
 	// finished is true once the run's process returned.
 	finished bool
 	// id is the task this hold belongs to, named by the run once it knows the
 	// task's id.
-	id int64
+	id      int64
+	attempt int
 }
 
 // name records which task's capacity this hold is, so a wait on a callee can
 // give it back by task id. Zero names nothing: a task arriving on the NATS
 // stream has no id until the store claims its row inside the run.
-func (h *taskHold) name(id int64) {
+func (h *taskHold) name(id int64, attempt int) {
 	if id == 0 {
 		return
 	}
 	h.dispatcher.mu.Lock()
 	h.id = id
+	h.attempt = attempt
 	h.dispatcher.holds[id] = h
 	h.dispatcher.mu.Unlock()
 }
@@ -1125,47 +1127,25 @@ func (d *taskDispatcher) finishRun(hold *taskHold) {
 	d.slotsFree.Broadcast()
 }
 
-// Suspend gives a run's capacity back while it waits on a callee, so the
-// callee can start. Calls are refcounted per task: a run waiting on callees
-// from parallel branches releases once. An unknown task, or one whose run has
-// already returned, is a no-op.
-func (d *taskDispatcher) Suspend(id int64) {
+// setCallWaits applies a durable snapshot without accumulating duplicate events.
+func (d *taskDispatcher) setCallWaits(hold *taskHold, waits int) {
 	d.mu.Lock()
-	hold := d.holds[id]
-	if hold == nil || hold.finished {
+	if d.holds[hold.id] != hold || hold.finished {
 		d.mu.Unlock()
 		return
 	}
-	hold.waits++
-	if hold.waits == 1 {
+	previous := hold.waits
+	hold.waits = waits
+	if waits > 0 {
 		d.giveBackLocked(hold)
 	}
 	d.mu.Unlock()
-	d.slotsFree.Broadcast()
-}
-
-// Resume takes a run's capacity back when one of its waits ends. Only the last
-// wait does: a run waiting on callees from parallel branches keeps nothing
-// until all of them are done. An unknown task, one whose run has returned, and
-// one that never suspended are all no-ops.
-func (d *taskDispatcher) Resume(id int64) {
-	d.mu.Lock()
-	hold := d.holds[id]
-	if hold == nil || hold.finished || hold.waits == 0 {
-		d.mu.Unlock()
-		return
+	if waits > 0 {
+		d.slotsFree.Broadcast()
+	} else if previous > 0 {
+		// Reacquiring may block behind another task; the caller keeps running.
+		go d.reacquire(hold)
 	}
-	hold.waits--
-	if hold.waits > 0 {
-		d.mu.Unlock()
-		return
-	}
-	d.mu.Unlock()
-	// The two waits below can block, and neither may hold up the bus
-	// subscriber calling this or the resumed run, which is already executing
-	// inside its container: the execution cap can be exceeded by at most the
-	// number of simultaneous resumes, and re-converges as tasks finish.
-	go d.reacquire(hold)
 }
 
 // reacquire returns a resumed run's capacity: its place in its repo's chain
@@ -1176,7 +1156,7 @@ func (d *taskDispatcher) Resume(id int64) {
 func (d *taskDispatcher) reacquire(hold *taskHold) {
 	d.mu.Lock()
 	if hold.finished || hold.waits > 0 {
-		// The run returned, or started waiting again, after the Resume that
+		// The run returned, or started waiting again, after the reconciliation that
 		// queued this: it needs no capacity.
 		d.mu.Unlock()
 		return
@@ -1593,7 +1573,7 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 func (d *Daemon) process(ctx context.Context, task *workflow.Task, hold *taskHold) {
 	// A task off the NATS stream only has an id once the store has claimed its
 	// row, inside this call, so its capacity is named here.
-	hold.name(task.ID)
+	hold.name(task.ID, task.Attempt)
 	// The workflow may name the identity the run acts as, which everything
 	// below is chosen by, so it is settled before anything else.
 	if !d.adoptWorkflowIdentity(ctx, task) {
