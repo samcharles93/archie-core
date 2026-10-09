@@ -6,10 +6,9 @@
  * set headers on a WebSocket, so the shared-token gate reads the same
  * HttpOnly cookie the SSE stream uses.
  *
- * The transport is raw bytes in both directions. Sizing the remote PTY is a
- * contract detail the daemon side will own with the session, so this
- * component fits the local surface but does not claim to resize the
- * container.
+ * The transport is raw bytes in both directions. The component measures its
+ * own box before connecting and sends that size so the remote PTY is created
+ * at the right geometry; live resize is not wired yet.
  */
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { Terminal } from "@xterm/xterm";
@@ -59,7 +58,9 @@ onMounted(() => {
   fitLocal();
   term.focus();
 
-  const ws = new WebSocket(setupTerminalURL(props.profile, window.location));
+  const ws = new WebSocket(
+    setupTerminalURL(props.profile, window.location, term?.cols ?? 80, term?.rows ?? 24),
+  );
   socket = ws;
   ws.binaryType = "arraybuffer";
   ws.onopen = () => {

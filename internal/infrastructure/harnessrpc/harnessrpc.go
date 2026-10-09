@@ -57,21 +57,26 @@ func Dial(target, token string, options ...grpc.DialOption) (*Client, func(), er
 	return &Client{svc: pb.NewHarnessServiceClient(conn)}, func() { _ = conn.Close() }, nil
 }
 
-// Open starts a setup session for profile and returns its duplex stream. The
-// returned session satisfies the dashboard's HarnessTerminal interface. A
-// failure the server reports before any output arrives is returned here; a
-// failure after the session is open surfaces on Read.
-func (c *Client) Open(ctx context.Context, orgID, profile string) (io.ReadWriteCloser, error) {
+// Open starts a setup session for profile at the requested terminal size and
+// returns its duplex stream. The returned session satisfies the dashboard's
+// HarnessTerminal interface. A failure the server reports before any output
+// arrives is returned here; a failure after the session is open surfaces on
+// Read.
+func (c *Client) Open(ctx context.Context, orgID, profile string, rows, cols int) (io.ReadWriteCloser, error) {
 	streamCtx, cancel := context.WithCancel(ctx)
 	stream, err := c.svc.Open(streamCtx)
 	if err != nil {
 		cancel()
 		return nil, err
 	}
-	target := &pb.OpenRequest{Frame: &pb.OpenRequest_Target{Target: &pb.OpenTarget{
-		Org:    orgID,
-		Target: &pb.OpenTarget_Setup{Setup: &pb.SetupTarget{Profile: profile}},
-	}}}
+	target := &pb.OpenRequest{
+		Frame: &pb.OpenRequest_Target{Target: &pb.OpenTarget{
+			Org:    orgID,
+			Target: &pb.OpenTarget_Setup{Setup: &pb.SetupTarget{Profile: profile}},
+		}},
+		// The daemon clamps this; zero means "use your default".
+		Size: &pb.ConsoleSize{Rows: uint32(max(rows, 0)), Cols: uint32(max(cols, 0))},
+	}
 	if err := stream.Send(target); err != nil {
 		cancel()
 		return nil, err

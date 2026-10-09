@@ -49,8 +49,18 @@ type Manager struct {
 	TTL time.Duration
 }
 
-// Open starts a setup session and returns its duplex PTY.
-func (m *Manager) Open(ctx context.Context, org, profile string) (*Session, error) {
+// Terminal geometry: the fallback when the client asks for no size, and the
+// largest the PTY is created with.
+const (
+	terminalDefaultRows = 24
+	terminalDefaultCols = 80
+	terminalMaxCells    = 1000
+)
+
+// Open starts a setup session at the requested terminal size, in character
+// cells, and returns its duplex PTY. A zero or out-of-range size falls back to
+// the default rather than failing the open.
+func (m *Manager) Open(ctx context.Context, org, profile string, rows, cols int) (*Session, error) {
 	p, err := m.Profile(profile)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrProfileUnknown, profile)
@@ -74,7 +84,8 @@ func (m *Manager) Open(ctx context.Context, org, profile string) (*Session, erro
 		_ = m.Launcher.Release(context.WithoutCancel(ctx), run)
 		return nil, fmt.Errorf("%w: %s", ErrNoShell, p.Kit)
 	}
-	pty, err := container.ExecPTY(ctx, m.Client, run.Container.ID, run.Harness.User, run.Harness.Env, shell, 24, 80)
+	pty, err := container.ExecPTY(ctx, m.Client, run.Container.ID, run.Harness.User, run.Harness.Env, shell,
+		uint(terminalSize(rows, terminalDefaultRows)), uint(terminalSize(cols, terminalDefaultCols)))
 	if err != nil {
 		_ = m.Launcher.Release(context.WithoutCancel(ctx), run)
 		return nil, err
@@ -116,6 +127,14 @@ func (s *Session) Close() error {
 		err = s.release(context.Background(), s.run)
 	})
 	return err
+}
+
+// terminalSize bounds a requested row or column count.
+func terminalSize(v, def int) int {
+	if v < 1 || v > terminalMaxCells {
+		return def
+	}
+	return v
 }
 
 // pickShell returns the login shell the image provides, preferring bash over

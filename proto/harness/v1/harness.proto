@@ -23,6 +23,10 @@ message OpenRequest {
     // stdin is terminal input bytes.
     bytes stdin = 2;
   }
+  // size is the terminal size the client wants, in character cells. The
+  // dashboard sends it with the target frame so the PTY is created at the
+  // right size; the daemon falls back to its own default when it is absent.
+  ConsoleSize size = 3;
 }
 
 // OpenResponse is one server frame.
@@ -59,4 +63,10 @@ message SetupTarget {
 message RunTarget {
   int64 task_id = 1;
   int64 attempt = 2;
+}
+
+// ConsoleSize is a terminal size in character cells.
+message ConsoleSize {
+  uint32 rows = 1;
+  uint32 cols = 2;
 }

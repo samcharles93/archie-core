@@ -88,7 +88,7 @@ func (h *harnessServer) Open(stream pb.HarnessService_OpenServer) error {
 		if t.Setup.GetProfile() == "" {
 			return status.Error(codes.InvalidArgument, "the setup target names no profile")
 		}
-		return h.openSetup(stream, target.GetOrg(), t.Setup.GetProfile())
+		return h.openSetup(stream, target.GetOrg(), t.Setup.GetProfile(), first.GetSize())
 	case *pb.OpenTarget_Run:
 		return status.Error(codes.Unimplemented, "run-scoped sessions are not served yet")
 	default:
@@ -98,8 +98,8 @@ func (h *harnessServer) Open(stream pb.HarnessService_OpenServer) error {
 
 // openSetup opens one setup session and pumps frames until the shell exits or
 // either side closes. Teardown runs on every return.
-func (h *harnessServer) openSetup(stream pb.HarnessService_OpenServer, org, profile string) error {
-	session, err := h.sessions.Open(stream.Context(), org, profile)
+func (h *harnessServer) openSetup(stream pb.HarnessService_OpenServer, org, profile string, size *pb.ConsoleSize) error {
+	session, err := h.sessions.Open(stream.Context(), org, profile, int(size.GetRows()), int(size.GetCols()))
 	if err != nil {
 		h.log.Warn("setup session failed to open", "org", org, "profile", profile, "err", err)
 		// The failure rides the stream as a frame, not only as a status: the

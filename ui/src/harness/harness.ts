@@ -53,15 +53,22 @@ export function bindingStatus(
 }
 
 /**
- * setupTerminalURL builds the WebSocket URL for one Kit profile. The location
- * is a parameter rather than window so the module stays runnable outside a
- * browser.
+ * setupTerminalURL builds the WebSocket URL for one Kit profile, carrying the
+ * terminal size the browser measured so the remote PTY is created with it.
+ * The location is a parameter rather than window so the module stays runnable
+ * outside a browser.
  */
 export function setupTerminalURL(
   profile: string,
   location: Pick<Location, "protocol" | "host">,
+  cols = 80,
+  rows = 24,
 ): string {
   const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-  const query = new URLSearchParams({ profile }).toString();
+  const query = new URLSearchParams({
+    profile,
+    cols: String(cols),
+    rows: String(rows),
+  }).toString();
   return `${scheme}//${location.host}/api/harness/terminal?${query}`;
 }

@@ -29,11 +29,31 @@ test("credential status distinguishes uncaptured, ready, expiring and expired bi
   }
 });
 
-test("setup terminals preserve secure transport and encode the profile", () => {
-  for (const [profile, location, expected] of [
-    ["claude-kit", { protocol: "http:", host: "127.0.0.1:8484" }, "ws://127.0.0.1:8484/api/harness/terminal?profile=claude-kit"],
-    ["claude kit", { protocol: "https:", host: "archie.example" }, "wss://archie.example/api/harness/terminal?profile=claude+kit"],
-  ] as const) {
-    assert.equal(setupTerminalURL(profile, location), expected, profile);
+test("setup terminals preserve secure transport, encode the profile and carry the size", () => {
+  const cases: Array<[string, Pick<Location, "protocol" | "host">, number, number, string]> = [
+    [
+      "claude-kit",
+      { protocol: "http:", host: "127.0.0.1:8484" },
+      80,
+      24,
+      "ws://127.0.0.1:8484/api/harness/terminal?profile=claude-kit&cols=80&rows=24",
+    ],
+    [
+      "claude kit",
+      { protocol: "https:", host: "archie.example" },
+      80,
+      24,
+      "wss://archie.example/api/harness/terminal?profile=claude+kit&cols=80&rows=24",
+    ],
+    [
+      "claude-kit",
+      { protocol: "https:", host: "archie.example" },
+      120,
+      30,
+      "wss://archie.example/api/harness/terminal?profile=claude-kit&cols=120&rows=30",
+    ],
+  ];
+  for (const [profile, location, cols, rows, expected] of cases) {
+    assert.equal(setupTerminalURL(profile, location, cols, rows), expected, profile);
   }
 });

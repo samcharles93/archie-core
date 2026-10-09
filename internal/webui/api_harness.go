@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -47,10 +49,28 @@ type harnessProfileDoc struct {
 	Kit string `json:"kit"`
 }
 
-// HarnessTerminal opens a setup session to a Kit profile's container PTY.
-// Nil answers 503.
+// HarnessTerminal opens a setup session to a Kit profile's container PTY at
+// the requested terminal size, in character cells. Nil answers 503.
 type HarnessTerminal interface {
-	Open(ctx context.Context, orgID, profile string) (io.ReadWriteCloser, error)
+	Open(ctx context.Context, orgID, profile string, rows, cols int) (io.ReadWriteCloser, error)
+}
+
+// Terminal geometry: the dashboard's fallback when a size is absent or out of
+// range, and the largest it will ask for.
+const (
+	terminalDefaultRows = 24
+	terminalDefaultCols = 80
+	terminalMaxCells    = 1000
+)
+
+// terminalSize reads a positive row or column count from the query, falling
+// back to def when it is absent or out of range rather than failing the open.
+func terminalSize(query url.Values, key string, def int) int {
+	n, err := strconv.Atoi(query.Get(key))
+	if err != nil || n < 1 || n > terminalMaxCells {
+		return def
+	}
+	return n
 }
 
 // harnessBindingView is one credential binding as the page renders it: the
@@ -182,7 +202,9 @@ func (s *Server) handleHarnessTerminal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "profile is required", http.StatusBadRequest)
 		return
 	}
-	session, err := s.HarnessTerminal.Open(r.Context(), string(org.OrgFromContext(r.Context())), profile)
+	rows := terminalSize(r.URL.Query(), "rows", terminalDefaultRows)
+	cols := terminalSize(r.URL.Query(), "cols", terminalDefaultCols)
+	session, err := s.HarnessTerminal.Open(r.Context(), string(org.OrgFromContext(r.Context())), profile, rows, cols)
 	if err != nil {
 		s.logf("open setup terminal", "err", err, "profile", profile)
 		http.Error(w, "setup terminal failed", http.StatusBadGateway)

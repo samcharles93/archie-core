@@ -29,7 +29,11 @@ type OpenRequest struct {
 	//
 	//	*OpenRequest_Target
 	//	*OpenRequest_Stdin
-	Frame         isOpenRequest_Frame `protobuf_oneof:"frame"`
+	Frame isOpenRequest_Frame `protobuf_oneof:"frame"`
+	// size is the terminal size the client wants, in character cells. The
+	// dashboard sends it with the target frame so the PTY is created at the
+	// right size; the daemon falls back to its own default when it is absent.
+	Size          *ConsoleSize `protobuf:"bytes,3,opt,name=size,proto3" json:"size,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -85,6 +89,13 @@ func (x *OpenRequest) GetStdin() []byte {
 		if x, ok := x.Frame.(*OpenRequest_Stdin); ok {
 			return x.Stdin
 		}
+	}
+	return nil
+}
+
+func (x *OpenRequest) GetSize() *ConsoleSize {
+	if x != nil {
+		return x.Size
 	}
 	return nil
 }
@@ -402,15 +413,69 @@ func (x *RunTarget) GetAttempt() int64 {
 	return 0
 }
 
+// ConsoleSize is a terminal size in character cells.
+type ConsoleSize struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rows          uint32                 `protobuf:"varint,1,opt,name=rows,proto3" json:"rows,omitempty"`
+	Cols          uint32                 `protobuf:"varint,2,opt,name=cols,proto3" json:"cols,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConsoleSize) Reset() {
+	*x = ConsoleSize{}
+	mi := &file_harness_v1_harness_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConsoleSize) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConsoleSize) ProtoMessage() {}
+
+func (x *ConsoleSize) ProtoReflect() protoreflect.Message {
+	mi := &file_harness_v1_harness_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConsoleSize.ProtoReflect.Descriptor instead.
+func (*ConsoleSize) Descriptor() ([]byte, []int) {
+	return file_harness_v1_harness_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ConsoleSize) GetRows() uint32 {
+	if x != nil {
+		return x.Rows
+	}
+	return 0
+}
+
+func (x *ConsoleSize) GetCols() uint32 {
+	if x != nil {
+		return x.Cols
+	}
+	return 0
+}
+
 var File_harness_v1_harness_proto protoreflect.FileDescriptor
 
 const file_harness_v1_harness_proto_rawDesc = "" +
 	"\n" +
 	"\x18harness/v1/harness.proto\x12\n" +
-	"harness.v1\"`\n" +
+	"harness.v1\"\x8d\x01\n" +
 	"\vOpenRequest\x120\n" +
 	"\x06target\x18\x01 \x01(\v2\x16.harness.v1.OpenTargetH\x00R\x06target\x12\x16\n" +
-	"\x05stdin\x18\x02 \x01(\fH\x00R\x05stdinB\a\n" +
+	"\x05stdin\x18\x02 \x01(\fH\x00R\x05stdin\x12+\n" +
+	"\x04size\x18\x03 \x01(\v2\x17.harness.v1.ConsoleSizeR\x04sizeB\a\n" +
 	"\x05frame\"h\n" +
 	"\fOpenResponse\x12\x18\n" +
 	"\x06stdout\x18\x01 \x01(\fH\x00R\x06stdout\x12\x1d\n" +
@@ -427,7 +492,10 @@ const file_harness_v1_harness_proto_rawDesc = "" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\">\n" +
 	"\tRunTarget\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\x03R\x06taskId\x12\x18\n" +
-	"\aattempt\x18\x02 \x01(\x03R\aattempt2O\n" +
+	"\aattempt\x18\x02 \x01(\x03R\aattempt\"5\n" +
+	"\vConsoleSize\x12\x12\n" +
+	"\x04rows\x18\x01 \x01(\rR\x04rows\x12\x12\n" +
+	"\x04cols\x18\x02 \x01(\rR\x04cols2O\n" +
 	"\x0eHarnessService\x12=\n" +
 	"\x04Open\x12\x17.harness.v1.OpenRequest\x1a\x18.harness.v1.OpenResponse(\x010\x01B\xb4\x01\n" +
 	"\x0ecom.harness.v1B\fHarnessProtoP\x01ZKgithub.com/samcharles93/archie-core/internal/contracts/harness/v1;harnessv1\xa2\x02\x03HXX\xaa\x02\n" +
@@ -446,25 +514,27 @@ func file_harness_v1_harness_proto_rawDescGZIP() []byte {
 	return file_harness_v1_harness_proto_rawDescData
 }
 
-var file_harness_v1_harness_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_harness_v1_harness_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_harness_v1_harness_proto_goTypes = []any{
 	(*OpenRequest)(nil),  // 0: harness.v1.OpenRequest
 	(*OpenResponse)(nil), // 1: harness.v1.OpenResponse
 	(*OpenTarget)(nil),   // 2: harness.v1.OpenTarget
 	(*SetupTarget)(nil),  // 3: harness.v1.SetupTarget
 	(*RunTarget)(nil),    // 4: harness.v1.RunTarget
+	(*ConsoleSize)(nil),  // 5: harness.v1.ConsoleSize
 }
 var file_harness_v1_harness_proto_depIdxs = []int32{
 	2, // 0: harness.v1.OpenRequest.target:type_name -> harness.v1.OpenTarget
-	3, // 1: harness.v1.OpenTarget.setup:type_name -> harness.v1.SetupTarget
-	4, // 2: harness.v1.OpenTarget.run:type_name -> harness.v1.RunTarget
-	0, // 3: harness.v1.HarnessService.Open:input_type -> harness.v1.OpenRequest
-	1, // 4: harness.v1.HarnessService.Open:output_type -> harness.v1.OpenResponse
-	4, // [4:5] is the sub-list for method output_type
-	3, // [3:4] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	5, // 1: harness.v1.OpenRequest.size:type_name -> harness.v1.ConsoleSize
+	3, // 2: harness.v1.OpenTarget.setup:type_name -> harness.v1.SetupTarget
+	4, // 3: harness.v1.OpenTarget.run:type_name -> harness.v1.RunTarget
+	0, // 4: harness.v1.HarnessService.Open:input_type -> harness.v1.OpenRequest
+	1, // 5: harness.v1.HarnessService.Open:output_type -> harness.v1.OpenResponse
+	5, // [5:6] is the sub-list for method output_type
+	4, // [4:5] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_harness_v1_harness_proto_init() }
@@ -491,7 +561,7 @@ func file_harness_v1_harness_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_harness_v1_harness_proto_rawDesc), len(file_harness_v1_harness_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
