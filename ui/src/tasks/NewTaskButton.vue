@@ -25,7 +25,7 @@ function started(taskId: number) {
 <template>
   <Dialog v-model:open="open">
     <DialogTrigger as-child>
-      <Button size="sm"><Plus data-icon="inline-start" /> New task</Button>
+      <Button size="sm"><Plus data-icon="inline-start" />New task</Button>
     </DialogTrigger>
     <DialogContent class="sm:max-w-[640px]">
       <DialogHeader>

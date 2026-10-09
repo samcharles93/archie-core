@@ -108,14 +108,14 @@ function rename(name: string | number) {
       <section v-if="current" class="min-w-0 rounded-lg border border-border bg-card px-5 pt-4 pb-2" aria-label="Persona">
         <header class="flex items-center gap-2">
           <h2 class="min-w-0 flex-1 truncate font-mono text-[15px] font-medium">{{ current.name || "unnamed" }}</h2>
-          <Button variant="ghost" size="sm" @click="duplicate"><Copy data-icon="inline-start" /> Duplicate</Button>
+          <Button variant="ghost" size="sm" @click="duplicate"><Copy data-icon="inline-start" />Duplicate</Button>
           <Button
             variant="ghost"
             size="sm"
             class="text-danger"
             :disabled="collection.personas.length <= 1"
             @click="remove"
-            ><Trash2 data-icon="inline-start" /> Delete</Button
+            ><Trash2 data-icon="inline-start" />Delete</Button
           >
         </header>
         <SettingRow label="Name" for="persona-name">

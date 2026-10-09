@@ -70,7 +70,7 @@ function fieldCount(schema: Record<string, string> | null | undefined): number {
       <CardTitle>Event types</CardTitle>
       <CardAction>
         <Button variant="outline" size="sm" @click="pasteExample()"
-          ><ClipboardPaste /> From payload</Button
+          ><ClipboardPaste />From payload</Button
         >
       </CardAction>
     </CardHeader>
@@ -111,7 +111,7 @@ function fieldCount(schema: Record<string, string> | null | undefined): number {
             >
             <TableCell class="text-right">
               <Button variant="outline" size="sm" @click="nameProposal(p)"
-                ><Tag /> Name</Button
+                ><Tag />Name</Button
               >
             </TableCell>
           </TableRow>

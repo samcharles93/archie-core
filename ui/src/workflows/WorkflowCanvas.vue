@@ -170,10 +170,10 @@ const beforePath = computed(() => menuPath.value ? [...menuPath.value.slice(0, -
         <template v-if="menu.step?.kind === 'step' && menuPath">
           <DropdownMenuLabel class="truncate">{{ menu.step.title || stepTitle(menu.step.type) }}</DropdownMenuLabel>
           <template v-if="restart">
-            <DropdownMenuItem :disabled="restart.blocked" @select="emit('restart', restart.from)"><RotateCcw /> {{ restart.label }}</DropdownMenuItem>
+            <DropdownMenuItem :disabled="restart.blocked" @select="emit('restart', restart.from)"><RotateCcw />{{ restart.label }}</DropdownMenuItem>
             <DropdownMenuSeparator />
           </template>
-          <DropdownMenuItem @select="emit('edit', menuPath)"><Pencil /> Edit</DropdownMenuItem>
+          <DropdownMenuItem @select="emit('edit', menuPath)"><Pencil />Edit</DropdownMenuItem>
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>Insert before</DropdownMenuSubTrigger>
             <DropdownMenuSubContent class="w-52"><StepTypeItems :types="typesAt(menuPath)" @pick="emit('insert', beforePath, $event)" /></DropdownMenuSubContent>
@@ -182,11 +182,11 @@ const beforePath = computed(() => menuPath.value ? [...menuPath.value.slice(0, -
             <DropdownMenuSubTrigger>Insert after</DropdownMenuSubTrigger>
             <DropdownMenuSubContent class="w-52"><StepTypeItems :types="typesAt(menuPath)" @pick="emit('insert', menuPath, $event)" /></DropdownMenuSubContent>
           </DropdownMenuSub>
-          <DropdownMenuItem v-if="menu.step.type !== 'parallel'" @select="emit('duplicate', menuPath)"><Copy /> Duplicate</DropdownMenuItem>
-          <DropdownMenuItem @select="emit('move', menuPath, -1)"><ArrowUp /> Move up</DropdownMenuItem>
-          <DropdownMenuItem @select="emit('move', menuPath, 1)"><ArrowDown /> Move down</DropdownMenuItem>
+          <DropdownMenuItem v-if="menu.step.type !== 'parallel'" @select="emit('duplicate', menuPath)"><Copy />Duplicate</DropdownMenuItem>
+          <DropdownMenuItem @select="emit('move', menuPath, -1)"><ArrowUp />Move up</DropdownMenuItem>
+          <DropdownMenuItem @select="emit('move', menuPath, 1)"><ArrowDown />Move down</DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem variant="destructive" @select="emit('remove', menuPath)"><Trash2 /> Delete</DropdownMenuItem>
+          <DropdownMenuItem variant="destructive" @select="emit('remove', menuPath)"><Trash2 />Delete</DropdownMenuItem>
         </template>
         <template v-else>
           <DropdownMenuLabel>{{ menu.step?.kind === "start" ? "Add the first step" : "Add a step at the end" }}</DropdownMenuLabel>

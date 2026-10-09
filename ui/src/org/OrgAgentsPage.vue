@@ -142,7 +142,7 @@ const isAgent = (value: Identity) =>
           <SelectItem value="user">User</SelectItem>
         </SelectContent>
       </Select>
-      <Button type="submit" size="sm" :disabled="!name.trim() || !!store.busy"><Plus data-icon="inline-start" /> Create</Button>
+      <Button type="submit" size="sm" :disabled="!name.trim() || !!store.busy"><Plus data-icon="inline-start" />Create</Button>
     </form>
 
     <ul class="divide-y divide-border rounded-lg border border-border bg-card" aria-label="Agents">

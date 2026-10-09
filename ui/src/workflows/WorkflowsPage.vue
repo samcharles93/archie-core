@@ -122,7 +122,7 @@ const rate = (deliveredRuns = 0, total = 0) => (total ? deliveredRuns / total : 
       <Button variant="ghost" size="sm" :disabled="!store.shippedWorkflows().definitions.length" @click="restoreShipped">
         <RotateCcw data-icon="inline-start" /> Restore shipped
       </Button>
-      <Button size="sm" @click="create"><Plus data-icon="inline-start" /> New workflow</Button>
+      <Button size="sm" @click="create"><Plus data-icon="inline-start" />New workflow</Button>
     </PageHeader>
 
     <p v-if="error" class="mb-4 text-sm text-danger" role="alert">Cannot reach archied: {{ error }}</p>

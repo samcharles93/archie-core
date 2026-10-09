@@ -357,7 +357,7 @@ const text = (key: string) => (typeof settings.value[key] === "string" ? (settin
     </div>
 
     <footer class="flex items-center border-t border-border px-4 py-2.5">
-      <Button type="button" variant="ghost" size="sm" class="text-danger" @click="emit('remove')"><Trash2 /> Delete step</Button>
+      <Button type="button" variant="ghost" size="sm" class="text-danger" @click="emit('remove')"><Trash2 />Delete step</Button>
       <Button type="button" size="sm" class="ml-auto" @click="emit('close')">Done</Button>
     </footer>
   </aside>
