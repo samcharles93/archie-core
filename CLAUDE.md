@@ -32,6 +32,8 @@ When sources disagree, the higher one wins:
 - **A clear direction is the go-ahead.** Do it in the same turn. Do not restate
   the plan, offer options, or ask "shall I proceed?". Stop only for destructive
   or outward-facing actions (deleting data, pushing, touching a live host).
+- **Post outside the repo only when told.** Chat, tickets and any external
+  service get a message only on the maintainer's instruction.
 - **Report, don't narrate.** Final replies say what changed, what was verified,
   and anything blocked, in a few lines. No preamble, no recap of the request, no
   closing offers of more help.
