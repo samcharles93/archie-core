@@ -5,7 +5,7 @@ import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, type EdgeProps } from "
 import AddStepMenu from "./AddStepMenu.vue";
 import type { StepPath } from "./workflow-edit";
 
-const props = defineProps<EdgeProps<{ insertAfter?: StepPath; types: string[]; editable: boolean; onInsert: (after: StepPath, type: string) => void }>>();
+const props = defineProps<EdgeProps<{ trace?: string; insertAfter?: StepPath; types: string[]; editable: boolean; onInsert: (after: StepPath, type: string) => void }>>();
 
 const path = computed(() =>
   getSmoothStepPath({
@@ -21,7 +21,7 @@ const path = computed(() =>
 </script>
 
 <template>
-  <BaseEdge :id="id" :path="path[0]" class="workflow-flow-edge" />
+  <BaseEdge :id="id" :path="path[0]" :class="['workflow-flow-edge', data?.trace && `trace-${data.trace}`]" />
   <EdgeLabelRenderer v-if="data?.editable && data.insertAfter !== undefined">
     <div
       class="workflow-insert absolute"

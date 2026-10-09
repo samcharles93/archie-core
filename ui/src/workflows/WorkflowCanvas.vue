@@ -69,13 +69,16 @@ const nodes = computed(() =>
       : node;
   }),
 );
+// The run's trace: an edge lights once the run has reached its target, in the
+// colour of how that step went, and moves while the step is running.
+const runs = computed(() => new Map(graph.value.nodes.map((node) => [node.id, node.data.run?.status])));
 const edges = computed(() =>
   graph.value.edges.map(({ label, offset, insertAfter, ...edge }) =>
     edge.kind === "flow"
       ? {
           ...edge,
           type: "insert",
-          data: { insertAfter, types: typesAt(insertAfter), editable: editable.value, onInsert: (after: StepPath, type: string) => emit("insert", after, type) },
+          data: { trace: runs.value.get(edge.target), insertAfter, types: typesAt(insertAfter), editable: editable.value, onInsert: (after: StepPath, type: string) => emit("insert", after, type) },
         }
       : {
           ...edge,
@@ -201,6 +204,31 @@ const beforePath = computed(() => menuPath.value ? [...menuPath.value.slice(0, -
 .workflow-flow-edge path {
   stroke: var(--color-muted-foreground);
   stroke-width: 1.5;
+}
+.workflow-flow-edge.trace-ok path {
+  stroke: var(--color-ok);
+}
+.workflow-flow-edge.trace-failed path {
+  stroke: var(--color-danger);
+}
+.workflow-flow-edge.trace-interrupted path {
+  stroke: var(--color-warn);
+}
+.workflow-flow-edge.trace-running path {
+  stroke: var(--color-info);
+  stroke-dasharray: 6 4;
+  animation: edge-trace 0.8s linear infinite;
+}
+@keyframes edge-trace {
+  to {
+    stroke-dashoffset: -10;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workflow-flow-edge.trace-running path,
+  .step-running {
+    animation: none;
+  }
 }
 .workflow-data-edge path {
   stroke: var(--color-primary);

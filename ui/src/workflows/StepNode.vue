@@ -21,6 +21,12 @@ const stateClass = computed(() => {
   return STATE_CLASSES[props.data.run?.status ?? ""] ?? "border-border";
 });
 
+const ROLE_CLASSES: Record<string, string> = {
+  decision: "border-l-4 border-l-warn",
+  waiting: "border-l-4 border-l-info",
+  exit: "border-l-4 border-l-primary",
+};
+
 const TRIGGER_ICONS = { issue: CircleDot, event: Webhook, playbook: BookOpen, workflow: Workflow };
 
 const STATE_LABELS: Record<string, string> = {
@@ -42,13 +48,14 @@ function duration(ms?: number): string {
 <template>
   <div
     class="w-60 rounded-lg border bg-card px-3 py-2 text-left shadow-sm"
-    :class="[stateClass, data.selected && 'ring-2 ring-ring', 'cursor-pointer transition-colors hover:border-muted-foreground']"
+    :class="[stateClass, ROLE_CLASSES[data.role ?? ''], data.selected && 'ring-2 ring-ring', 'cursor-pointer transition-colors hover:border-muted-foreground']"
   >
     <Handle v-if="data.kind !== 'start'" type="target" :position="Position.Top" />
     <Handle id="data-in" type="target" :position="Position.Right" class="!opacity-0" />
     <div class="flex items-center gap-1.5">
       <Play v-if="data.kind === 'start'" class="size-3.5 text-primary" aria-hidden="true" />
       <component :is="stepIcon(data.type)" v-else class="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <span v-if="data.step" class="font-mono text-[11px] text-fg-subtle">{{ data.step }}</span>
       <span class="truncate text-sm font-medium" :title="data.title">{{ data.title }}</span>
       <span v-if="data.branch" class="ml-auto flex items-center gap-0.5 text-[11px] text-fg-subtle">
         <GitBranch class="size-3" aria-hidden="true" />{{ data.branch }}

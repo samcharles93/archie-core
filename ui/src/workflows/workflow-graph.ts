@@ -10,6 +10,11 @@ import type { WorkflowTrigger } from "./workflow-triggers";
 
 export interface StepNodeData {
   kind: "start" | "step";
+  /** What the step means to the run: work, a gate that decides, a pause for a
+   * person, or an exit that ends or hands off the run. */
+  role?: StepRole;
+  /** The top-level step's position in run order, as shown on the node. */
+  step?: string;
   /** The step's id, or its 1-based position when it has none. */
   key: string;
   title: string;
@@ -35,6 +40,15 @@ export interface StepNodeData {
   selected?: boolean;
   triggers?: WorkflowTrigger[];
   insertAfter?: (string | number)[];
+}
+
+export type StepRole = "work" | "decision" | "waiting" | "exit";
+
+function stepRole(type: string): StepRole {
+  if (type.startsWith("gate.")) return "decision";
+  if (type === "human.approve") return "waiting";
+  if (type === "workflow.finish" || type === "workflow.handoff") return "exit";
+  return "work";
 }
 
 /** One recorded run of a step, from the task's attempts view. */
@@ -260,6 +274,8 @@ export function workflowGraph(source: string): WorkflowGraph {
         key: stepID || key,
         title: stepID || stepTitle(type),
         type,
+        role: stepRole(type),
+        step: path?.length === 2 ? String(Number(path[1]) + 1).padStart(2, "0") : undefined,
         detail: stepDetail(type, settings),
         summary: stepSummary(settings),
         when: typeof record.when === "string" ? record.when : undefined,
