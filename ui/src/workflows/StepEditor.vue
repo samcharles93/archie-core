@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { CircleHelp, Trash2, X } from "@lucide/vue";
+import { CircleHelp, Plus, Trash2, X } from "@lucide/vue";
 import { parse, stringify } from "yaml";
 
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { stepIcon } from "./step-icons";
-import { earlierStepIDs, replaceStep, stepAt, workflowField, type StepPath, type StepRecord } from "./workflow-edit";
+import { addBranch, deleteBranch, renameBranch, earlierStepIDs, replaceStep, stepAt, workflowField, type StepPath, type StepRecord } from "./workflow-edit";
 import type { WorkflowDefinitionEntry } from "@/stores/control-plane";
 import type { InputSpec } from "./bind-event";
 import { inputValue } from "./work-request";
@@ -21,7 +21,20 @@ const props = defineProps<{ yaml: string; path: StepPath; vocabulary: StepTypeIn
 const emit = defineEmits<{ "update:yaml": [string]; close: []; remove: [] }>();
 
 const step = computed<StepRecord>(() => stepAt(props.yaml, props.path) ?? {});
-const type = computed(() => (typeof step.value.type === "string" ? step.value.type : ""));
+const type = computed(() => step.value.parallel ? "parallel" : typeof step.value.type === "string" ? step.value.type : "");
+const branches = computed(() => Object.keys((step.value.parallel ?? {}) as Record<string, unknown>));
+const newBranch = ref("");
+const branchError = ref("");
+function changeBranch(action: "add" | "rename" | "delete", name: string, next = ""): void {
+  try {
+    const source = action === "add" ? addBranch(props.yaml, props.path, name) : action === "rename" ? renameBranch(props.yaml, props.path, name, next) : deleteBranch(props.yaml, props.path, name);
+    emit("update:yaml", source);
+    newBranch.value = "";
+    branchError.value = "";
+  } catch (error) {
+    branchError.value = String((error as Error).message);
+  }
+}
 const info = computed(() => props.vocabulary.find((candidate) => candidate.name === type.value));
 const settings = computed<Record<string, unknown>>(() =>
   typeof step.value.settings === "object" && step.value.settings !== null ? (step.value.settings as Record<string, unknown>) : {},
@@ -146,6 +159,19 @@ const text = (key: string) => (typeof settings.value[key] === "string" ? (settin
 
     <div class="flex-1 space-y-5 overflow-y-auto px-4 py-4">
       <p v-if="problem" class="rounded-md bg-danger/10 px-2.5 py-1.5 text-xs text-danger" role="alert">{{ problem }}</p>
+
+      <section v-if="type === 'parallel'" class="space-y-3">
+        <div class="text-xs font-medium text-muted-foreground">Branches</div>
+        <div v-for="name in branches" :key="name" class="flex items-center gap-2">
+          <Input :model-value="name" :aria-label="`Branch ${name}`" @change="changeBranch('rename', name, ($event.target as HTMLInputElement).value.trim())" />
+          <Button type="button" variant="ghost" size="icon-sm" :aria-label="`Remove branch ${name}`" :disabled="branches.length <= 2" title="Parallel needs at least two branches" @click="changeBranch('delete', name)"><Trash2 /></Button>
+        </div>
+        <div class="flex items-center gap-2">
+          <Input v-model="newBranch" aria-label="New branch name" placeholder="Branch name" @keydown.enter.prevent="changeBranch('add', newBranch.trim())" />
+          <Button type="button" size="icon-sm" variant="outline" aria-label="Add branch" :disabled="!newBranch.trim()" @click="changeBranch('add', newBranch.trim())"><Plus /></Button>
+        </div>
+        <p v-if="branchError" role="alert" class="text-xs text-danger">{{ branchError }}</p>
+      </section>
 
       <section v-if="fields.lead" class="space-y-1.5">
         <div class="flex items-center gap-1 text-xs font-medium text-muted-foreground" :title="fields.lead.schema.description">

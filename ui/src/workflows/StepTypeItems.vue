@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { GitBranch } from "@lucide/vue";
 
 import {
   DropdownMenuItem,
@@ -17,6 +18,7 @@ const groups = computed(() => stepGroups(props.types));
 </script>
 
 <template>
+  <DropdownMenuItem v-if="types.includes('parallel')" @select="emit('pick', 'parallel')"><GitBranch /> Parallel</DropdownMenuItem>
   <template v-for="group in groups" :key="group.title">
     <!-- A group of one is its step: no submenu to open for a single choice. -->
     <DropdownMenuItem v-if="group.types.length === 1" @select="emit('pick', group.types[0])">

@@ -93,7 +93,7 @@ const { triggers, reload: reloadTriggers } = useWorkflowTriggers(selected);
 
 // Canvas edits are edits to the YAML; a newly placed step opens for editing.
 const stepTypeNames = computed(() => vocabulary.value.map((info) => info.name));
-function insertAt(after: number, type: string): void {
+function insertAt(after: StepPath, type: string): void {
   stepTab.value = "definition";
   const inserted = insertStep(yaml.value, after, type);
   yaml.value = inserted.source;

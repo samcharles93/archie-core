@@ -1,4 +1,4 @@
-import { isMap, isSeq, parseDocument } from "yaml";
+import { isMap, isScalar, isSeq, parseDocument } from "yaml";
 
 /**
  * Canvas edits as edits to the workflow's YAML document. The text stays the
@@ -27,20 +27,56 @@ export function replaceStep(source: string, path: StepPath, step: StepRecord): s
   return document.toString();
 }
 
-/** Inserts a new step of the given type after the top-level step at index
- * (-1 inserts first; past the end appends). Returns the new source and the
- * inserted step's path. */
-export function insertStep(source: string, after: number, type: string): { source: string; path: StepPath } {
+/** Inserts after a step path; index -1 inserts first in that list. */
+export function insertStep(source: string, after: StepPath, type: string): { source: string; path: StepPath } {
   const document = parseDocument(source);
-  let steps = document.get("steps", true);
+  const list = after.slice(0, -1);
+  const inBranch = list.length > 1;
+  if (inBranch && !["agent.run", "workflow.call"].includes(type)) throw new Error("Branches allow only read-only agents and workflow calls.");
+  let steps = document.getIn(list, true);
   if (!isSeq(steps)) {
-    document.set("steps", document.createNode([]));
-    steps = document.get("steps", true);
+    document.setIn(list, document.createNode([]));
+    steps = document.getIn(list, true);
   }
   if (!isSeq(steps)) return { source, path: [] };
-  const index = Math.min(Math.max(after + 1, 0), steps.items.length);
-  steps.items.splice(index, 0, document.createNode({ type }));
-  return { source: document.toString(), path: ["steps", index] };
+  const index = Math.min(Math.max(Number(after.at(-1)) + 1, 0), steps.items.length);
+  const step = type === "parallel" ? { parallel: { "branch-1": [], "branch-2": [] } } : { type, ...(inBranch && type === "agent.run" ? { settings: { read_only: true } } : {}) };
+  steps.items.splice(index, 0, document.createNode(step));
+  return { source: document.toString(), path: [...list, index] };
+}
+
+function checkBranchName(name: string): void {
+  if (!/^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/.test(name)) throw new Error("Use a lowercase branch name with letters, digits, dots or dashes.");
+}
+
+export function addBranch(source: string, path: StepPath, name: string): string {
+  checkBranchName(name);
+  const document = parseDocument(source);
+  const branches = document.getIn([...path, "parallel"], true);
+  if (!isMap(branches)) throw new Error("This step has no branches.");
+  if (branches.has(name)) throw new Error(`Branch ${name} already exists.`);
+  branches.set(name, document.createNode([]));
+  return document.toString();
+}
+
+export function renameBranch(source: string, path: StepPath, name: string, next: string): string {
+  checkBranchName(next);
+  const document = parseDocument(source);
+  const branches = document.getIn([...path, "parallel"], true);
+  if (!isMap(branches)) throw new Error("This step has no branches.");
+  if (name !== next && branches.has(next)) throw new Error(`Branch ${next} already exists.`);
+  const pair = branches.items.find((pair) => isScalar(pair.key) && pair.key.value === name);
+  if (!pair || !isScalar(pair.key)) throw new Error(`Branch ${name} does not exist.`);
+  pair.key.value = next;
+  return document.toString();
+}
+
+export function deleteBranch(source: string, path: StepPath, name: string): string {
+  const document = parseDocument(source);
+  const branches = document.getIn([...path, "parallel"], true);
+  if (!isMap(branches) || branches.items.length <= 2) throw new Error("Parallel needs at least two branches.");
+  branches.delete(name);
+  return document.toString();
 }
 
 /** Copies a step to just after itself. The copy drops the id, which must stay
@@ -56,15 +92,10 @@ export function duplicateStep(source: string, path: StepPath): { source: string;
   return { source: document.toString(), path: [...path.slice(0, -1), index + 1] };
 }
 
-/** Removes a step. A branch left empty is removed with it. */
+/** Removes a step, leaving an empty branch available for authoring. */
 export function deleteStep(source: string, path: StepPath): string {
   const document = parseDocument(source);
   document.deleteIn(path);
-  const branch = path.slice(0, -1);
-  if (branch.length > 2) {
-    const remaining = document.getIn(branch, true);
-    if (isSeq(remaining) && remaining.items.length === 0) document.deleteIn(branch);
-  }
   return document.toString();
 }
 
