@@ -9,6 +9,35 @@ tasks:
     cmds:
       - task --list
 
+  setup:
+    desc: Install the pinned tooling and dependencies a checkout needs
+    cmds:
+      # Report what this task cannot install for you, so a missing Go, Node or
+      # Docker fails here by name rather than somewhere inside the gate.
+      - |
+        set -eu
+        missing=
+        for tool in go task node npm docker; do
+          command -v "$tool" >/dev/null 2>&1 || missing="$missing $tool"
+        done
+        if [ -n "$missing" ]; then
+          echo "warning: not installed (AGENTS.md, Build and gate):$missing" >&2
+        fi
+      # The pin is one file, read here and by .github/workflows, so the linter
+      # running locally and the one running the gate cannot drift apart.
+      - |
+        set -eu
+        want=$(cat {{.ROOT_DIR}}/.golangci-version)
+        have=$(golangci-lint --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+        if [ "$have" = "${want#v}" ]; then
+          echo "golangci-lint $want already installed"
+        else
+          echo "installing golangci-lint $want (have: ${have:-none})"
+          GOBIN="$(go env GOPATH)/bin" go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$want"
+        fi
+      - task: proto:install
+      - task: ui:deps
+
   fmt:
     desc: Fix and format Go source with the gate's configured formatters
     cmds:
