@@ -85,14 +85,22 @@ type Volume struct {
 
 // Launch is everything archie needs to run a composed Kit for one run.
 type Launch struct {
-	Harness agentrun.HarnessSpec
-	Install []Hook
-	Startup []Hook
-	Files   []spec.File
+	Harness      agentrun.HarnessSpec
+	Install      []Hook
+	Startup      []Hook
+	Files        []spec.File
+	InstallFiles []spec.File
 	// Context is the agent-context profile and the inline bodies it points
 	// at, written as root so a run can read but not change them.
 	Context []spec.File
+	Skills  []Skill
 	Volumes []Volume
+}
+
+// Skill exposes an image-bundled directory at an agent's discovery path.
+type Skill struct {
+	Source string
+	Target string
 }
 
 // Assemble derives a Kit container's launch from its admitted plan and the
@@ -100,7 +108,11 @@ type Launch struct {
 // a variable it did not declare beyond the image-derived baseline and the
 // egress settings every sandbox process needs.
 func Assemble(p *Plan, img ImageConfig, params LaunchParams) (Launch, error) {
-	creds, err := spec.CredentialsOf(p.Capabilities)
+	installCreds, err := spec.CredentialsOfPhase(p.Capabilities, "install")
+	if err != nil {
+		return Launch{}, err
+	}
+	runtimeCreds, err := spec.CredentialsOfPhase(p.Capabilities, "runtime")
 	if err != nil {
 		return Launch{}, err
 	}
@@ -114,15 +126,13 @@ func Assemble(p *Plan, img ImageConfig, params LaunchParams) (Launch, error) {
 	}
 
 	proxyEnv := egress.ProxyEnv(params.ProxyToken, params.CAPath)
-	runtimeVars := map[string]string{"WORKSPACE_DIR": WorkspaceDir}
-	for _, c := range creds {
-		runtimeVars[credentialModeVar(c.Service)] = credentialMode(params.Bound[c.Service])
-	}
+	installVars := credentialVars(installCreds, params.Bound)
+	runtimeVars := credentialVars(runtimeCreds, params.Bound)
 
 	l := Launch{Harness: agentrun.HarnessSpec{
 		User:   harnessUser(img.User),
 		Launch: slices.Concat(img.Entrypoint, img.Cmd),
-		Env:    slices.Concat(img.Env, []string{"WORKSPACE_DIR=" + WorkspaceDir}, proxyEnv, egress.SentinelEnv(creds)),
+		Env:    slices.Concat(img.Env, []string{"WORKSPACE_DIR=" + WorkspaceDir}, proxyEnv, egress.SentinelEnv(runtimeCreds)),
 	}}
 	if s := p.Sessions; s != nil {
 		l.Harness.Prompt, l.Harness.Resume, l.Harness.Continue = s.Prompt, s.Resume, s.Continue
@@ -133,7 +143,7 @@ func Assemble(p *Plan, img ImageConfig, params LaunchParams) (Launch, error) {
 		for _, h := range lifecycle.Install {
 			l.Install = append(l.Install, Hook{
 				Argv: slices.Clone(h.Command), User: orDefault(h.User, installHookUser),
-				Env: slices.Concat(baseline, declared(h.Env, runtimeVars)),
+				Env: slices.Concat(baseline, declared(h.Env, installVars)),
 			})
 		}
 		for _, h := range lifecycle.Startup {
@@ -144,7 +154,11 @@ func Assemble(p *Plan, img ImageConfig, params LaunchParams) (Launch, error) {
 		}
 		l.Files = lifecycle.Files
 	}
-	credential, err := credentialFiles(creds, params.Bound, params.OAuth)
+	l.InstallFiles, err = credentialFiles(installCreds, params.Bound, params.OAuth)
+	if err != nil {
+		return Launch{}, err
+	}
+	credential, err := credentialFiles(runtimeCreds, params.Bound, params.OAuth)
 	if err != nil {
 		return Launch{}, err
 	}
@@ -155,7 +169,41 @@ func Assemble(p *Plan, img ImageConfig, params LaunchParams) (Launch, error) {
 	if l.Context, err = contextFiles(p); err != nil {
 		return Launch{}, err
 	}
+	l.Skills, err = bundledSkills(p.Capabilities)
+	if err != nil {
+		return Launch{}, err
+	}
 	return l, nil
+}
+
+func bundledSkills(capabilities []spec.Capability) ([]Skill, error) {
+	bundles, err := spec.AgentSkillRequestsOf(capabilities)
+	if err != nil {
+		return nil, err
+	}
+	discovery, err := spec.AgentSkillsOf(capabilities)
+	if err != nil {
+		return nil, err
+	}
+	var skills []Skill
+	for _, destination := range discovery {
+		for _, bundle := range bundles {
+			skills = append(skills, Skill{Source: bundle.Path, Target: path.Join(destination.Path, spec.AgentSkillName(bundle.AgentSkill))})
+		}
+	}
+	return skills, nil
+}
+
+func credentialVars(creds []spec.CredentialCapability, bound map[string]egress.CredentialKind) map[string]string {
+	vars := map[string]string{"WORKSPACE_DIR": WorkspaceDir}
+	for _, c := range creds {
+		vars[credentialModeVar(c.Service)] = credentialMode(bound[c.Service])
+	}
+	for _, entry := range egress.SentinelEnv(creds) {
+		name, value, _ := strings.Cut(entry, "=")
+		vars[name] = value
+	}
+	return vars
 }
 
 // credentialFiles renders the credential file for each OAuth-bound
@@ -182,7 +230,10 @@ func contextFiles(p *Plan) ([]spec.File, error) {
 	if err != nil || ac == nil || ac.Filename == "" {
 		return nil, err
 	}
-	root := path.Dir(WorkspaceDir)
+	root := ac.Directory
+	if root == "" {
+		root = path.Dir(WorkspaceDir)
+	}
 	var files []spec.File
 	var index strings.Builder
 	index.WriteString("# Archie\n\nArchie runs this environment. Each task's rules are in its prompt.\n")

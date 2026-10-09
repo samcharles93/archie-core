@@ -3,19 +3,17 @@
 package kit
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"strings"
 
+	"github.com/docker/sandbox-kit-spec/v3/fetch"
 	"github.com/docker/sandbox-kit-spec/v3/spec"
 )
 
 const (
 	typeCredential    = "com.docker.sandbox/credential@1"
 	typeAgentSessions = "com.docker.sandbox/agent-sessions@1"
-
-	// contextPath is where the composed agent-context body is staged.
-	contextPath = "/usr/share/archie/agent-context.md"
 )
 
 // supported is every capability type archie provides. Anything else is
@@ -28,6 +26,7 @@ var supported = map[string]bool{
 	"com.docker.sandbox/lifecycle@1":      true,
 	typeAgentSessions:                     true,
 	"com.docker.sandbox/agent-skills@1":   true,
+	"com.docker.sandbox/agent-skill@1":    true,
 	"com.docker.sandbox/agent-context@1":  true,
 	"com.docker.sandbox/resources@1":      true,
 }
@@ -42,38 +41,12 @@ var forgeServices = map[string]bool{
 	"bitbucket": true,
 }
 
-// Skip is an optional capability archie does not provide, recorded so the
-// step that ran without it can say so.
-type Skip struct {
-	Type   string
-	Reason string
-}
-
-// Refusal is a required capability archie will not provide.
-type Refusal struct {
-	Type   string
-	Reason string
-}
-
-// RefusedError carries every refusal, so an operator fixes a Kit in one pass.
-type RefusedError struct {
-	Refusals []Refusal
-}
-
-func (e *RefusedError) Error() string {
-	parts := make([]string, len(e.Refusals))
-	for i, r := range e.Refusals {
-		parts[i] = r.Type + ": " + r.Reason
-	}
-	return "kit refused: " + strings.Join(parts, "; ")
-}
-
 // Plan is what archie launches: the composed descriptor, the capabilities
 // it provides, and what it skipped.
 type Plan struct {
 	Descriptor     *spec.Descriptor
 	Capabilities   []spec.Capability
-	Skipped        []Skip
+	Skipped        []spec.SelectionRecord
 	Sessions       *spec.AgentSessions
 	ContextSources []spec.ContextSource
 }
@@ -96,45 +69,36 @@ func DecodePublished(annotations map[string]string) (*spec.Descriptor, error) {
 	return d, nil
 }
 
-// Admit applies archie's capability support to one descriptor. Every
-// required capability archie will not provide is collected into a
-// RefusedError; optional ones are skipped.
-func Admit(d *spec.Descriptor) (*Plan, error) {
-	plan := &Plan{Descriptor: d}
-	var refusals []Refusal
-	for _, c := range d.Capabilities {
-		reason, err := refusalReason(c)
+// SelectCapability applies Archie's runtime policy before composition.
+func SelectCapability(_ context.Context, _ spec.Descriptor, c spec.Capability) spec.CapabilityDecision {
+	reason, err := refusalReason(c)
+	if err != nil {
+		return spec.CapabilityDecision{Message: err.Error()}
+	}
+	return spec.CapabilityDecision{Accepted: reason == "", Message: reason}
+}
+
+// FromResolved reads the profile's selected Kit declarations:
+// a workload Kit or a published Kit set, never a bare mixin. archie drives a
+// harness headlessly, so it must carry an agent-sessions prompt verb.
+func FromResolved(resolved *fetch.Resolved) (*Plan, error) {
+	if resolved.Descriptor.Kind != spec.KindWorkload {
+		return nil, errors.New("kit is a mixin: publish a Kit set composing it with a workload Kit, and name the set")
+	}
+	plan := &Plan{Descriptor: resolved.Descriptor, Capabilities: resolved.Descriptor.Capabilities}
+	for _, selection := range resolved.Selections {
+		plan.Skipped = append(plan.Skipped, selection.Selection.Skipped...)
+	}
+	for _, unit := range resolved.Kits {
+		contexts, err := spec.AgentContextsOf(unit.Descriptor.Capabilities)
 		if err != nil {
 			return nil, err
 		}
-		switch {
-		case reason == "":
-			plan.Capabilities = append(plan.Capabilities, c)
-		case c.Optional:
-			plan.Skipped = append(plan.Skipped, Skip{Type: c.Type, Reason: reason})
-		default:
-			refusals = append(refusals, Refusal{Type: c.Type, Reason: reason})
+		for _, ac := range contexts {
+			if ac.ContentFile != "" || ac.Content != "" {
+				plan.ContextSources = append(plan.ContextSources, spec.ContextSource{Reference: unit.Reference, Path: ac.ContentFile, Content: ac.Content})
+			}
 		}
-	}
-	if len(refusals) > 0 {
-		return nil, &RefusedError{Refusals: refusals}
-	}
-	return plan, nil
-}
-
-// MergeOptions are the options every composition archie runs is merged with.
-var MergeOptions = spec.MergeOptions{ContextPath: contextPath}
-
-// FromMerge admits the profile's Kit as the Kit spec's fetch package read it:
-// a workload Kit or a published Kit set, never a bare mixin. archie drives a
-// harness headlessly, so it must carry an agent-sessions prompt verb.
-func FromMerge(merged *spec.MergeResult) (*Plan, error) {
-	if merged.Descriptor.Kind != spec.KindWorkload {
-		return nil, errors.New("kit is a mixin: publish a Kit set composing it with a workload Kit, and name the set")
-	}
-	plan, err := Admit(merged.Descriptor)
-	if err != nil {
-		return nil, err
 	}
 	sessions, err := spec.AgentSessionsOf(plan.Capabilities)
 	if err != nil {
@@ -144,7 +108,6 @@ func FromMerge(merged *spec.MergeResult) (*Plan, error) {
 		return nil, fmt.Errorf("kit composition declares no %s prompt verb: archie cannot run it headlessly", typeAgentSessions)
 	}
 	plan.Sessions = sessions
-	plan.ContextSources = merged.ContextSources
 	return plan, nil
 }
 

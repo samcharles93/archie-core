@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -49,6 +50,13 @@ func (s *Session) Token() string { return s.token }
 // EnterRuntime switches the session from install-phase to runtime-phase
 // egress. It is one-way: install egress never reopens.
 func (s *Session) EnterRuntime() { s.atRun.Store(true) }
+
+func (s *Session) phase() string {
+	if s.atRun.Load() {
+		return "runtime"
+	}
+	return "install"
+}
 
 func (s *Session) rules() rules {
 	if s.atRun.Load() {
@@ -253,6 +261,10 @@ func (p *Proxy) serveConnect(w http.ResponseWriter, r *http.Request, s *Session)
 func (p *Proxy) forward(ctx context.Context, w http.ResponseWriter, r *http.Request, s *Session, scheme, host string, port int) {
 	target := net.JoinHostPort(host, strconv.Itoa(port))
 	if rule, ok := tokenEndpointRule(s, r, host, port); ok {
+		if !slices.Contains(rule.phases, s.phase()) {
+			http.Error(w, "credential "+rule.service+" is not available in this phase", http.StatusForbidden)
+			return
+		}
 		granted, err := p.granted(ctx, s, rule)
 		if err != nil {
 			http.Error(w, "egress to "+target+": "+err.Error(), http.StatusBadGateway)

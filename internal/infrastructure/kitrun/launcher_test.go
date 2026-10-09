@@ -1,12 +1,15 @@
 package kitrun
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/docker/sandbox-kit-spec/v3/spec"
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/infrastructure/egress"
+	"github.com/samcharles93/archie-core/internal/skill"
 )
 
 // A setup session has no task and no identity grant, so it must bind only the
@@ -68,6 +71,34 @@ func TestOrgCredentialKinds(t *testing.T) {
 			}
 			if len(services) != len(tc.services) {
 				t.Fatalf("services = %v, want %v", services, tc.services)
+			}
+		})
+	}
+}
+
+func TestSharedSkillsDoNotMaskImageDiscovery(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	store := skill.StoreDir(root)
+	if err := os.MkdirAll(filepath.Join(store, "shared"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/etc", filepath.Join(store, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, root string
+		want       int
+	}{
+		{"shared", root, 1}, {"disabled", "", 0}, {"missing", filepath.Join(root, "missing"), 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			binds := skillsBinds([]spec.AgentSkillsCapability{{Path: "/agent/skills"}}, tc.root)
+			if len(binds) != tc.want {
+				t.Fatalf("binds=%v", binds)
+			}
+			if len(binds) > 0 && binds[0] != filepath.Join(store, "shared")+":/agent/skills/shared:ro,z" {
+				t.Fatalf("discovery directory masked or writable: %v", binds)
 			}
 		})
 	}

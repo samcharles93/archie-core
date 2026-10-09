@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/docker/sandbox-kit-spec/v3/spec"
@@ -50,7 +51,7 @@ func (f ResolverFunc) Resolve(ctx context.Context, credential, service string) (
 type injection struct {
 	service  string
 	required bool
-	runtime  bool
+	phases   spec.Phases
 	domain   pattern
 	header   string
 	format   string
@@ -76,7 +77,7 @@ func compileInjections(creds []spec.CredentialCapability, bound map[string]Crede
 			out = append(out, injection{
 				service:  c.Service,
 				required: c.Required,
-				runtime:  c.Phase == "runtime",
+				phases:   slices.Clone(c.Phase),
 				domain:   compilePattern(rule.Domain),
 				header:   rule.Header,
 				format:   format,
@@ -92,9 +93,9 @@ func compileInjections(creds []spec.CredentialCapability, bound map[string]Crede
 // admitted. Only rules for this phase and this host apply, so a key is never
 // sent anywhere its Kit did not name.
 func (p *Proxy) inject(ctx context.Context, s *Session, r *http.Request, host string, port int) error {
-	atRuntime := s.atRun.Load()
+	phase := s.phase()
 	for _, rule := range s.injections {
-		if rule.runtime != atRuntime || !rule.domain.matches(normalizeHost(host), port) {
+		if !slices.Contains(rule.phases, phase) || !rule.domain.matches(normalizeHost(host), port) {
 			continue
 		}
 		if p.resolver == nil {

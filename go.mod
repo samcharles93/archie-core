@@ -95,7 +95,7 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/cedar-policy/cedar-go v1.8.0
 	github.com/coreos/go-oidc/v3 v3.21.0
-	github.com/docker/sandbox-kit-spec/v3 v3.0.0-m.6
+	github.com/docker/sandbox-kit-spec/v3 v3.0.0-m.8
 	github.com/go-git/go-billy/v6 v6.0.0-beta.1
 	github.com/go-git/go-git/v6 v6.0.0-beta.1
 	github.com/go-telegram/bot v1.27.0

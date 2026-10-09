@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/docker/sandbox-kit-spec/v3/spec"
+
 	"github.com/samcharles93/archie-core/internal/domain/harnesssecret"
 )
 
@@ -30,8 +32,10 @@ func TestTokenEndpointRefusedWhenNotGranted(t *testing.T) {
 		name     string
 		required bool
 		status   int
+		install  bool
 	}{
 		{name: "an optional ungranted credential is refused", status: http.StatusForbidden},
+		{name: "runtime token endpoint refused during install", install: true, status: http.StatusForbidden},
 		{name: "a required ungranted credential is refused", required: true, status: http.StatusBadGateway},
 	}
 
@@ -57,11 +61,11 @@ func TestTokenEndpointRefusedWhenNotGranted(t *testing.T) {
 				token: "run-token",
 				org:   "org-sys",
 				oauth: []oauthRule{{
-					service: "linear", required: tc.required, runtime: true,
+					service: "linear", required: tc.required, phases: spec.Phases{"runtime"},
 					tokenHost: compilePattern("token.example"), tokenPath: "/token",
 				}},
 			}
-			session.atRun.Store(true)
+			session.atRun.Store(!tc.install)
 
 			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "http://token.example/token", strings.NewReader("grant_type=authorization_code"))
 			rec := httptest.NewRecorder()

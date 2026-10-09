@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -36,7 +37,7 @@ type OAuthStore interface {
 type oauthRule struct {
 	service        string
 	required       bool
-	runtime        bool
+	phases         spec.Phases
 	tokenHost      pattern
 	tokenPath      string
 	resourceHosts  []pattern
@@ -61,7 +62,7 @@ func compileOAuthRules(creds []spec.CredentialCapability, bound map[string]Crede
 			continue
 		}
 		rule := oauthRule{
-			service: c.Service, required: c.Required, runtime: c.Phase == "runtime",
+			service: c.Service, required: c.Required, phases: slices.Clone(c.Phase),
 			tokenHost: compilePattern(c.OAuth.TokenEndpoint.Host), tokenPath: c.OAuth.TokenEndpoint.Path,
 		}
 		for _, h := range c.OAuth.ResourceHosts {
@@ -79,14 +80,13 @@ func compileOAuthRules(creds []spec.CredentialCapability, bound map[string]Crede
 }
 
 // tokenEndpointRule returns the session's rule whose token endpoint r is a
-// POST to, for the request's current phase.
+// POST to. The caller refuses requests outside its granted phases.
 func tokenEndpointRule(s *Session, r *http.Request, host string, port int) (oauthRule, bool) {
 	if r.Method != http.MethodPost {
 		return oauthRule{}, false
 	}
-	atRuntime := s.atRun.Load()
 	for _, rule := range s.oauth {
-		if rule.runtime != atRuntime || !rule.tokenHost.matches(normalizeHost(host), port) {
+		if !rule.tokenHost.matches(normalizeHost(host), port) {
 			continue
 		}
 		if rule.tokenPath != "" && r.URL.Path != rule.tokenPath {
@@ -127,9 +127,9 @@ func (p *Proxy) granted(ctx context.Context, s *Session, rule oauthRule) (bool, 
 // request to one of a granted rule's resource hosts. A request not carrying
 // the sentinel never touches the store.
 func (p *Proxy) injectOAuth(ctx context.Context, s *Session, r *http.Request, host string, port int) error {
-	atRuntime := s.atRun.Load()
+	phase := s.phase()
 	for _, rule := range s.oauth {
-		if rule.runtime != atRuntime || rule.sentinels.AccessToken == "" ||
+		if !slices.Contains(rule.phases, phase) || rule.sentinels.AccessToken == "" ||
 			!matchesAny(rule.resourceHosts, normalizeHost(host), port) || !headerCarries(r.Header, rule.sentinels.AccessToken) {
 			continue
 		}

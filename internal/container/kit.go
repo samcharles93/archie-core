@@ -9,6 +9,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/docker/sandbox-kit-spec/v3/spec"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -81,10 +82,8 @@ func StartKit(ctx context.Context, cli *client.Client, s KitSpec) (string, error
 	if _, err := cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		return fail(fmt.Errorf("start kit container: %w", err))
 	}
-	for i, h := range s.Launch.Install {
-		if err := runHook(ctx, cli, created.ID, h); err != nil {
-			return fail(fmt.Errorf("install hook %d: %w", i+1, err))
-		}
+	if err := installKit(ctx, cli, created.ID, s.Launch); err != nil {
+		return fail(err)
 	}
 	if s.InstallDone != nil {
 		s.InstallDone()
@@ -95,8 +94,13 @@ func StartKit(ctx context.Context, cli *client.Client, s KitSpec) (string, error
 		}
 	}
 	for _, f := range s.Launch.Context {
-		if err := writeKitFile(ctx, cli, created.ID, "0", f.Path, f.Content, f.Mode, nil); err != nil {
+		if err := writeKitContext(ctx, cli, created.ID, f); err != nil {
 			return fail(fmt.Errorf("write agent context %s: %w", f.Path, err))
+		}
+	}
+	for _, skill := range s.Launch.Skills {
+		if err := stageKitSkill(ctx, cli, created.ID, s.Launch.Harness.User, skill); err != nil {
+			return fail(err)
 		}
 	}
 	for i, h := range s.Launch.Startup {
@@ -105,6 +109,82 @@ func StartKit(ctx context.Context, cli *client.Client, s KitSpec) (string, error
 		}
 	}
 	return created.ID, nil
+}
+
+func installKit(ctx context.Context, cli *client.Client, id string, launch kit.Launch) error {
+	for _, f := range launch.InstallFiles {
+		if err := writeKitFile(ctx, cli, id, launch.Harness.User, f.Path, f.Content, f.Mode, f.Overwrite); err != nil {
+			return fmt.Errorf("write install credential file %s: %w", f.Path, err)
+		}
+	}
+	for i, h := range launch.Install {
+		if err := runHook(ctx, cli, id, h); err != nil {
+			return fmt.Errorf("install hook %d: %w", i+1, err)
+		}
+	}
+	for _, f := range launch.InstallFiles {
+		code, out, err := ExecIn(ctx, cli, id, launch.Harness.User, []string{"KIT_PATH=" + f.Path}, []string{"sh", "-c", `rm -f -- "$KIT_PATH"`})
+		if err != nil {
+			return fmt.Errorf("remove install credential file %s: %w", f.Path, err)
+		}
+		if code != 0 {
+			return fmt.Errorf("remove install credential file %s: exit %d: %s", f.Path, code, out)
+		}
+	}
+	return nil
+}
+
+func stageKitSkill(ctx context.Context, cli *client.Client, id, user string, skill kit.Skill) error {
+	code, out, err := ExecIn(ctx, cli, id, "0", []string{"SKILL_SOURCE=" + skill.Source, "SKILL_TARGET=" + skill.Target, "SKILL_USER=" + user}, []string{"sh", "-ec", `
+[ -d "$SKILL_SOURCE" ] && [ -f "$SKILL_SOURCE/SKILL.md" ] || exit 1
+[ "$SKILL_SOURCE" != "$SKILL_TARGET" ] || exit 0
+at="$SKILL_TARGET"
+while [ "$at" != / ]; do
+ [ ! -L "$at" ] || exit 1
+ at=$(dirname "$at")
+done
+[ ! -e "$SKILL_TARGET" ] || exit 0
+mkdir -p "$(dirname "$SKILL_TARGET")"
+cp -R "$SKILL_SOURCE" "$SKILL_TARGET"
+chown -R "$SKILL_USER" "$SKILL_TARGET"
+`})
+	if err != nil {
+		return fmt.Errorf("stage bundled skill %s: %w", skill.Source, err)
+	}
+	if code != 0 {
+		return fmt.Errorf("stage bundled skill %s: exit %d: %s", skill.Source, code, out)
+	}
+	return nil
+}
+
+// Replace only Archie's managed guidance, retaining the image's instructions.
+func writeKitContext(ctx context.Context, cli *client.Client, id string, f spec.File) error {
+	code, out, err := ExecIn(ctx, cli, id, "0", []string{"KIT_PATH=" + f.Path, "KIT_CONTENT=" + base64.StdEncoding.EncodeToString([]byte(f.Content))}, []string{"sh", "-ec", `
+at="$KIT_PATH"
+while [ "$at" != / ]; do
+ [ ! -L "$at" ] || exit 1
+ at=$(dirname "$at")
+done
+[ ! -e "$KIT_PATH" ] || [ -f "$KIT_PATH" ] || exit 1
+mkdir -p "$(dirname "$KIT_PATH")"
+tmp=$(mktemp "$KIT_PATH.XXXXXX")
+trap 'rm -f "$tmp"' 0
+if [ -f "$KIT_PATH" ]; then
+ awk '/^<!-- BEGIN ARCHIE -->$/ { managed=1; next } /^<!-- END ARCHIE -->$/ { managed=0; next } !managed { print }' "$KIT_PATH" > "$tmp"
+fi
+printf '%s\n' '<!-- BEGIN ARCHIE -->' >> "$tmp"
+printf %s "$KIT_CONTENT" | base64 -d >> "$tmp"
+printf '\n%s\n' '<!-- END ARCHIE -->' >> "$tmp"
+chmod 0644 "$tmp"
+mv "$tmp" "$KIT_PATH"
+`})
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return fmt.Errorf("exited %d: %s", code, out)
+	}
+	return nil
 }
 
 // RemoveKitVolumes removes an execution's Kit volumes once the execution

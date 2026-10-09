@@ -10,7 +10,11 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
+	"path"
+	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/docker/sandbox-kit-spec/v3/fetch"
@@ -376,22 +380,28 @@ type kitNeeds struct {
 // read fetches and admits the profile's Kit, checks it can meet the
 // workflow's gate retries, and decodes what it asks of the run.
 func (l *Launcher) read(ctx context.Context, ref string, gateRetries int) (kitNeeds, error) {
-	merged, err := l.Fetch.Assemble(ctx, []fetch.Request{{Reference: ref}}, kit.MergeOptions)
+	img, err := l.imageConfig(ctx, ref)
+	if err != nil {
+		return kitNeeds{}, err
+	}
+	environment := make(map[string]string)
+	for _, entry := range img.Env {
+		name, value, _ := strings.Cut(entry, "=")
+		environment[name] = value
+	}
+	resolved, err := l.Fetch.Resolve(ctx, []fetch.Request{{Reference: ref}}, fetch.WithCapabilitySelector(kit.SelectCapability), fetch.WithEnvironment(environment, nil))
 	if err != nil {
 		return kitNeeds{}, fmt.Errorf("read kit: %w", err)
 	}
-	k := kitNeeds{}
-	if k.plan, err = kit.FromMerge(merged.MergeResult); err != nil {
+	k := kitNeeds{img: img}
+	if k.plan, err = kit.FromResolved(resolved); err != nil {
 		return kitNeeds{}, err
 	}
 	if err := kit.ValidateNeeds(k.plan, gateRetries); err != nil {
 		return kitNeeds{}, err
 	}
-	if k.img, err = l.imageConfig(ctx, ref); err != nil {
-		return kitNeeds{}, err
-	}
-	for _, name := range slices.Sorted(maps.Keys(merged.Env)) {
-		k.img.Env = append(k.img.Env, name+"="+merged.Env[name])
+	for _, name := range slices.Sorted(maps.Keys(resolved.ContainerEnv)) {
+		k.img.Env = append(k.img.Env, name+"="+resolved.ContainerEnv[name])
 	}
 	if k.network, err = spec.NetworkPolicyOf(k.plan.Capabilities); err != nil {
 		return kitNeeds{}, err
@@ -465,17 +475,23 @@ func (l *Launcher) imageConfig(ctx context.Context, ref string) (kit.ImageConfig
 	}, nil
 }
 
-// skillsBinds mounts the operator's shared skills store read-only at each
-// path the Kit asks for it, whatever mode the Kit asks for. With no
-// skills_dir configured the host withholds the mount.
+// Mount skills individually to preserve bundled discovery. The shared SELinux
+// label lets separate run containers read the same read-only store.
 func skillsBinds(asks []spec.AgentSkillsCapability, sharedDir string) []string {
 	if sharedDir == "" {
 		return nil
 	}
 	var binds []string
+	store := skill.StoreDir(sharedDir)
+	entries, err := os.ReadDir(store)
+	if err != nil {
+		return nil
+	}
 	for _, a := range asks {
-		if a.Path != "" {
-			binds = append(binds, skill.StoreDir(sharedDir)+":"+a.Path+":ro")
+		for _, entry := range entries {
+			if entry.IsDir() {
+				binds = append(binds, filepath.Join(store, entry.Name())+":"+path.Join(a.Path, entry.Name())+":ro,z")
+			}
 		}
 	}
 	return binds
