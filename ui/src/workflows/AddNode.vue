@@ -3,13 +3,15 @@ import { Handle, Position } from "@vue-flow/core";
 
 import AddStepMenu from "./AddStepMenu.vue";
 
-defineProps<{ data: { types: string[]; editable: boolean; onInsert: (type: string) => void } }>();
+defineProps<{ data: { branch?: string; types: string[]; editable: boolean; onInsert: (type: string) => void } }>();
 </script>
 
 <template>
-  <div class="flex w-8 justify-center">
+  <div class="relative flex w-8 justify-center">
     <Handle type="target" :position="Position.Top" class="!opacity-0" />
-    <AddStepMenu v-if="data.editable" :types="data.types" label="Add a step at the end" @pick="data.onInsert" />
+    <span v-if="data.branch" class="absolute bottom-full mb-1 whitespace-nowrap text-xs text-fg-subtle">{{ data.branch }}</span>
+    <AddStepMenu v-if="data.editable" :types="data.types" :label="data.branch ? `Add a step to ${data.branch}` : 'Add a step at the end'" @pick="data.onInsert" />
+    <Handle v-if="data.branch" type="source" :position="Position.Bottom" class="!opacity-0" />
     <span v-else class="size-2 rounded-full bg-border" aria-hidden="true" />
   </div>
 </template>

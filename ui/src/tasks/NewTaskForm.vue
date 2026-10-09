@@ -200,7 +200,7 @@ async function submit() {
     <div class="flex items-center gap-2 border-t border-border pt-4">
       <span class="mr-auto text-xs text-fg-subtle"><Kbd>⌘</Kbd> <Kbd>↵</Kbd> to start</span>
       <Button type="button" variant="ghost" @click="emit('cancel')">Cancel</Button>
-      <Button type="submit" :disabled="!ready || submitting"><Spinner v-if="submitting" data-icon="inline-start" /> Start task</Button>
+      <Button type="submit" :disabled="!ready || submitting"><Spinner v-if="submitting" data-icon="inline-start" />Start task</Button>
     </div>
   </form>
 </template>

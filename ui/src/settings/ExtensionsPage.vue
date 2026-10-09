@@ -134,7 +134,7 @@ const tones = {
               <Input v-model="name" class="max-w-40" placeholder="Name" aria-label="Name" required />
               <Input v-model="reference" class="max-w-80 font-mono" placeholder="registry/repo:tag" aria-label="Reference" required />
               <Input v-model="digest" class="max-w-96 font-mono" placeholder="sha256:…" aria-label="Digest" required />
-              <Button type="submit" size="sm" :disabled="!!store.busy"><Plus data-icon="inline-start" /> Install</Button>
+              <Button type="submit" size="sm" :disabled="!!store.busy"><Plus data-icon="inline-start" />Install</Button>
             </form>
           </details>
       </TabsContent>

@@ -71,7 +71,7 @@ function addIdentity() {
       </div>
       <form class="flex items-center gap-3 px-4 py-2.5" @submit.prevent="addIdentity">
         <Input v-model="newName" class="w-40 shrink-0" placeholder="Identity name" aria-label="Identity name" />
-        <Button type="submit" variant="ghost" size="sm" :disabled="!newName.trim()"><Plus data-icon="inline-start" /> Add identity</Button>
+        <Button type="submit" variant="ghost" size="sm" :disabled="!newName.trim()"><Plus data-icon="inline-start" />Add identity</Button>
       </form>
     </div>
   </section>

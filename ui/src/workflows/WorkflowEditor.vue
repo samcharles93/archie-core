@@ -93,7 +93,7 @@ const { triggers, reload: reloadTriggers } = useWorkflowTriggers(selected);
 
 // Canvas edits are edits to the YAML; a newly placed step opens for editing.
 const stepTypeNames = computed(() => vocabulary.value.map((info) => info.name));
-function insertAt(after: number, type: string): void {
+function insertAt(after: StepPath, type: string): void {
   stepTab.value = "definition";
   const inserted = insertStep(yaml.value, after, type);
   yaml.value = inserted.source;
@@ -235,10 +235,10 @@ function syncScroll(event: Event): void {
             <Button type="button" variant="ghost" size="icon-sm" aria-label="More"><Ellipsis /></Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" class="w-48">
-            <DropdownMenuItem v-if="dirty" @select="load(selected)"><RotateCcw /> Discard changes</DropdownMenuItem>
-            <DropdownMenuItem v-if="shippedEntry" @select="restoreOne"><RotateCcw /> Restore shipped version</DropdownMenuItem>
+            <DropdownMenuItem v-if="dirty" @select="load(selected)"><RotateCcw />Discard changes</DropdownMenuItem>
+            <DropdownMenuItem v-if="shippedEntry" @select="restoreOne"><RotateCcw />Restore Defaults</DropdownMenuItem>
             <DropdownMenuSeparator v-if="dirty || shippedEntry" />
-            <DropdownMenuItem variant="destructive" @select="remove"><Trash2 /> Delete workflow</DropdownMenuItem>
+            <DropdownMenuItem variant="destructive" @select="remove"><Trash2 />Delete workflow</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         <RunWorkflowButton v-if="stored !== undefined" :workflow="selected" :disabled="dirty" @started="(id) => { view = 'canvas'; void follow(id); }" />
@@ -288,7 +288,7 @@ function syncScroll(event: Event): void {
                 <div class="flex items-center gap-2 border-b border-border px-3 py-2">
                   <Tabs v-model="stepTab"><TabsList><TabsTrigger value="run">Run</TabsTrigger><TabsTrigger value="definition">Definition</TabsTrigger></TabsList></Tabs>
                   <span class="min-w-0 flex-1 truncate text-xs" :title="selectedNode.run.name">{{ selectedNode.run.name }}</span>
-                  <Button v-if="selectedRestart" type="button" size="sm" variant="outline" :disabled="restarting || selectedRestart.blocked" @click="restartFrom(selectedRestart.from)"><RotateCcw /> {{ selectedRestart.label }}</Button>
+                  <Button v-if="selectedRestart" type="button" size="sm" variant="outline" :disabled="restarting || selectedRestart.blocked" @click="restartFrom(selectedRestart.from)"><RotateCcw />{{ selectedRestart.label }}</Button>
                   <Button type="button" variant="ghost" size="icon-sm" aria-label="Close step details" @click="selectedStep = null"><X /></Button>
                 </div>
                 <div v-if="stepTab === 'run'" class="min-h-0 w-[32rem] max-w-[calc(100vw-3rem)] flex-1 overflow-y-auto">

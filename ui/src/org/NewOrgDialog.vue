@@ -64,7 +64,7 @@ async function create(): Promise<void> {
 <template>
   <Dialog :open="open" @update:open="opened">
     <DialogTrigger as-child>
-      <Button size="sm" variant="outline"><Plus data-icon="inline-start" /> New org</Button>
+      <Button size="sm" variant="outline"><Plus data-icon="inline-start" />New org</Button>
     </DialogTrigger>
     <DialogContent>
       <DialogHeader>

@@ -36,7 +36,10 @@ When sources disagree, the higher one wins:
   service get a message only on the maintainer's instruction.
 - **Report, don't narrate.** Final replies say what changed, what was verified,
   and anything blocked, in a few lines. No preamble, no recap of the request, no
-  closing offers of more help.
+  closing offers of more help. Leave out what the maintainer can see or infer:
+  a clean tree, unpushed commits, a passing gate (commits imply it), and steps
+  skipped that the task never asked for. Name a skipped step only when the
+  task required it.
 
 ## How to decide
 

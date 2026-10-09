@@ -175,7 +175,7 @@ const eyebrow = "mb-2 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
         </div>
         <form class="flex gap-2 border-t border-border px-4 py-3" @submit.prevent="addRole">
           <Input v-model="newRole" class="max-w-56 font-mono" placeholder="role name" aria-label="New role" />
-          <Button type="submit" variant="outline" size="sm" :disabled="!newRole.trim()"><Plus data-icon="inline-start" /> Add role</Button>
+          <Button type="submit" variant="outline" size="sm" :disabled="!newRole.trim()"><Plus data-icon="inline-start" />Add role</Button>
         </form>
       </div>
     </template>
@@ -228,14 +228,14 @@ const eyebrow = "mb-2 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
                 />
               </SettingRow>
               <div class="flex justify-end pb-1">
-                <Button variant="ghost" size="sm" class="text-danger" @click="delete providers[name]"><Trash2 data-icon="inline-start" /> Remove</Button>
+                <Button variant="ghost" size="sm" class="text-danger" @click="delete providers[name]"><Trash2 data-icon="inline-start" />Remove</Button>
               </div>
             </AccordionContent>
           </AccordionItem>
         </Accordion>
         <form class="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3" @submit.prevent="addProvider">
           <Input v-model="newProvider" list="available-providers" class="max-w-56 font-mono" placeholder="provider" aria-label="New provider" />
-          <Button type="submit" variant="outline" size="sm" :disabled="!newProvider.trim()"><Plus data-icon="inline-start" /> Add provider</Button>
+          <Button type="submit" variant="outline" size="sm" :disabled="!newProvider.trim()"><Plus data-icon="inline-start" />Add provider</Button>
           <span v-if="available.length" class="text-xs text-fg-subtle">
             Available:
             <button v-for="p in available" :key="p.id" type="button" class="mr-2 font-mono hover:text-foreground" @click="newProvider = p.id; addProvider()">

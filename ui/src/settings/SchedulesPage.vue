@@ -90,7 +90,7 @@ const whenKind = (job: Job) => job.schedule.kind || "interval";
   <div>
     <PageHeader title="Schedules">
       <HistoryLink :kinds="resources.map((r) => r.kind)" />
-      <Button v-if="jobs?.length" size="sm" @click="add"><Plus data-icon="inline-start" /> Add schedule</Button>
+      <Button v-if="jobs?.length" size="sm" @click="add"><Plus data-icon="inline-start" />Add schedule</Button>
     </PageHeader>
     <ApplyStatusRows v-for="resource in resources" :key="resource.kind" :kind="resource.kind" class="mb-4" />
 
@@ -107,7 +107,7 @@ const whenKind = (job: Job) => job.schedule.kind || "interval";
           <EmptyTitle>No schedules yet</EmptyTitle>
         </EmptyHeader>
         <EmptyContent>
-          <Button size="sm" @click="add"><Plus data-icon="inline-start" /> Add schedule</Button>
+          <Button size="sm" @click="add"><Plus data-icon="inline-start" />Add schedule</Button>
         </EmptyContent>
       </Empty>
 

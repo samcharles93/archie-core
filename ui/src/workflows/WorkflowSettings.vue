@@ -186,7 +186,7 @@ function setNeeds(next: { captures?: boolean; gate_retries?: number }): void {
       <section class="space-y-1.5">
         <div class="flex items-center text-xs font-medium text-muted-foreground">
           Starts when
-          <button type="button" class="ml-auto flex items-center gap-0.5 hover:text-foreground" @click="binding = null"><Plus class="size-3" /> Bind an event</button>
+          <button type="button" class="ml-auto flex items-center gap-0.5 hover:text-foreground" @click="binding = null"><Plus class="size-3" />Bind an event</button>
         </div>
         <ul v-if="triggers.length" class="divide-y divide-border rounded-md border border-border">
           <li v-for="trigger in triggers" :key="trigger.kind + trigger.label" class="text-[13px]">

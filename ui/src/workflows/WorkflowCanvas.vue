@@ -39,7 +39,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   edit: [StepPath];
   settings: [];
-  insert: [after: number, type: string];
+  insert: [after: StepPath, type: string];
   duplicate: [StepPath];
   move: [StepPath, -1 | 1];
   remove: [StepPath];
@@ -48,7 +48,9 @@ const emit = defineEmits<{
 
 const NODE_WIDTH = 240;
 const editable = computed(() => !!props.types?.length);
-const types = computed(() => props.types ?? []);
+const types = computed(() => [...(props.types ?? []), "parallel"]);
+const branchTypes = computed(() => types.value.filter((type) => ["agent.run", "workflow.call"].includes(type)));
+const typesAt = (path?: StepPath) => path && path.length > 2 ? branchTypes.value : types.value;
 
 const container = ref<HTMLElement | null>(null);
 const graph = computed(() => withRuns(workflowGraph(props.yaml), props.stages ?? []));
@@ -57,7 +59,7 @@ const stepCount = computed(() => graph.value.nodes.filter((node) => node.data.pa
 const nodes = computed(() =>
   graph.value.nodes.map((node) => {
     if (node.type === "add")
-      return { ...node, data: { types: types.value, editable: editable.value, onInsert: (type: string) => emit("insert", stepCount.value - 1, type) } };
+      return { ...node, data: { ...node.data, types: typesAt(node.data.insertAfter), editable: editable.value, onInsert: (type: string) => emit("insert", node.data.insertAfter!, type) } };
     if (node.data.kind === "start") return { ...node, data: { ...node.data, triggers: props.triggers ?? [] } };
     // Each trigger past the second makes the start node a line taller.
     const drop = Math.max(0, (props.triggers?.length ?? 0) - 2) * 18;
@@ -73,7 +75,7 @@ const edges = computed(() =>
       ? {
           ...edge,
           type: "insert",
-          data: { insertAfter, types: types.value, editable: editable.value, onInsert: (after: number, type: string) => emit("insert", after, type) },
+          data: { insertAfter, types: typesAt(insertAfter), editable: editable.value, onInsert: (after: StepPath, type: string) => emit("insert", after, type) },
         }
       : {
           ...edge,
@@ -126,7 +128,8 @@ function onNodeClick({ node }: NodeMouseEvent): void {
 }
 const menuPath = computed(() => menu.value.step?.path);
 const restart = computed(() => (props.restartable && menuPath.value ? restartAt(graph.value, menuPath.value) : null));
-const topIndex = computed(() => (menuPath.value?.length === 2 ? Number(menuPath.value[1]) : undefined));
+const menuIndex = computed(() => Number(menuPath.value?.at(-1)));
+const beforePath = computed(() => menuPath.value ? [...menuPath.value.slice(0, -1), menuIndex.value - 1] : []);
 </script>
 
 <template>
@@ -167,29 +170,27 @@ const topIndex = computed(() => (menuPath.value?.length === 2 ? Number(menuPath.
         <template v-if="menu.step?.kind === 'step' && menuPath">
           <DropdownMenuLabel class="truncate">{{ menu.step.title || stepTitle(menu.step.type) }}</DropdownMenuLabel>
           <template v-if="restart">
-            <DropdownMenuItem :disabled="restart.blocked" @select="emit('restart', restart.from)"><RotateCcw /> {{ restart.label }}</DropdownMenuItem>
+            <DropdownMenuItem :disabled="restart.blocked" @select="emit('restart', restart.from)"><RotateCcw />{{ restart.label }}</DropdownMenuItem>
             <DropdownMenuSeparator />
           </template>
-          <DropdownMenuItem @select="emit('edit', menuPath)"><Pencil /> Edit</DropdownMenuItem>
-          <template v-if="topIndex !== undefined">
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>Insert before</DropdownMenuSubTrigger>
-              <DropdownMenuSubContent class="w-52"><StepTypeItems :types="types" @pick="emit('insert', topIndex - 1, $event)" /></DropdownMenuSubContent>
-            </DropdownMenuSub>
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>Insert after</DropdownMenuSubTrigger>
-              <DropdownMenuSubContent class="w-52"><StepTypeItems :types="types" @pick="emit('insert', topIndex, $event)" /></DropdownMenuSubContent>
-            </DropdownMenuSub>
-          </template>
-          <DropdownMenuItem @select="emit('duplicate', menuPath)"><Copy /> Duplicate</DropdownMenuItem>
-          <DropdownMenuItem @select="emit('move', menuPath, -1)"><ArrowUp /> Move up</DropdownMenuItem>
-          <DropdownMenuItem @select="emit('move', menuPath, 1)"><ArrowDown /> Move down</DropdownMenuItem>
+          <DropdownMenuItem @select="emit('edit', menuPath)"><Pencil />Edit</DropdownMenuItem>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>Insert before</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent class="w-52"><StepTypeItems :types="typesAt(menuPath)" @pick="emit('insert', beforePath, $event)" /></DropdownMenuSubContent>
+          </DropdownMenuSub>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>Insert after</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent class="w-52"><StepTypeItems :types="typesAt(menuPath)" @pick="emit('insert', menuPath, $event)" /></DropdownMenuSubContent>
+          </DropdownMenuSub>
+          <DropdownMenuItem v-if="menu.step.type !== 'parallel'" @select="emit('duplicate', menuPath)"><Copy />Duplicate</DropdownMenuItem>
+          <DropdownMenuItem @select="emit('move', menuPath, -1)"><ArrowUp />Move up</DropdownMenuItem>
+          <DropdownMenuItem @select="emit('move', menuPath, 1)"><ArrowDown />Move down</DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem variant="destructive" @select="emit('remove', menuPath)"><Trash2 /> Delete</DropdownMenuItem>
+          <DropdownMenuItem variant="destructive" @select="emit('remove', menuPath)"><Trash2 />Delete</DropdownMenuItem>
         </template>
         <template v-else>
           <DropdownMenuLabel>{{ menu.step?.kind === "start" ? "Add the first step" : "Add a step at the end" }}</DropdownMenuLabel>
-          <StepTypeItems :types="types" @pick="emit('insert', menu.step?.kind === 'start' ? -1 : stepCount - 1, $event)" />
+          <StepTypeItems :types="types" @pick="emit('insert', ['steps', menu.step?.kind === 'start' ? -1 : stepCount - 1], $event)" />
         </template>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -52,7 +52,7 @@ function set(i: number, argv: string[]) {
       <Button variant="ghost" size="icon" :aria-label="`Remove ${props.label} command ${i + 1}`" @click="remove(i)"><Trash2 /></Button>
     </div>
     <div>
-      <Button variant="outline" size="sm" @click="add"><Plus data-icon="inline-start" /> Add command</Button>
+      <Button variant="outline" size="sm" @click="add"><Plus data-icon="inline-start" />Add command</Button>
     </div>
   </div>
 </template>

@@ -34,6 +34,7 @@ export interface StepNodeData {
   path?: (string | number)[];
   selected?: boolean;
   triggers?: WorkflowTrigger[];
+  insertAfter?: (string | number)[];
 }
 
 /** One recorded run of a step, from the task's attempts view. */
@@ -119,9 +120,8 @@ export interface GraphEdge {
   sourceHandle?: string;
   targetHandle?: string;
   offset?: number;
-  /** A step inserted on this edge goes after the top-level step at this
-   * index (-1: first). Absent inside parallel branches. */
-  insertAfter?: number;
+  /** The predecessor path for insertion; index -1 inserts first in a list. */
+  insertAfter?: (string | number)[];
 }
 
 export interface WorkflowGraph {
@@ -133,6 +133,7 @@ const ROW = 140;
 const COLUMN = 280;
 
 const TYPE_TITLES: Record<string, string> = {
+  parallel: "Parallel",
   "agent.run": "Agent",
   "command.run": "Run commands",
   "repo.prepare": "Prepare worktree",
@@ -243,7 +244,7 @@ export function workflowGraph(source: string): WorkflowGraph {
     path?: (string | number)[],
   ): string => {
     const record = isMapping(step) ? step : {};
-    const type = typeof record.type === "string" ? record.type : "";
+    const type = isMapping(record.parallel) ? "parallel" : typeof record.type === "string" ? record.type : "";
     const settings = isMapping(record.settings) ? record.settings : {};
     const stepID = typeof record.id === "string" ? record.id : "";
     const id = `step-${key}`;
@@ -275,7 +276,7 @@ export function workflowGraph(source: string): WorkflowGraph {
     for (const ref of referencedSteps(record.settings, record.when)) pendingData.push({ from: ref, to: id });
     return id;
   };
-  const link = (from: string[], to: string, insertAfter?: number) => {
+  const link = (from: string[], to: string, insertAfter?: (string | number)[]) => {
     // Several edges joining into one step share one insertion point.
     from.forEach((source, n) =>
       edges.push({
@@ -291,6 +292,9 @@ export function workflowGraph(source: string): WorkflowGraph {
   for (const [i, step] of steps.entries()) {
     if (isMapping(step) && isMapping(step.parallel)) {
       const branches = Object.entries(step.parallel);
+      const parent = addStep(step, String(i + 1), 0, row * ROW, undefined, undefined, ["steps", i]);
+      link(previous, parent, ["steps", i - 1]);
+      row++;
       // Each branch step records its own row under the parallel step, so the
       // canvas lights every branch node from its own run.
       const parallelName = typeof step.id === "string" ? step.id : "parallel";
@@ -298,22 +302,26 @@ export function workflowGraph(source: string): WorkflowGraph {
       let depth = 0;
       branches.forEach(([name, branchSteps], column) => {
         const x = (column - (branches.length - 1) / 2) * COLUMN;
-        let tail = previous;
-        const entry = previous;
+        let tail = [parent];
+        const path = ["steps", i, "parallel", name];
         (Array.isArray(branchSteps) ? branchSteps : []).forEach((branchStep, j) => {
           const id = addStep(branchStep, `${i + 1}-${name}-${j + 1}`, x, (row + j) * ROW, name, parallelName, ["steps", i, "parallel", name, j]);
-          link(tail, id, tail === entry && column === branches.length - 1 ? i - 1 : undefined);
+          link(tail, id, [...path, j - 1]);
           tail = [id];
           depth = Math.max(depth, j + 1);
         });
-        ends.push(...tail);
+        const count = Array.isArray(branchSteps) ? branchSteps.length : 0;
+        const end = `add-${i}-${name}`;
+        nodes.push({ id: end, type: "add", position: { x: x + 104, y: (row + count) * ROW }, data: { kind: "step", key: end, title: "", type: "", detail: "", branch: name, insertAfter: [...path, count - 1] } });
+        link(tail, end);
+        ends.push(end);
       });
       previous = ends;
-      row += Math.max(depth, 1);
+      row += Math.max(depth, 1) + 1;
       continue;
     }
     const id = addStep(step, String(i + 1), 0, row * ROW, undefined, undefined, ["steps", i]);
-    link(previous, id, i - 1);
+    link(previous, id, ["steps", i - 1]);
     previous = [id];
     row++;
   }
@@ -323,7 +331,7 @@ export function workflowGraph(source: string): WorkflowGraph {
     id: "add-end",
     type: "add",
     position: { x: 104, y: row * ROW - 24 },
-    data: { kind: "step", key: "add", title: "", type: "", detail: "" },
+    data: { kind: "step", key: "add", title: "", type: "", detail: "", insertAfter: ["steps", steps.length - 1] },
   });
   link(previous, "add-end");
 
