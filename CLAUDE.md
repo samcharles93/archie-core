@@ -27,6 +27,15 @@ When sources disagree, the higher one wins:
 5. Everything else (memories, comments, old docs) is a hint. Verify it against
    the code before acting on it.
 
+## Working with the maintainer
+
+- **A clear direction is the go-ahead.** Do it in the same turn. Do not restate
+  the plan, offer options, or ask "shall I proceed?". Stop only for destructive
+  or outward-facing actions (deleting data, pushing, touching a live host).
+- **Report, don't narrate.** Final replies say what changed, what was verified,
+  and anything blocked, in a few lines. No preamble, no recap of the request, no
+  closing offers of more help.
+
 ## How to decide
 
 - **Broken beats new.** A bug that blocks work gets fixed now, with the smallest
