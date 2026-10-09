@@ -247,8 +247,8 @@ _runs without a repository._
 
 | Setting | Type | Meaning |
 |---|---|---|
-| `inputs` | mapping |  |
-| `outputs` | mapping |  |
+| `inputs` | mapping | Callee input names mapped to scalar literals or `inputs.<name>` references to caller inputs. |
+| `outputs` | mapping | Callee output names mapped to `outputs.<name>` references to caller outputs; requires `wait: true`. |
 | `wait` | bool | Wait for the child run to finish before continuing. |
 | `workflow` | text | The workflow to start as a child run. |
 

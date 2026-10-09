@@ -9,11 +9,15 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { stepIcon } from "./step-icons";
-import { earlierStepIDs, replaceStep, stepAt, type StepPath, type StepRecord } from "./workflow-edit";
+import { earlierStepIDs, replaceStep, stepAt, workflowField, type StepPath, type StepRecord } from "./workflow-edit";
+import type { WorkflowDefinitionEntry } from "@/stores/control-plane";
+import type { InputSpec } from "./bind-event";
+import { inputValue } from "./work-request";
+import WorkflowPicker from "./WorkflowPicker.vue";
 import { stepTitle } from "./workflow-graph";
 import { settingsProblem, type SettingsSchema, type StepTypeInfo } from "./workflow-yaml";
 
-const props = defineProps<{ yaml: string; path: StepPath; vocabulary: StepTypeInfo[] }>();
+const props = defineProps<{ yaml: string; path: StepPath; vocabulary: StepTypeInfo[]; workflows: WorkflowDefinitionEntry[] }>();
 const emit = defineEmits<{ "update:yaml": [string]; close: []; remove: [] }>();
 
 const step = computed<StepRecord>(() => stepAt(props.yaml, props.path) ?? {});
@@ -27,11 +31,12 @@ const problem = computed(() =>
   info.value?.settings && step.value.settings ? settingsProblem(step.value.settings, info.value.settings, "settings") : "",
 );
 
-type Kind = "select" | "text" | "line" | "boolean" | "number" | "lines" | "yaml";
+type Kind = "workflow" | "select" | "text" | "line" | "boolean" | "number" | "lines" | "yaml";
 const LEAD = ["mission", "workflow", "message", "body", "plan", "then", "status", "detail", "run", "rules"];
 const longText = /mission|body|detail|plan|rules/;
 
 function kindOf(key: string, schema: SettingsSchema): Kind {
+  if ((["workflow.call", "workflow.handoff"].includes(type.value) && key === "workflow") || (type.value === "human.approve" && key === "then")) return "workflow";
   if (schema.type === "string") return schema.enum ? "select" : longText.test(key) ? "text" : "line";
   if (schema.type === "boolean") return "boolean";
   if (schema.type === "integer" || schema.type === "number") return "number";
@@ -42,12 +47,14 @@ function kindOf(key: string, schema: SettingsSchema): Kind {
 // The setting that says what the step does leads, on its own; choices and
 // switches follow in a compact block; structured settings come last.
 const fields = computed(() => {
-  const entries = Object.entries(info.value?.settings?.properties ?? {}).map(([key, schema]) => ({ key, schema, kind: kindOf(key, schema) }));
+  const entries = Object.entries(info.value?.settings?.properties ?? {})
+    .filter(([key]) => type.value !== "workflow.call" || !["inputs", "outputs"].includes(key))
+    .map(([key, schema]) => ({ key, schema, kind: kindOf(key, schema) }));
   const lead = entries.filter((field) => LEAD.includes(field.key) && field.kind !== "boolean").sort((a, b) => LEAD.indexOf(a.key) - LEAD.indexOf(b.key))[0];
   const rest = entries.filter((field) => field !== lead);
   return {
     lead,
-    compact: rest.filter((field) => ["select", "line", "number", "boolean"].includes(field.kind)),
+    compact: rest.filter((field) => ["workflow", "select", "line", "number", "boolean"].includes(field.kind)),
     long: rest.filter((field) => ["text", "lines", "yaml"].includes(field.kind)),
   };
 });
@@ -66,7 +73,30 @@ function setRetry(next: { attempts?: number; backoff?: string }): void {
   setField("retry", { ...(step.value.retry as object), ...next });
 }
 function setSetting(key: string, value: unknown): void {
-  write({ ...step.value, settings: { ...settings.value, [key]: value } });
+  const next = { ...settings.value, [key]: value };
+  if (type.value === "workflow.call" && key === "wait" && value !== true) delete next.outputs;
+  write({ ...step.value, settings: next });
+}
+
+function setTarget(key: string, value: string): void {
+  const next = { ...settings.value, [key]: value };
+  if (type.value === "workflow.call" && value !== settings.value[key]) {
+    delete next.inputs;
+    delete next.outputs;
+  }
+  write({ ...step.value, settings: next });
+}
+const callee = computed(() => props.workflows.find((entry) => entry.id === settings.value.workflow));
+const callInputs = computed(() => Object.entries((workflowField(callee.value?.yaml ?? "", "inputs") ?? {}) as Record<string, InputSpec>));
+const callOutputs = computed(() => Object.entries((workflowField(callee.value?.yaml ?? "", "outputs") ?? {}) as Record<string, InputSpec>));
+const callerInputs = computed(() => Object.entries((workflowField(props.yaml, "inputs") ?? {}) as Record<string, InputSpec>));
+const callerOutputs = computed(() => Object.entries((workflowField(props.yaml, "outputs") ?? {}) as Record<string, InputSpec>));
+const inputMap = computed(() => (settings.value.inputs ?? {}) as Record<string, unknown>);
+const outputMap = computed(() => (settings.value.outputs ?? {}) as Record<string, string>);
+const isReference = (value: unknown) => typeof value === "string" && value.startsWith("inputs.");
+const inputText = (name: string) => inputMap.value[name] === undefined ? "" : String(inputMap.value[name]);
+function setCallInput(name: string, value: string, inputType?: string): void {
+  setSetting("inputs", { ...inputMap.value, [name]: value === "" ? undefined : isReference(value) ? value : inputValue(value, inputType ?? "string") });
 }
 
 // A reference goes into the text setting last focused: that is how this step
@@ -122,8 +152,9 @@ const text = (key: string) => (typeof settings.value[key] === "string" ? (settin
           {{ label(fields.lead.key, fields.lead.schema) }}
           <CircleHelp v-if="fields.lead.schema.description" class="size-3 text-fg-subtle" />
         </div>
+        <WorkflowPicker v-if="fields.lead.kind === 'workflow'" :value="text(fields.lead.key)" :workflows="workflows" :label="label(fields.lead.key, fields.lead.schema)" @pick="setTarget(fields.lead.key, $event)" />
         <select
-          v-if="fields.lead.kind === 'select'"
+          v-else-if="fields.lead.kind === 'select'"
           class="h-9 w-full rounded-md border border-input bg-background px-2"
           :value="text(fields.lead.key)"
           @change="setSetting(fields.lead.key, ($event.target as HTMLSelectElement).value || undefined)"
@@ -159,8 +190,9 @@ const text = (key: string) => (typeof settings.value[key] === "string" ? (settin
             {{ label(field.key, field.schema) }}
             <CircleHelp v-if="field.schema.description" class="size-3 text-fg-subtle" />
           </span>
+          <WorkflowPicker v-if="field.kind === 'workflow'" class="max-w-48" :value="text(field.key)" :workflows="workflows" :label="label(field.key, field.schema)" @pick="setTarget(field.key, $event)" />
           <Switch
-            v-if="field.kind === 'boolean'"
+            v-else-if="field.kind === 'boolean'"
             :model-value="settings[field.key] === true"
             @update:model-value="setSetting(field.key, $event || undefined)"
           />
@@ -189,6 +221,37 @@ const text = (key: string) => (typeof settings.value[key] === "string" ? (settin
           />
         </div>
       </section>
+
+      <template v-if="type === 'workflow.call' && callee">
+        <section v-if="callInputs.length" class="space-y-3">
+          <div class="text-xs font-medium text-muted-foreground">Inputs</div>
+          <div v-for="[name, spec] in callInputs" :key="name" class="space-y-1.5">
+            <div class="text-[13px]">{{ name }}<span v-if="spec.required" class="text-danger"> *</span><span class="ml-2 text-xs text-fg-subtle">{{ spec.type }}</span></div>
+            <select :aria-label="`${name} source`" class="h-8 w-full rounded-md border border-input bg-background px-2 text-[13px]" :value="isReference(inputMap[name]) || ['object', 'array'].includes(spec.type ?? '') ? 'input' : 'value'" @change="setCallInput(name, ($event.target as HTMLSelectElement).value === 'input' ? 'inputs.' : '')">
+              <option v-if="!['object', 'array'].includes(spec.type ?? '')" value="value">Value</option>
+              <option value="input">Caller input</option>
+            </select>
+            <select v-if="isReference(inputMap[name]) || ['object', 'array'].includes(spec.type ?? '')" :aria-label="name" class="h-8 w-full rounded-md border border-input bg-background px-2 text-[13px]" :value="inputText(name)" @change="setCallInput(name, ($event.target as HTMLSelectElement).value)">
+              <option value="">Choose input</option>
+              <option v-for="[key] in callerInputs.filter(([, input]) => input.type === spec.type || input.type === 'any' || spec.type === 'any')" :key="key" :value="`inputs.${key}`">{{ key }}</option>
+            </select>
+            <select v-else-if="spec.type === 'bool'" :aria-label="name" class="h-8 w-full rounded-md border border-input bg-background px-2 text-[13px]" :value="inputText(name)" @change="setCallInput(name, ($event.target as HTMLSelectElement).value, spec.type)">
+              <option value="">Unset</option><option value="true">True</option><option value="false">False</option>
+            </select>
+            <Input v-else :aria-label="name" :type="spec.type === 'number' ? 'number' : 'text'" step="any" :model-value="inputText(name)" @update:model-value="setCallInput(name, String($event), spec.type)" />
+          </div>
+        </section>
+        <section v-if="callOutputs.length" class="space-y-3">
+          <div class="text-xs font-medium text-muted-foreground">Outputs</div>
+          <div v-for="[name, spec] in callOutputs" :key="name" class="space-y-1.5">
+            <div class="text-[13px]">{{ name }}<span class="ml-2 text-xs text-fg-subtle">{{ spec.type }}</span></div>
+            <select :aria-label="`${name} output`" :disabled="settings.wait !== true" class="h-8 w-full rounded-md border border-input bg-background px-2 text-[13px]" :value="outputMap[name] ?? ''" @change="setSetting('outputs', { ...outputMap, [name]: ($event.target as HTMLSelectElement).value || undefined })">
+              <option value="">Do not publish</option>
+              <option v-for="[key] in callerOutputs.filter(([, output]) => output.type === spec.type || spec.type === 'any' || output.type === 'any')" :key="key" :value="`outputs.${key}`">{{ key }}</option>
+            </select>
+          </div>
+        </section>
+      </template>
 
       <section v-for="field in fields.long" :key="field.key" class="space-y-1.5">
         <div class="flex items-center gap-1 text-xs font-medium text-muted-foreground" :title="field.schema.description">

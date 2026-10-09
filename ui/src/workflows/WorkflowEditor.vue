@@ -296,6 +296,7 @@ function syncScroll(event: Event): void {
                 </div>
               </template>
               <StepEditor
+                :workflows="collection.definitions"
                 class="min-h-0 flex-1"
                 v-if="stepTab === 'definition' || !selectedNode?.run || !watchedRun"
                 :key="JSON.stringify(selectedStep)"

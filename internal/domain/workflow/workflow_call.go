@@ -47,12 +47,12 @@ var (
 // input.
 type workflowCallSettings struct {
 	Workflow string         `yaml:"workflow" doc:"The workflow to start as a child run."`
-	Inputs   map[string]any `yaml:"inputs,omitempty"`
+	Inputs   map[string]any `yaml:"inputs,omitempty" doc:"Callee input names mapped to scalar literals or inputs.<name> references to caller inputs."`
 	Wait     bool           `yaml:"wait,omitempty" doc:"Wait for the child run to finish before continuing."`
 	// Outputs publishes a callee output as one of the caller's own: the key
 	// names the callee's declared output, the value an outputs.<name>
 	// reference naming the caller's declared output
-	Outputs map[string]string `yaml:"outputs,omitempty"`
+	Outputs map[string]string `yaml:"outputs,omitempty" doc:"Callee output names mapped to outputs.<name> references to caller outputs; requires wait: true."`
 }
 
 // callReference is the prefix an inputs value must carry to be read as a
