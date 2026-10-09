@@ -3,8 +3,11 @@ package workflow
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -96,6 +99,51 @@ func TestRunBranchRecordsChildSteps(t *testing.T) {
 			}
 			if tc.StepID != 7 {
 				t.Fatalf("branch step leaked its step id: %d", tc.StepID)
+			}
+		})
+	}
+}
+
+// TestSwitchRunsTheMatchingCase pins the switch contract: the case keyed by
+// the referenced value runs, else the default case, else nothing, and its steps
+// record under the case name.
+func TestSwitchRunsTheMatchingCase(t *testing.T) {
+	src := `id: route
+steps:
+  - switch:
+      on: task.title
+      cases:
+        bug: [{id: fix, type: mark}]
+        "true": [{id: yes, type: mark}]
+%s`
+	tests := []struct {
+		name, title, fallback, want string
+	}{
+		{name: "a matching case", title: "bug", want: "bug/fix"},
+		{name: "a boolean-looking key", title: "true", want: "true/yes"},
+		{name: "no match falls to the default", title: "feature", fallback: "        default: [{id: other, type: mark}]", want: "default/other"},
+		{name: "no match and no default runs nothing", title: "feature"},
+	}
+	registry := StepRegistry{"mark": func(yaml.Node) (Stage, error) {
+		return Stage{Run: func(context.Context, *TaskContext) error { return nil }}, nil
+	}}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			wf, err := ParseAndCompile(fmt.Sprintf(src, tt.fallback), registry)
+			if err != nil {
+				t.Fatal(err)
+			}
+			store := &fakeStepStore{}
+			tc := &TaskContext{Task: &task.Task{ID: 1, Attempt: 1, Title: tt.title}, Store: store, StepID: 7, Log: slog.Default()}
+			if err := wf.Stages[0].Run(context.Background(), tc); err != nil {
+				t.Fatal(err)
+			}
+			var got string
+			if len(store.started) > 0 {
+				got = store.started[0].Name
+			}
+			if got != tt.want {
+				t.Fatalf("ran %q, want %q", got, tt.want)
 			}
 		})
 	}

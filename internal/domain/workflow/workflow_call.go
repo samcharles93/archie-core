@@ -449,8 +449,9 @@ func walkSteps(steps []StepRecord, where string, visit func(where string, step S
 		if err := visit(at, step); err != nil {
 			return err
 		}
-		for _, name := range slices.Sorted(maps.Keys(step.Parallel)) {
-			if err := walkSteps(step.Parallel[name], fmt.Sprintf("%s branch %q", at, name), visit); err != nil {
+		branches := step.branches()
+		for _, name := range slices.Sorted(maps.Keys(branches)) {
+			if err := walkSteps(branches[name], fmt.Sprintf("%s branch %q", at, name), visit); err != nil {
 				return err
 			}
 		}

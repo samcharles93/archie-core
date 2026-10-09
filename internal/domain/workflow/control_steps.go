@@ -292,7 +292,7 @@ func findStep(steps []StepRecord, id string) (StepRecord, bool) {
 		if step.ID == id {
 			return step, true
 		}
-		for _, branch := range step.Parallel {
+		for _, branch := range step.branches() {
 			if found, ok := findStep(branch, id); ok {
 				return found, true
 			}

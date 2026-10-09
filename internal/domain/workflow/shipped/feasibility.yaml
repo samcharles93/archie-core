@@ -22,13 +22,16 @@ steps:
             type: string
             description: The rationale, written for the human who filed the request.
         required: [fit, reasons]
-  - type: forge.close-issue
-    when: "!steps.assess.result.fit"
-  - type: workflow.finish
-    when: "!steps.assess.result.fit"
-    settings:
-      status: declined
-      detail: "{{ steps.assess.result.reasons }}"
+  - id: verdict
+    switch:
+      on: steps.assess.result.fit
+      cases:
+        "false":
+          - type: forge.close-issue
+          - type: workflow.finish
+            settings:
+              status: declined
+              detail: "{{ steps.assess.result.reasons }}"
   - id: prd
     type: agent.run
     settings:

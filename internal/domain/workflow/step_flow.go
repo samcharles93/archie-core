@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,7 +28,11 @@ func checkStep(step StepRecord, mode task.RepositoryMode, earlier *refScope, reg
 	if err := checkStepControls(step, earlier); err != nil {
 		return err
 	}
-	if step.Parallel != nil {
+	if step.Switch != nil {
+		if err := checkSwitch(step, mode, earlier, registry, inBranch); err != nil {
+			return err
+		}
+	} else if step.Parallel != nil {
 		if err := checkParallel(step, mode, earlier, registry, inBranch); err != nil {
 			return err
 		}
@@ -133,6 +138,45 @@ func checkParallel(step StepRecord, mode task.RepositoryMode, earlier *refScope,
 	return nil
 }
 
+// checkSwitch validates each case like a branch: a case sees the steps before
+// the switch and its own earlier steps. Only one case runs, so its steps need
+// not be safe to run side by side, and every case's ids are visible after it.
+func checkSwitch(step StepRecord, mode task.RepositoryMode, earlier *refScope, registry StepRegistry, inBranch bool) error {
+	switch {
+	case step.Type != "" || step.Settings.Kind != 0 || step.Parallel != nil:
+		return errors.New("a switch step has cases, not a type, settings or parallel branches")
+	case len(step.Switch.Cases) == 0:
+		return errors.New("switch needs at least one case")
+	}
+	if err := checkReference(strings.TrimSpace(step.Switch.On), earlier); err != nil {
+		return fmt.Errorf("switch.on: %w", err)
+	}
+	declared := map[string]map[string]bool{}
+	arms := step.Switch.Cases
+	for _, name := range slices.Sorted(maps.Keys(arms)) {
+		if name == "" || strings.Contains(name, "/") {
+			return fmt.Errorf("case %q is empty or contains /", name)
+		}
+		if len(arms[name]) == 0 {
+			return fmt.Errorf("case %q has no steps", name)
+		}
+		seen := earlier.clone()
+		for i, caseStep := range arms[name] {
+			if _, twice := declared[caseStep.ID]; twice && caseStep.ID != "" {
+				return fmt.Errorf("case %q step %d: step id %q is declared twice", name, i+1, caseStep.ID)
+			}
+			if err := checkStep(caseStep, mode, seen, registry, inBranch); err != nil {
+				return fmt.Errorf("case %q step %d: %w", name, i+1, err)
+			}
+			if caseStep.ID != "" {
+				declared[caseStep.ID] = resultFields(caseStep)
+			}
+		}
+	}
+	maps.Copy(earlier.steps, declared)
+	return nil
+}
+
 // parallelSafe reports whether a step may run beside others in one worktree.
 func parallelSafe(step StepRecord) bool {
 	switch step.Type {
@@ -170,6 +214,9 @@ func Compile(definition YAMLDefinition, registry StepRegistry) (Workflow, error)
 }
 
 func compileStep(step StepRecord, registry StepRegistry) (Stage, error) {
+	if step.Switch != nil {
+		return compileSwitch(step, registry)
+	}
 	if step.Parallel != nil {
 		return compileParallel(step, registry)
 	}
@@ -198,6 +245,8 @@ func (step StepRecord) StageName() string {
 		return step.ID
 	case step.Parallel != nil:
 		return "parallel"
+	case step.Switch != nil:
+		return "switch"
 	}
 	return step.Type
 }
@@ -301,6 +350,37 @@ func compileParallel(step StepRecord, registry StepRegistry) (Stage, error) {
 			}
 		}
 		return errors.Join(errs...)
+	}), nil
+}
+
+// compileSwitch runs the matching case in the run's own context, recording
+// its steps under the case name as a parallel branch records its own.
+func compileSwitch(step StepRecord, registry StepRegistry) (Stage, error) {
+	arms := map[string][]Stage{}
+	for name, steps := range step.Switch.Cases {
+		for _, caseStep := range steps {
+			stage, err := compileStep(caseStep, registry)
+			if err != nil {
+				return Stage{}, fmt.Errorf("case %q: %w", name, err)
+			}
+			arms[name] = append(arms[name], stage)
+		}
+	}
+	on := strings.Split(strings.TrimSpace(step.Switch.On), ".")
+	return wrapStep(step, func(ctx context.Context, tc *TaskContext) error {
+		name := stringify(lookup(referenceScope(tc), on))
+		stages, ok := arms[name]
+		if !ok {
+			name, stages = switchDefault, arms[switchDefault]
+		}
+		tc.Log.Info("switch case chosen", "step", step.StageName(), "value", name)
+		if stages == nil {
+			return nil
+		}
+		parent := tc.workflowBranch
+		tc.workflowBranch = joinStepPath(parent, name)
+		defer func() { tc.workflowBranch = parent }()
+		return runBranch(ctx, tc, stages)
 	}), nil
 }
 

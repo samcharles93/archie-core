@@ -53,7 +53,19 @@ type StepRecord struct {
 	// Parallel makes this step a set of named branches that run at the same
 	// time instead of a typed step. Each branch is a list of steps.
 	Parallel map[string][]StepRecord `yaml:"parallel,omitempty" json:"parallel,omitempty"`
+	// Switch makes this step a choice: the case named by a reference's value
+	// runs, else the default, else nothing.
+	Switch *SwitchStep `yaml:"switch,omitempty" json:"switch,omitempty"`
 }
+
+// SwitchStep runs the steps of the case whose key equals the value On
+// references, else the case named default, else nothing.
+type SwitchStep struct {
+	On    string                  `yaml:"on" json:"on"`
+	Cases map[string][]StepRecord `yaml:"cases" json:"cases"`
+}
+
+const switchDefault = "default"
 
 // RetryPolicy is how often a failed step runs again, and how long it waits
 // between attempts.
@@ -210,4 +222,13 @@ func shippedYAML() []WorkflowDefinitionEntry {
 		entries = append(entries, WorkflowDefinitionEntry{ID: id, YAML: string(data)})
 	}
 	return entries
+}
+
+// branches is every list of steps nested in a step: its parallel branches or
+// its switch cases.
+func (step StepRecord) branches() map[string][]StepRecord {
+	if step.Switch != nil {
+		return step.Switch.Cases
+	}
+	return step.Parallel
 }
