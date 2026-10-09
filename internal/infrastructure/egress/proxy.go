@@ -258,10 +258,16 @@ func (p *Proxy) forward(ctx context.Context, w http.ResponseWriter, r *http.Requ
 			http.Error(w, "egress to "+target+": "+err.Error(), http.StatusBadGateway)
 			return
 		}
-		if granted {
-			p.interceptOAuth(ctx, w, r, s, rule, scheme, target)
+		if !granted {
+			// The request is to a declared OAuth credential's token endpoint
+			// but this run is not granted the service. Proxying it would hand
+			// the container the provider's real tokens un-sentinelized, so the
+			// token endpoint is refused rather than forwarded.
+			http.Error(w, "credential "+rule.service+" is not bound for this run", http.StatusForbidden)
 			return
 		}
+		p.interceptOAuth(ctx, w, r, s, rule, scheme, target)
+		return
 	}
 	// Injection happens before anything is sent, so a credential that
 	// cannot be resolved never reaches upstream half-applied.
