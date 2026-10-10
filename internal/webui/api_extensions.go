@@ -184,9 +184,8 @@ func (s *Server) handleExtensionInstall(w http.ResponseWriter, r *http.Request) 
 	if !s.extensionsReady(w) {
 		return
 	}
-	var request installExtensionRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	request, ok := decodeBody[installExtensionRequest](w, r)
+	if !ok {
 		return
 	}
 	p, err := s.Packages.InstallPackage(r.Context(),
@@ -227,9 +226,8 @@ func (s *Server) handleExtensionEnabled(w http.ResponseWriter, r *http.Request) 
 	if !s.extensionsReady(w) {
 		return
 	}
-	var request extensionEnabledRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	request, ok := decodeBody[extensionEnabledRequest](w, r)
+	if !ok {
 		return
 	}
 	name := r.PathValue("name")

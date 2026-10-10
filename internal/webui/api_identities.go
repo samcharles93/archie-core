@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -36,9 +35,8 @@ func (s *Server) handleIdentitiesList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleIdentityCreate(w http.ResponseWriter, r *http.Request) {
-	var request identityRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	request, ok := decodeBody[identityRequest](w, r)
+	if !ok {
 		return
 	}
 	id, err := randomIdentityID()
@@ -64,9 +62,8 @@ func (s *Server) handleIdentityCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleIdentityCommand(w http.ResponseWriter, r *http.Request) {
-	var request identityRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	request, ok := decodeBody[identityRequest](w, r)
+	if !ok {
 		return
 	}
 	audit, err := webAudit(r.Context())

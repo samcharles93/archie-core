@@ -47,9 +47,8 @@ func (s *Server) handleWorkflowEnabled(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "control plane unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	var request workflowEnabledRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	request, ok := decodeBody[workflowEnabledRequest](w, r)
+	if !ok {
 		return
 	}
 	id := r.PathValue("id")

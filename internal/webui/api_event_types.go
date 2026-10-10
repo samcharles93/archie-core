@@ -1,7 +1,6 @@
 package webui
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -92,9 +91,8 @@ func (s *Server) handleEventTypeCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "event types not configured", http.StatusServiceUnavailable)
 		return
 	}
-	var req eventTypeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+	req, ok := decodeBody[eventTypeRequest](w, r)
+	if !ok {
 		return
 	}
 	t := eventtype.FromExample(req.Source, req.Name, eventtype.Sample{
@@ -122,9 +120,8 @@ func (s *Server) handleEventTypeUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "event types not configured", http.StatusServiceUnavailable)
 		return
 	}
-	var req eventTypeUpdate
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+	req, ok := decodeBody[eventTypeUpdate](w, r)
+	if !ok {
 		return
 	}
 	// Source is not editable: the store validates against the stored one.

@@ -2,7 +2,6 @@ package webui
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -72,9 +71,8 @@ func (s *Server) handleMappingCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "mappings not configured", http.StatusServiceUnavailable)
 		return
 	}
-	var req mappingRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+	req, ok := decodeBody[mappingRequest](w, r)
+	if !ok {
 		return
 	}
 	m := mapping.Mapping{Name: req.Name, SourceHint: req.SourceHint, EventTypeID: req.EventTypeID, Fields: req.Fields}
@@ -133,9 +131,8 @@ func (s *Server) handleMappingUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid mapping id", http.StatusBadRequest)
 		return
 	}
-	var req mappingRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+	req, ok := decodeBody[mappingRequest](w, r)
+	if !ok {
 		return
 	}
 	m := mapping.Mapping{ID: id, Name: req.Name, SourceHint: req.SourceHint, EventTypeID: req.EventTypeID, Fields: req.Fields}
@@ -202,9 +199,8 @@ func (s *Server) handleMappingPreview(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "captures not configured", http.StatusServiceUnavailable)
 		return
 	}
-	var req mappingPreviewRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+	req, ok := decodeBody[mappingPreviewRequest](w, r)
+	if !ok {
 		return
 	}
 	capture, err := s.captureByID(r.Context(), req.CaptureID)

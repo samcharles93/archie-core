@@ -2,7 +2,6 @@ package webui
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -103,9 +102,8 @@ func (s *Server) handleBindingCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bindings not configured", http.StatusServiceUnavailable)
 		return
 	}
-	var req bindingRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+	req, ok := decodeBody[bindingRequest](w, r)
+	if !ok {
 		return
 	}
 	b, ok := s.checkedBinding(w, r, "", req)
@@ -188,9 +186,8 @@ func (s *Server) handleBindingUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid binding id", http.StatusBadRequest)
 		return
 	}
-	var req bindingRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+	req, ok := decodeBody[bindingRequest](w, r)
+	if !ok {
 		return
 	}
 	b, ok := s.checkedBinding(w, r, id, req)
