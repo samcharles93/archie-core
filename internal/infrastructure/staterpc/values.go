@@ -84,6 +84,7 @@ func taskProto(t *task.Task) *pb.Task { // mirror-image field-by-field proto<->d
 		Org:                       string(t.Org),
 		CallParentTaskId:          t.CallParentTaskID,
 		CallDepth:                 int32(t.CallDepth),
+		Origin:                    t.Origin,
 	}
 }
 
@@ -116,6 +117,7 @@ func taskValue(t *pb.Task) *task.Task { // see taskProto above
 		Org:                       org.OrgID(t.Org),
 		CallParentTaskID:          t.CallParentTaskId,
 		CallDepth:                 int(t.CallDepth),
+		Origin:                    t.Origin,
 	}
 }
 

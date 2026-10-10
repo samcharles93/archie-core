@@ -455,6 +455,7 @@ type Task struct {
 	PendingReviews            []byte
 	Origin                    string
 	CallKey                   string
+	OutcomePosted             bool
 }
 
 type ToolCall struct {

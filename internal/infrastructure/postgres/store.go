@@ -120,6 +120,7 @@ func taskFromRow(t postgresdb.Task) *workflow.Task {
 		RemediationRounds:         int(t.RemediationRounds),
 		CallParentTaskID:          t.CallParentTaskID,
 		CallDepth:                 int(t.CallDepth),
+		Origin:                    t.Origin,
 		CreatedAt:                 t.CreatedAt,
 		UpdatedAt:                 t.UpdatedAt,
 	}
@@ -863,6 +864,28 @@ func (s *Store) CallStatus(ctx context.Context, callerTaskID, callTaskID int64) 
 		return "", "", nil, err
 	}
 	return callee.Status, detail, outputs, nil
+}
+
+// UnpostedOutcomes returns finished chat tasks whose outcome has not been
+// posted to their conversation.
+func (s *Store) UnpostedOutcomes(ctx context.Context) ([]*workflow.Task, error) {
+	rows, err := s.queries().UnpostedOutcomes(ctx, scopeOrg(ctx))
+	if err != nil {
+		return nil, fmt.Errorf("store: unposted outcomes: %w", err)
+	}
+	out := make([]*workflow.Task, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, taskFromRow(row))
+	}
+	return out, nil
+}
+
+// MarkOutcomePosted records that a task's outcome reached its conversation.
+func (s *Store) MarkOutcomePosted(ctx context.Context, taskID int64) error {
+	if err := s.queries().MarkOutcomePosted(ctx, taskID); err != nil {
+		return fmt.Errorf("store: mark outcome posted: %w", err)
+	}
+	return nil
 }
 
 // ActiveTasksByOrigin returns the queued and running tasks the conversation

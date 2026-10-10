@@ -185,7 +185,7 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 		return 1
 	}
 
-	if err := b.setupGatewayClient(); err != nil {
+	if err := b.setupGatewayClient(ctx); err != nil {
 		return 1
 	}
 	if ps, ok := b.stateStore.(storecontract.PresenceStore); ok {

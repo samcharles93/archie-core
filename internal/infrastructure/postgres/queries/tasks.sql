@@ -93,6 +93,18 @@ SELECT * FROM tasks
 WHERE origin = sqlc.arg(origin) AND origin <> '' AND status IN ('queued', 'running') AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org))
 ORDER BY id;
 
+-- name: UnpostedOutcomes :many
+-- Finished chat tasks whose outcome has not reached their conversation yet.
+SELECT * FROM tasks
+WHERE origin <> '' AND NOT outcome_posted
+  AND status IN ('merged', 'rejected', 'dead', 'closed_wont_do', 'completed')
+  AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org))
+ORDER BY id
+LIMIT 50;
+
+-- name: MarkOutcomePosted :exec
+UPDATE tasks SET outcome_posted = true WHERE id = $1;
+
 -- name: StampTaskBinding :exec
 UPDATE tasks SET binding_id = $2, binding_version = $3 WHERE id = $1;
 

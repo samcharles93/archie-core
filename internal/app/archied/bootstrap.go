@@ -464,7 +464,7 @@ func (b *boot) setupContainers(ctx context.Context) func() {
 
 // setupGatewayClient dials the Gateway, which owns every model call. The daemon
 // only enqueues the chat tasks scheduled workflows create.
-func (b *boot) setupGatewayClient() error {
+func (b *boot) setupGatewayClient(ctx context.Context) error {
 	b.setupChatTasks(b.cfg)
 	contract, cleanup, err := composeChatContract(b.cfg.Services, b.secrets)
 	if err != nil {
@@ -478,6 +478,7 @@ func (b *boot) setupGatewayClient() error {
 	}
 	b.addCleanup(closeMessaging)
 	b.messaging = messaging
+	go postOutcomes(ctx, b.stateStore, messaging.Deliver, b.log)
 	b.setupReadinessProbes()
 	return nil
 }

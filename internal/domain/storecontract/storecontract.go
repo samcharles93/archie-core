@@ -81,6 +81,7 @@ type HarnessSecretStore interface {
 // status guard. It is separate from the already broad lifecycle contract so
 // consumers that only run tasks do not acquire an operator-only capability.
 type TaskArchiver interface {
+	OutcomePoster
 	ArchiveTask(ctx context.Context, taskID int64, fromStatus string, audit events.Event) (eventID int64, err error)
 	ClearTerminalTasks(ctx context.Context) (int64, error)
 }
@@ -118,6 +119,16 @@ type RemediationStarter interface {
 	// pr_open guard is part of the contract: cursors only move while no
 	// remediation run owns the task.
 	SetReviewCursors(ctx context.Context, taskID, reviewCursor, commentCursor int64) error
+}
+
+// OutcomePoster tracks which finished chat tasks have reported back to their
+// conversation.
+type OutcomePoster interface {
+	// UnpostedOutcomes returns finished chat tasks whose outcome has not been
+	// posted to the conversation that created them.
+	UnpostedOutcomes(ctx context.Context) ([]*task.Task, error)
+	// MarkOutcomePosted records that a task's outcome was posted.
+	MarkOutcomePosted(ctx context.Context, taskID int64) error
 }
 
 // TaskQueries groups read-only task accessors.

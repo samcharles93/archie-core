@@ -88,6 +88,9 @@ type Task struct {
 	// deployments). Used to scope /approve and /cancel authorization so
 	// one identity cannot control another's chat-spawned tasks.
 	Identity string `json:"identity"`
+	// Origin names the conversation that created the task, so its outcome and
+	// /stop find it; empty for a task no conversation started.
+	Origin string `json:"origin"`
 	// Org is the org the task belongs to. The State Store derives it from
 	// the task's identity when the row is written;
 	// a task
