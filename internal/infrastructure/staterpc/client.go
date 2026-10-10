@@ -83,11 +83,7 @@ func (c *Client) ActiveTasksByOrigin(ctx context.Context, origin string) ([]*tas
 	if err != nil {
 		return nil, unmapError(err)
 	}
-	out := make([]*task.Task, 0, len(r.Tasks))
-	for _, t := range r.Tasks {
-		out = append(out, taskValue(t))
-	}
-	return out, nil
+	return mapValues(r.Tasks, taskValue), nil
 }
 
 func (c *Client) EnqueueChatTask(ctx context.Context, owner, repo, title, body, wf, identity, origin string, inputs map[string]any) (*task.Task, error) {
@@ -289,7 +285,7 @@ func (c *Client) OpenPRs(ctx context.Context) ([]task.Task, error) {
 	if err != nil {
 		return nil, unmapError(err)
 	}
-	return derefTasks(r.Tasks), nil
+	return mapValues(r.Tasks, func(t *pb.Task) task.Task { return *taskValue(t) }), nil
 }
 
 func (c *Client) ClearTerminalTasks(ctx context.Context) (int64, error) {
@@ -314,7 +310,7 @@ func (c *Client) TasksPage(ctx context.Context, page storecontract.TaskPage) ([]
 	if err != nil {
 		return nil, unmapError(err)
 	}
-	return derefTasks(r.Tasks), nil
+	return mapValues(r.Tasks, func(t *pb.Task) task.Task { return *taskValue(t) }), nil
 }
 
 func (c *Client) StatusCounts(ctx context.Context) (map[string]int, error) {
@@ -854,15 +850,4 @@ func (c *Client) GetHarnessSecret(ctx context.Context, org, service string) (har
 func (c *Client) PutHarnessSecret(ctx context.Context, s harnesssecret.Secret) error {
 	_, err := c.client.PutHarnessSecret(ctx, &pb.PutHarnessSecretRequest{Secret: harnessSecretProto(s)})
 	return unmapError(err)
-}
-
-func derefTasks(in []*pb.Task) []task.Task {
-	if in == nil {
-		return nil
-	}
-	out := make([]task.Task, len(in))
-	for i, t := range in {
-		out[i] = *taskValue(t)
-	}
-	return out
 }

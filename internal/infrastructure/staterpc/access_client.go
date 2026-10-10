@@ -25,16 +25,14 @@ func (c *Client) PrincipalFor(ctx context.Context, id identity.IdentityID) (acce
 		return access.Principal{}, unmapError(err)
 	}
 	value := r.GetPrincipal()
-	memberships := make([]org.Membership, len(value.GetMemberships()))
-	for i := range value.GetMemberships() {
-		m := value.GetMemberships()[i]
-		memberships[i] = org.Membership{
+	memberships := mapValues(value.GetMemberships(), func(m *pb.PrincipalMembership) org.Membership {
+		return org.Membership{
 			IdentityID:  id,
 			OrgID:       org.OrgID(m.GetOrgId()),
 			WorkspaceID: org.WorkspaceID(m.GetWorkspaceId()),
 			Role:        org.Role(m.GetRole()),
 		}
-	}
+	})
 	return access.Principal{
 		IdentityID:  identity.IdentityID(value.GetIdentityId()),
 		Org:         org.OrgID(value.GetOrgId()),
@@ -47,11 +45,7 @@ func (c *Client) ListPolicies(ctx context.Context) ([]access.Policy, error) {
 	if err != nil {
 		return nil, unmapError(err)
 	}
-	out := make([]access.Policy, len(r.Policies))
-	for i := range r.Policies {
-		out[i] = accessPolicyValue(r.Policies[i])
-	}
-	return out, nil
+	return mapValues(r.Policies, accessPolicyValue), nil
 }
 
 func (c *Client) PutPolicy(ctx context.Context, p access.Policy) (int64, error) {
