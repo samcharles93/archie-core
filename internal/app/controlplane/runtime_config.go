@@ -68,11 +68,7 @@ func (r storeReader) Query(ctx context.Context, kind string, decode func([]byte)
 func runtimeConfigFrom(ctx context.Context, reader controlplanerpc.ResourceReader, base config.Config) (config.Config, map[string]int64, error) {
 	out := base.Clone()
 	versions := map[string]int64{}
-	if err := layerResource(ctx, reader, versions, ProviderSettingsKind, func(value []byte) error {
-		var providers map[string]providerDocument
-		if err := json.Unmarshal(value, &providers); err != nil {
-			return err
-		}
+	if err := layerResource(ctx, reader, versions, ProviderSettingsKind, func(providers map[string]providerDocument) error {
 		out.Providers = make(map[string]config.Provider, len(providers))
 		for name, provider := range providers {
 			if err := rejectBootDerivedProviderEnv(name, provider); err != nil {
@@ -85,11 +81,7 @@ func runtimeConfigFrom(ctx context.Context, reader controlplanerpc.ResourceReade
 		return config.Config{}, nil, err
 	}
 	// Stored role assignments replace cfg.Models outright.
-	if err := layerResource(ctx, reader, versions, ModelRoleAssignmentsKind, func(value []byte) error {
-		var roles map[string]string
-		if err := json.Unmarshal(value, &roles); err != nil {
-			return err
-		}
+	if err := layerResource(ctx, reader, versions, ModelRoleAssignmentsKind, func(roles map[string]string) error {
 		out.Models = roles
 		return nil
 	}); err != nil {
@@ -103,11 +95,7 @@ func runtimeConfigFrom(ctx context.Context, reader controlplanerpc.ResourceReade
 		return config.Config{}, nil, err
 	}
 	out.Chat, versions[ChannelSettingsKind] = chat, chatVersion
-	if err := layerResource(ctx, reader, versions, SchedulingPolicyKind, func(value []byte) error {
-		var policy schedulingPolicy
-		if err := json.Unmarshal(value, &policy); err != nil {
-			return err
-		}
+	if err := layerResource(ctx, reader, versions, SchedulingPolicyKind, func(policy schedulingPolicy) error {
 		interval, err := time.ParseDuration(policy.PollInterval)
 		if err != nil {
 			return err
@@ -125,11 +113,7 @@ func runtimeConfigFrom(ctx context.Context, reader controlplanerpc.ResourceReade
 	// The two fields are assigned individually, not `out.Review = ...`: a field
 	// added to config.Review later keeps the file's value until the stored
 	// document carries it.
-	if err := layerResource(ctx, reader, versions, ReviewSettingsKind, func(value []byte) error {
-		var settings reviewSettings
-		if err := json.Unmarshal(value, &settings); err != nil {
-			return err
-		}
+	if err := layerResource(ctx, reader, versions, ReviewSettingsKind, func(settings reviewSettings) error {
 		out.Review.PrecisionGate = settings.PrecisionGate
 		out.Review.ApproveBeforePost = settings.ApproveBeforePost
 		return nil
@@ -147,11 +131,7 @@ func runtimeToolConfigFrom(ctx context.Context, reader controlplanerpc.ResourceR
 	out.DiffCapLines = new(policy.DiffCapLines)
 	out.Notify.Webhook = policy.NotifyWebhook
 
-	if err := layerResource(ctx, reader, versions, ToolSettingsKind, func(value []byte) error {
-		var settings toolSettings
-		if err := json.Unmarshal(value, &settings); err != nil {
-			return err
-		}
+	if err := layerResource(ctx, reader, versions, ToolSettingsKind, func(settings toolSettings) error {
 		headers := make(map[string]map[string]string, len(out.Tools.MCPServers))
 		fileParallelToolCalls := make(map[string]bool, len(out.Tools.MCPServers))
 		for _, server := range out.Tools.MCPServers {
@@ -184,21 +164,13 @@ func runtimeToolConfigFrom(ctx context.Context, reader controlplanerpc.ResourceR
 	}); err != nil {
 		return config.Config{}, nil, err
 	}
-	if err := layerResource(ctx, reader, versions, PluginSettingsKind, func(value []byte) error {
-		var settings pluginSettings
-		if err := json.Unmarshal(value, &settings); err != nil {
-			return err
-		}
+	if err := layerResource(ctx, reader, versions, PluginSettingsKind, func(settings pluginSettings) error {
 		out.SkillsDir = settings.SkillsDir
 		return nil
 	}); err != nil {
 		return config.Config{}, nil, err
 	}
-	if err := layerResource(ctx, reader, versions, ContainerRuntimePoliciesKind, func(value []byte) error {
-		var policies containerRuntimePolicies
-		if err := json.Unmarshal(value, &policies); err != nil {
-			return err
-		}
+	if err := layerResource(ctx, reader, versions, ContainerRuntimePoliciesKind, func(policies containerRuntimePolicies) error {
 		// Keep the file-owned Profiles and RegistryAuth across the replacement.
 		profiles := out.Containers.Profiles
 		registryAuth := out.Containers.RegistryAuth
@@ -210,11 +182,7 @@ func runtimeToolConfigFrom(ctx context.Context, reader controlplanerpc.ResourceR
 		return config.Config{}, nil, err
 	}
 	// Stored profiles replace the file's outright.
-	if err := layerResource(ctx, reader, versions, AgentProfileKind, func(value []byte) error {
-		var profiles map[string]agentProfile
-		if err := json.Unmarshal(value, &profiles); err != nil {
-			return err
-		}
+	if err := layerResource(ctx, reader, versions, AgentProfileKind, func(profiles map[string]agentProfile) error {
 		out.Containers.Profiles = agentProfilesSettings(profiles)
 		return nil
 	}); err != nil {
@@ -224,9 +192,25 @@ func runtimeToolConfigFrom(ctx context.Context, reader controlplanerpc.ResourceR
 	return out, versions, err
 }
 
-// layerResource decodes a stored resource and records its version. A kind
-// with no stored value is skipped.
-func layerResource(ctx context.Context, reader controlplanerpc.ResourceReader, versions map[string]int64, kind string, decode func([]byte) error) error {
+// layerResource decodes a stored JSON resource into a T, applies it and
+// records its version. A kind with no stored value is skipped.
+func layerResource[T any](ctx context.Context, reader controlplanerpc.ResourceReader, versions map[string]int64, kind string, apply func(T) error) error {
+	return layerRaw(ctx, reader, versions, kind, func(value []byte) error {
+		var v T
+		if err := json.Unmarshal(value, &v); err != nil {
+			return err
+		}
+		return apply(v)
+	})
+}
+
+// layerResourceJSON decodes a stored resource over target, keeping fields
+// the stored document omits.
+func layerResourceJSON(ctx context.Context, reader controlplanerpc.ResourceReader, versions map[string]int64, kind string, target any) error {
+	return layerRaw(ctx, reader, versions, kind, func(value []byte) error { return json.Unmarshal(value, target) })
+}
+
+func layerRaw(ctx context.Context, reader controlplanerpc.ResourceReader, versions map[string]int64, kind string, decode func([]byte) error) error {
 	version, found, err := reader.Query(ctx, kind, decode)
 	if err != nil {
 		return err
@@ -235,10 +219,6 @@ func layerResource(ctx context.Context, reader controlplanerpc.ResourceReader, v
 		versions[kind] = version
 	}
 	return nil
-}
-
-func layerResourceJSON(ctx context.Context, reader controlplanerpc.ResourceReader, versions map[string]int64, kind string, target any) error {
-	return layerResource(ctx, reader, versions, kind, func(value []byte) error { return json.Unmarshal(value, target) })
 }
 
 // query returns the version of the resource it decoded, so callers that layer

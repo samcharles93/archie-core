@@ -2,7 +2,6 @@ package controlplane
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -75,21 +74,13 @@ func validServices(owner string, services []string) error {
 // each is its own resource, applies without a restart, and a stored value
 // replaces the file's outright.
 func layerCredentials(ctx context.Context, reader controlplanerpc.ResourceReader, versions map[string]int64, out *config.Config) error {
-	if err := layerResource(ctx, reader, versions, CredentialBindingsKind, func(value []byte) error {
-		var bindings []credentialBinding
-		if err := json.Unmarshal(value, &bindings); err != nil {
-			return err
-		}
+	if err := layerResource(ctx, reader, versions, CredentialBindingsKind, func(bindings []credentialBinding) error {
 		out.Containers.Credentials = credentialBindingsSettings(bindings)
 		return nil
 	}); err != nil {
 		return err
 	}
-	return layerResource(ctx, reader, versions, IdentityGrantsKind, func(value []byte) error {
-		var doc identityGrants
-		if err := json.Unmarshal(value, &doc); err != nil {
-			return err
-		}
+	return layerResource(ctx, reader, versions, IdentityGrantsKind, func(doc identityGrants) error {
 		applyIdentityGrants(out, doc)
 		return nil
 	})
