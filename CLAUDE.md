@@ -11,7 +11,7 @@ agent or tool in an isolated container, and the result lands somewhere for
 review or action. A repository is an optional input to a workflow, not the point
 of the product.
 
-<temporary - this statement must be removed on 2026-10-10"> The product is
+<temporary - this statement must be removed on 2026-10-20"> The product is
 unfinished. Many features are half-built, and the codebase carries far more
 code, binaries, docs and tooling than it delivers. The job right now is to
 finish features and shrink the codebase, not to extend it. </temporary>
