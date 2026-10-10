@@ -40,10 +40,7 @@ func TestAuthorizeDelivery(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			engine, err := New(tt.policies)
-			if err != nil {
-				t.Fatal(err)
-			}
+			engine := New(tt.policies)
 			acting := tt.org
 			if acting == "" {
 				acting = org.DefaultOrgID

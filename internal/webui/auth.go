@@ -116,7 +116,7 @@ func (s *Server) requireToken(h http.Handler) http.Handler {
 		if tok := r.URL.Query().Get("t"); tok != "" {
 			if !tokenEqual(tok, s.Token) {
 				if wantsDocument(r) {
-					s.authPage(w, "That token was not accepted.")
+					s.authPage(w, http.StatusUnauthorized, "That token was not accepted.")
 					return
 				}
 				w.Header().Set("Cache-Control", "no-store")
@@ -150,7 +150,7 @@ func (s *Server) requireToken(h http.Handler) http.Handler {
 		}
 
 		if wantsDocument(r) {
-			s.authPage(w, "")
+			s.authPage(w, http.StatusUnauthorized, "")
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -306,7 +306,7 @@ func (s *Server) refuseUnidentified(w http.ResponseWriter, r *http.Request, err 
 			http.Redirect(w, r, loginPath, http.StatusSeeOther)
 			return
 		}
-		s.authPage(w, reason)
+		s.authPage(w, http.StatusUnauthorized, reason)
 		return
 	}
 	http.Error(w, reason, status)
@@ -335,12 +335,13 @@ func wantsDocument(r *http.Request) bool {
 	return strings.Contains(r.Header.Get("Accept"), "text/html")
 }
 
-// authPage serves a self-contained 401 page for pasting the access token.
-func (s *Server) authPage(w http.ResponseWriter, reason string) {
+// authPage serves the self-contained page for pasting the access token,
+// with code: 401 for a credential failure, 503 for an outage.
+func (s *Server) authPage(w http.ResponseWriter, code int, reason string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'")
-	w.WriteHeader(http.StatusUnauthorized)
+	w.WriteHeader(code)
 	notice := ""
 	if reason != "" {
 		notice = `<p class="error">` + reason + `</p>`

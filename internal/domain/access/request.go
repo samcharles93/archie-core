@@ -131,6 +131,12 @@ type Decision struct {
 // Allowed is the shared permit decision: no level denied.
 func Allowed() Decision { return Decision{Allowed: true} }
 
+// Unavailable is the refusal of a chain that has not loaded: nothing was
+// evaluated, so it is an availability failure rather than a denial.
+func Unavailable() Decision {
+	return Decision{Level: LevelInstance, Err: ErrChainUnavailable}
+}
+
 // DeniedAt records a denial decided at a level by the given policies.
 func DeniedAt(level Level, policies []string) Decision {
 	return Decision{Level: level, Policies: policies}

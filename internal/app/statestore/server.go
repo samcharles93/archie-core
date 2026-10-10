@@ -181,10 +181,7 @@ func (b *server) seedAndValidatePolicies(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load stored policies: %w", err)
 	}
-	engine, err := infraaccess.New(stored)
-	if err != nil {
-		return fmt.Errorf("validate stored policies: %w", err)
-	}
+	engine := infraaccess.New(stored)
 	for _, problem := range engine.Problems() {
 		b.log.Error("stored access policy is invalid and denies its level",
 			"policy", problem.Policy.ID, "level", problem.Policy.Level, "err", problem.Err)

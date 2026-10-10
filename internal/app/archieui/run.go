@@ -12,9 +12,6 @@ import (
 	"slices"
 	"time"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
 	"github.com/samcharles93/archie-core/internal/app/servicekit"
 	"github.com/samcharles93/archie-core/internal/domain/applystatus"
 	"github.com/samcharles93/archie-core/internal/domain/presence"
@@ -27,20 +24,14 @@ import (
 	"github.com/samcharles93/archie-core/internal/webui"
 )
 
-// buildAccessChain builds the live access engine over the stored policies. A
-// State Store that is not up yet yields a chain with no engine: it refuses
-// every request until the first load succeeds and keeps retrying, so a slow
-// database or a bad start order closes the dashboard rather than opening it.
-func buildAccessChain(ctx context.Context, store *staterpc.Client, log *slog.Logger) (*infraaccess.Live, error) {
+// buildAccessChain starts the live access engine over the stored policies.
+// It refuses every request until Run's first load succeeds and keeps
+// retrying, so a State Store or database that is down or slow at start
+// closes the dashboard rather than opening it or stopping it.
+func buildAccessChain(ctx context.Context, store *staterpc.Client, log *slog.Logger) *infraaccess.Live {
 	live := infraaccess.NewPending(store.ListPolicies, log)
-	if err := live.Reload(ctx); err != nil {
-		if status.Code(err) != codes.Unavailable {
-			return nil, err
-		}
-		log.Warn("access policies unavailable; the dashboard refuses API requests until they load", "err", err)
-	}
 	go live.Run(ctx, applystatus.RestampInterval)
-	return live, nil
+	return live
 }
 
 // Run serves the dashboard until ctx is cancelled. It resolves its own
@@ -71,10 +62,7 @@ func Run(ctx context.Context, options Options) error {
 		return err
 	}
 	cleanups = append(cleanups, closeGateway)
-	chain, err := buildAccessChain(ctx, tasks, log)
-	if err != nil {
-		return err
-	}
+	chain := buildAccessChain(ctx, tasks, log)
 	provider, err := signInProvider(opts)
 	if err != nil {
 		return err

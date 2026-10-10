@@ -116,10 +116,8 @@ func compose(ctx context.Context, d deps) *webui.Server {
 	wireCatalog(d, srv)
 	// The policy chain: wired together or not at all.
 	srv.Refusals = refusalStore(d.Store)
-	if d.Access != nil {
-		srv.Access = d.Access
-		srv.ReloadAccess = d.Access.Reload
-	}
+	srv.Access = d.Access
+	srv.ReloadAccess = d.Access.Reload
 	srv.Principals = d.Principals
 	srv.Denials = d.Denials
 	wireTaskLogs(d, srv)
@@ -195,7 +193,7 @@ func wireCaptureSurfaces(d deps, srv *webui.Server) {
 		MaxEvents:    capture.MaxEvents,
 		MaxBodyBytes: int64(capture.MaxBodyBytes),
 		Publish:      captureArrivalPublisher(d),
-		Delivery:     deliveryAuthorizer(d.Access),
+		Delivery:     d.Access,
 		Refusals:     refusalStore(d.Store),
 		Log:          d.Log,
 	}
@@ -220,15 +218,6 @@ func captureArrivalPublisher(d deps) func(context.Context, events.Event) {
 // arrival. A capture POST already paid the rate limiter and a store insert;
 // a hung State Store must not hold the sender's webhook past this.
 const captureEventTimeout = 5 * time.Second
-
-// deliveryAuthorizer keeps a missing chain a nil authorizer, which admits
-// every sender.
-func deliveryAuthorizer(chain *infraaccess.Live) access.DeliveryAuthorizer {
-	if chain == nil {
-		return nil
-	}
-	return chain
-}
 
 func refusalStore(store storecontract.TaskStore) storecontract.CaptureRefusalStore {
 	refusals, _ := store.(storecontract.CaptureRefusalStore)

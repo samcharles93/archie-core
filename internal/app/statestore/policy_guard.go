@@ -26,11 +26,7 @@ type guardedPolicies struct {
 }
 
 func (g guardedPolicies) PutPolicy(ctx context.Context, p access.Policy) (int64, error) {
-	validator, err := accessengine.New(nil)
-	if err != nil {
-		return 0, err
-	}
-	if err := validator.Validate(p); err != nil {
+	if err := accessengine.New(nil).Validate(p); err != nil {
 		return 0, err
 	}
 	if err := g.checkLockout(ctx, func(current []access.Policy) []access.Policy {
@@ -55,10 +51,7 @@ func (g guardedPolicies) checkLockout(ctx context.Context, change func([]access.
 	if err != nil {
 		return err
 	}
-	engine, err := accessengine.New(change(current))
-	if err != nil {
-		return err
-	}
+	engine := accessengine.New(change(current))
 	orgs, err := g.owners.ListOrgs(ctx)
 	if err != nil {
 		return err

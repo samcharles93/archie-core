@@ -18,7 +18,7 @@ import (
 // Store and, when one is configured, the sign-in provider.
 func newReadinessRegistry(o Options, tasks storecontract.TaskStore, chat messaging.ChatContract, chain *infraaccess.Live, provider *oidc.Provider) *health.Registry {
 	probes := []health.Probe{
-		readiness.NewProblemProbe("access_policies", problemSource(chain)),
+		readiness.NewProblemProbe("access_policies", chain),
 		captureRefusalProbe{store: refusalStore(tasks)},
 		readiness.NewContractProbe("state_db", o.DependencyTimeout, func(ctx context.Context) error {
 			_, err := tasks.StatusCounts(ctx)
@@ -33,16 +33,6 @@ func newReadinessRegistry(o Options, tasks storecontract.TaskStore, chat messagi
 		probes = append(probes, readiness.NewContractProbe("sign_in_provider", o.DependencyTimeout, provider.Check))
 	}
 	return health.NewRegistry(probes...)
-}
-
-// problemSource reports the chain's invalid policies; a chain that has not
-// loaded yet is reported as not wired, so readiness is degraded while requests
-// are refused.
-func problemSource(chain *infraaccess.Live) readiness.PolicyProblems {
-	if chain == nil || !chain.Ready() {
-		return nil
-	}
-	return chain
 }
 
 // captureRefusalProbe degrades when any source refused more events than it

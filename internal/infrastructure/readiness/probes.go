@@ -86,8 +86,9 @@ func (p *ContractProbe) Check(ctx context.Context) health.Result {
 // PolicyProblems reports the stored access policies this process's engine
 // could not validate. The policy chain is the source; a policy that failed
 // startup re-validation denies its level and must be named here with its
-// error.
+// error. Ready is false until the stored policies have loaded.
 type PolicyProblems interface {
+	Ready() bool
 	Problems() []access.Problem
 }
 
@@ -108,6 +109,9 @@ func (p *ProblemProbe) Name() string { return p.ProbeName }
 func (p *ProblemProbe) Check(ctx context.Context) health.Result {
 	if p.Source == nil {
 		return health.Result{Status: health.StatusDegraded, Detail: "access engine not wired"}
+	}
+	if !p.Source.Ready() {
+		return health.Result{Status: health.StatusDegraded, Detail: "access policies have not loaded; requests are refused"}
 	}
 	problems := p.Source.Problems()
 	if len(problems) == 0 {

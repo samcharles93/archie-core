@@ -45,15 +45,17 @@ func (allowAll) Authorize(access.Principal, access.Action, access.Resource, acce
 	return access.Allowed()
 }
 
+func (allowAll) Ready() bool { return true }
+
 // notReadyChain is an authorizer whose engine has not loaded: every decision
 // is the not-loaded refusal, which no policy evaluated.
 type notReadyChain struct{}
 
 func (notReadyChain) Authorize(access.Principal, access.Action, access.Resource, access.Context) access.Decision {
-	decision := access.DeniedAt(access.LevelInstance, nil)
-	decision.Err = access.ErrChainUnavailable
-	return decision
+	return access.Unavailable()
 }
+
+func (notReadyChain) Ready() bool { return false }
 
 type recordingTokens struct{ owner identity.IdentityID }
 
@@ -138,11 +140,18 @@ func TestSharedTokenOperatorPostsPersonalToken(t *testing.T) {
 // served as the system org, and nothing is written.
 func TestAuthorizeRefusesWithoutAChain(t *testing.T) {
 	tests := []struct {
-		name string
-		srv  *Server
+		name                 string
+		srv                  *Server
+		method, path, accept string
+		body                 string
 	}{
-		{"no chain", &Server{}},
-		{"chain not loaded", &Server{Access: notReadyChain{}}},
+		{name: "no chain", srv: &Server{}, method: http.MethodPost, path: "/api/tokens"},
+		{name: "chain not loaded", srv: &Server{Access: notReadyChain{}}, method: http.MethodPost, path: "/api/tokens"},
+		// An outage is not a credential failure, so the browser notice is 503
+		// too.
+		{name: "chain not loaded, browser", srv: &Server{Access: notReadyChain{}}, method: http.MethodGet, path: "/tasks", accept: "text/html"},
+		// The health report still says why, naming only the chain.
+		{name: "chain not loaded, health detail", srv: &Server{Access: notReadyChain{}}, method: http.MethodGet, path: healthDetailedRoute, body: `"name":"access_policies"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -154,11 +163,17 @@ func TestAuthorizeRefusesWithoutAChain(t *testing.T) {
 				t.Fatal("the handler must not be reached")
 			})))
 			rec := httptest.NewRecorder()
-			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/tokens", nil)
+			req := httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, nil)
 			req.Header.Set("Authorization", "Bearer shared")
+			if tt.accept != "" {
+				req.Header.Set("Accept", tt.accept)
+			}
 			handler.ServeHTTP(rec, req)
 			if rec.Code != http.StatusServiceUnavailable {
 				t.Fatalf("status = %d, want 503", rec.Code)
+			}
+			if !strings.Contains(rec.Body.String(), tt.body) {
+				t.Fatalf("body = %q, want it to contain %q", rec.Body.String(), tt.body)
 			}
 			if tokens.owner != "" {
 				t.Fatalf("token owner = %q, want no write", tokens.owner)

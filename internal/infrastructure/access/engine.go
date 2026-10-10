@@ -65,7 +65,13 @@ type Engine struct {
 	spaces   map[spaceKey]*levelSet
 	objects  map[objectKey]*levelSet
 	problems []Problem
+	// pending marks the engine of a chain whose policies have not loaded:
+	// it refuses everything without evaluating.
+	pending bool
 }
+
+// pendingEngine refuses every request until the stored policies load.
+var pendingEngine = &Engine{pending: true}
 
 type (
 	spaceKey struct {
@@ -85,10 +91,9 @@ var (
 	_ access.Validator  = (*Engine)(nil)
 )
 
-// New builds an engine from the stored policies. An invalid instance policy
-// is an error; an invalid policy at another level makes that level deny
-// everything.
-func New(policies []access.Policy) (*Engine, error) {
+// New builds an engine from the stored policies. An invalid policy makes its
+// level deny everything and is reported as a Problem.
+func New(policies []access.Policy) *Engine {
 	e := &Engine{
 		orgs:    map[org.OrgID]*levelSet{},
 		spaces:  map[spaceKey]*levelSet{},
@@ -98,9 +103,6 @@ func New(policies []access.Policy) (*Engine, error) {
 		lvl := e.level(p)
 		policy, err := compile(p)
 		if err != nil {
-			if p.Level == access.LevelInstance {
-				return nil, fmt.Errorf("access: instance policy %q: %w", p.ID, err)
-			}
 			// The refusal must name the policy that poisoned the level.
 			lvl.ids = append(lvl.ids, p.ID)
 			lvl.invalid = err
@@ -110,8 +112,11 @@ func New(policies []access.Policy) (*Engine, error) {
 		lvl.ids = append(lvl.ids, p.ID)
 		lvl.set.Add(types.PolicyID(p.ID), policy)
 	}
-	return e, nil
+	return e
 }
+
+// Ready reports whether the engine was built from stored policies.
+func (e *Engine) Ready() bool { return !e.pending }
 
 // Problems reports every stored policy the engine could not compile. Empty
 // when every stored policy is valid.
@@ -186,6 +191,9 @@ func compile(p access.Policy) (*cedar.Policy, error) {
 
 // Authorize evaluates the chain for one request.
 func (e *Engine) Authorize(p access.Principal, a access.Action, r access.Resource, c access.Context) access.Decision {
+	if e.pending {
+		return access.Unavailable()
+	}
 	// The cross-org forbid, enforced structurally: a principal's requests
 	// only ever reach its own org. An unset resource org means the
 	// principal's org (a create request names a record that does not exist
@@ -198,7 +206,7 @@ func (e *Engine) Authorize(p access.Principal, a access.Action, r access.Resourc
 		return access.DeniedAt(access.LevelInstance, []string{access.CrossOrgForbidID})
 	}
 
-	return evaluate(e.chain(r), buildEntities(p, r), buildRequest(p, a, r, c))
+	return evaluate(e.chain(p, r), buildEntities(p, r), buildRequest(p, a, r, c))
 }
 
 // AuthorizeDelivery decides whether addr may deliver an event to a source:
@@ -206,6 +214,9 @@ func (e *Engine) Authorize(p access.Principal, a access.Action, r access.Resourc
 // sender has no identity or role, so the org and workspace role policies
 // never apply to it.
 func (e *Engine) AuthorizeDelivery(orgID org.OrgID, sourcePath, addr string) access.Decision {
+	if e.pending {
+		return access.Unavailable()
+	}
 	sender := access.Principal{IdentityID: access.SenderID, Org: orgID}
 	resource := access.Resource{Kind: access.KindSource, ID: sourcePath, Org: orgID}
 	levels := []*levelSet{e.instance}
@@ -247,9 +258,14 @@ func evaluate(levels []*levelSet, entities types.EntityMap, request types.Reques
 	return access.Allowed()
 }
 
-// chain returns the level sets the request passes through, in order.
-func (e *Engine) chain(r access.Resource) []*levelSet {
-	out := []*levelSet{e.instance}
+// chain returns the level sets the request passes through, in order. An
+// invalid instance level refuses everything except an instance admin working
+// on the policies, so the operator can repair it from the dashboard.
+func (e *Engine) chain(p access.Principal, r access.Resource) []*levelSet {
+	var out []*levelSet
+	if e.instance == nil || e.instance.invalid == nil || r.Kind != access.KindPolicy || !p.InstanceAdmin() {
+		out = append(out, e.instance)
+	}
 	if l, ok := e.orgs[r.Org]; ok {
 		out = append(out, l)
 	}

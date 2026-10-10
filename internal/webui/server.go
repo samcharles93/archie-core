@@ -127,9 +127,9 @@ type Server struct {
 	Login identity.LoginFlow
 
 	// Access evaluates the policy chain, Principals builds the request principal
-	// and Denials records refusals. All three or none; nil leaves the credential
-	// check as the only gate.
-	Access     access.Authorizer
+	// and Denials records refusals. All three or none; a nil or unready chain
+	// refuses every gated request.
+	Access     Chain
 	Principals access.PrincipalSource
 	Denials    access.DenialRecorder
 
@@ -366,7 +366,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerConfigAndLogRoutes(mux)
 	s.registerChatRoutes(mux)
 
-	mux.HandleFunc("GET /health/detailed", instanceOnly(s.handleHealthDetailed))
+	mux.HandleFunc("GET "+healthDetailedRoute, instanceOnly(s.handleHealthDetailed))
 	mux.HandleFunc("GET /api/stream", s.handleSSE)
 	mux.Handle("GET /", s.assets())
 
@@ -426,6 +426,16 @@ func trimLeadingSlash(p string) string {
 		return "."
 	}
 	return p
+}
+
+// healthDetailedRoute is the instance health report.
+const healthDetailedRoute = "/health/detailed"
+
+// Chain is the policy chain the dashboard gates on. Ready is false until the
+// stored policies have loaded.
+type Chain interface {
+	access.Authorizer
+	Ready() bool
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

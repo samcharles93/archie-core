@@ -2,11 +2,13 @@ package webui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/domain/access"
+	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/org"
 )
@@ -17,14 +19,16 @@ import (
 // letting every request through as the system org.
 func (s *Server) authorize(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.Access == nil {
+		// Checked before the principal: resolving it is a State Store round
+		// trip, which buys nothing when the answer is a refusal anyway.
+		if s.Access == nil || !s.Access.Ready() {
 			s.refuseUngated(w, r)
 			return
 		}
 		principal, err := s.requestPrincipal(r.Context())
 		if err != nil {
 			if wantsDocument(r) {
-				s.authPage(w, "Sign-in could not resolve your org.")
+				s.authPage(w, http.StatusUnauthorized, "Sign-in could not resolve your org.")
 				return
 			}
 			http.Error(w, "principal unavailable", http.StatusServiceUnavailable)
@@ -46,7 +50,7 @@ func (s *Server) authorize(h http.Handler) http.Handler {
 			}
 			s.recordDenial(r.Context(), principal, action, resource, decision)
 			if wantsDocument(r) {
-				s.authPage(w, "You do not have permission to do that.")
+				s.authPage(w, http.StatusUnauthorized, "You do not have permission to do that.")
 				return
 			}
 			// A denial inside the caller's org is forbidden, without the
@@ -63,13 +67,22 @@ func (s *Server) authorize(h http.Handler) http.Handler {
 // refuseUngated answers a request the dashboard cannot authorize because no
 // policy chain is available. It serves nothing ungated: without a chain the
 // credential check would be the whole gate and every call would act as the
-// system org.
+// system org. The detailed health report names only the unloaded chain, so
+// the operator can see why without any other probe being served ungated.
 func (s *Server) refuseUngated(w http.ResponseWriter, r *http.Request) {
 	if wantsDocument(r) {
-		s.authPage(w, "The access policy chain is not available yet.")
+		s.authPage(w, http.StatusServiceUnavailable, "The access policy chain is not available yet.")
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
+	if r.URL.Path == healthDetailedRoute {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(health.Report{Status: health.StatusDegraded, Components: []health.Component{{
+			Name: "access_policies", Status: health.StatusDegraded, Detail: "access policies have not loaded; requests are refused",
+		}}})
+		return
+	}
 	http.Error(w, "access policies are not available", http.StatusServiceUnavailable)
 }
 

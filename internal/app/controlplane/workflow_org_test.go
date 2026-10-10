@@ -169,10 +169,7 @@ func checkWorkflowDashboard(t *testing.T, db *pgstore.TaskDB, client *staterpc.C
 	t.Helper()
 	ctx := t.Context()
 	policies := append(access.ShippedOrgPolicies("acme"), access.ShippedOrgPolicies(org.DefaultOrgID)...)
-	chain, err := infraaccess.New(policies)
-	if err != nil {
-		t.Fatal(err)
-	}
+	chain := infraaccess.New(policies)
 	srv := &webui.Server{Store: client, ControlPlane: client.ControlPlane(), Access: chain, Principals: client, Authenticate: func(ctx context.Context, token string) (identity.Identity, error) {
 		return db.Get(ctx, identity.IdentityID(token))
 	}}

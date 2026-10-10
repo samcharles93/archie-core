@@ -5,6 +5,7 @@ package captureintake
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"mime"
@@ -91,8 +92,8 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// authorizes as the default org.
 	src := rc.resolveSource(r, path)
 
-	if rc.refused(r, path, orgOf(src)) {
-		http.Error(w, "forbidden", http.StatusForbidden)
+	if code := rc.refusal(r, path, orgOf(src)); code != 0 {
+		http.Error(w, http.StatusText(code), code)
 		return
 	}
 
@@ -158,22 +159,29 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 }
 
-// refused applies the network rules before the body is read. A refused event
-// is not stored, only counted on its source with the sender's address.
-func (rc *Receiver) refused(r *http.Request, path string, owner org.OrgID) bool {
+// refusal applies the network rules before the body is read and returns the
+// status to refuse with, or 0 to admit. A refused event is not stored, only
+// counted on its source with the sender's address. A chain that has not
+// loaded evaluated nothing: the sender gets a retryable 503 and no refusal is
+// counted.
+func (rc *Receiver) refusal(r *http.Request, path string, owner org.OrgID) int {
 	if rc.Delivery == nil {
-		return false
+		return 0
 	}
 	addr := remoteAddrHost(r)
-	if rc.Delivery.AuthorizeDelivery(owner, path, addr).Allowed {
-		return false
+	decision := rc.Delivery.AuthorizeDelivery(owner, path, addr)
+	if decision.Allowed {
+		return 0
+	}
+	if errors.Is(decision.Err, access.ErrChainUnavailable) {
+		return http.StatusServiceUnavailable
 	}
 	if rc.Refusals != nil {
 		if err := rc.Refusals.RecordCaptureRefusal(r.Context(), path, addr, time.Now()); err != nil {
 			rc.logger().Warn("capture refusal not counted", "source", path, "err", err)
 		}
 	}
-	return true
+	return http.StatusForbidden
 }
 
 // orgOf reports the org that owns src, or the default org when the source

@@ -179,10 +179,7 @@ func (rolePrincipals) PrincipalFor(_ context.Context, id identity.IdentityID) (a
 // policies: a developer manages no members, an admin manages members but can
 // neither grant the owner role nor change an owner's, and an owner can.
 func TestOrgMembershipNeedsItsRole(t *testing.T) {
-	engine, err := infraaccess.New(access.ShippedOrgPolicies(org.DefaultOrgID))
-	if err != nil {
-		t.Fatal(err)
-	}
+	engine := infraaccess.New(access.ShippedOrgPolicies(org.DefaultOrgID))
 	members := "/api/orgs/" + string(org.DefaultOrgID) + "/members/"
 	tests := []struct {
 		name       string
@@ -233,10 +230,7 @@ func TestOrgMembershipNeedsItsRole(t *testing.T) {
 // lists and opens every org and creates one with its owner; an admin of
 // org-sys sees only its own org and cannot create one.
 func TestInstanceAdminOrgs(t *testing.T) {
-	engine, err := infraaccess.New(access.ShippedOrgPolicies(org.DefaultOrgID))
-	if err != nil {
-		t.Fatal(err)
-	}
+	engine := infraaccess.New(access.ShippedOrgPolicies(org.DefaultOrgID))
 	tests := []struct {
 		name       string
 		caller     string
