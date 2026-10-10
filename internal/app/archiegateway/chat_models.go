@@ -58,7 +58,10 @@ func mergeModelRefs(configured map[string]string, catalogs ...[]string) []string
 		}
 	}
 
-	return slices.Sorted(maps.Keys(unique))
+	// Non-nil: the chat snapshot serialises this as [] when no model is configured.
+	models := slices.AppendSeq(make([]string, 0, len(unique)), maps.Keys(unique))
+	slices.Sort(models)
+	return models
 }
 
 func newChatModelManager(configured map[string]string, catalogs ...[]string) *chatModelManager {
