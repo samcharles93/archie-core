@@ -1694,7 +1694,13 @@ func (d *Daemon) prepareWorkspace(ctx context.Context, task *workflow.Task, tree
 		target = worktree.Target(task.Branch)
 	}
 	// Every task gets an independent full clone.
-	dir, branch, err := trees.Prepare(ctx, task.Owner, task.Repo, repo.BaseBranch(), task.IssueNumber, task.Title, task.Body, task.Labels, target)
+	prepare := func() (string, string, error) {
+		return trees.Prepare(ctx, task.Owner, task.Repo, repo.BaseBranch(), task.IssueNumber, task.Title, task.Body, task.Labels, target)
+	}
+	dir, branch, err := prepare()
+	if d.reownDenied(ctx, trees.Dir(task.Owner, task.Repo, task.IssueNumber), err) {
+		dir, branch, err = prepare()
+	}
 	if err != nil {
 		reason := "worktree prepare failed: " + err.Error()
 		if target != worktree.Fresh {
@@ -1737,7 +1743,7 @@ func (d *Daemon) cleanupTerminalTaskWorktree(ctx context.Context, task *workflow
 		if d.worktreeHoldsUncapturedWork(cleanupCtx, trees, task) {
 			return
 		}
-		if err := trees.Cleanup(task.Owner, task.Repo, task.IssueNumber); err != nil {
+		if err := d.cleanupWorktree(cleanupCtx, trees, task.Owner, task.Repo, task.IssueNumber); err != nil {
 			d.Log.Warn("terminal worktree cleanup failed", "task", task.ID, "err", err)
 		}
 	}
@@ -2503,7 +2509,33 @@ func (d *Daemon) RemoveWorktree(owner, repo, identity string, issue int) error {
 	if trees == nil {
 		return nil
 	}
-	return trees.Cleanup(owner, repo, issue)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	return d.cleanupWorktree(ctx, trees, owner, repo, issue)
+}
+
+// cleanupWorktree removes a task's clone, first handing back any root-owned
+// files a killed container left in it.
+func (d *Daemon) cleanupWorktree(ctx context.Context, trees *worktree.Manager, owner, repo string, issue int) error {
+	err := trees.Cleanup(owner, repo, issue)
+	if d.reownDenied(ctx, trees.Dir(owner, repo, issue), err) {
+		return trees.Cleanup(owner, repo, issue)
+	}
+	return err
+}
+
+// reownDenied repairs dir when err says the daemon was refused access to it,
+// and reports whether the caller should retry. A SIGKILLed task container
+// leaves root-owned files that only a container can chown back.
+func (d *Daemon) reownDenied(ctx context.Context, dir string, err error) bool {
+	if err == nil || !errors.Is(err, fs.ErrPermission) || d.ContainerPool == nil {
+		return false
+	}
+	if rerr := d.ContainerPool.Reown(ctx, dir, os.Getuid(), os.Getgid()); rerr != nil {
+		d.Log.Warn("worktree ownership repair failed", "dir", dir, "err", rerr)
+		return false
+	}
+	return true
 }
 
 // InFlight counts the same submitted work that graceful shutdown waits for,
