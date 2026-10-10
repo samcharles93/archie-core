@@ -58,7 +58,7 @@ func (b *boot) setupKitLauncher(ctx context.Context) {
 	// container logs in with, against the live grants and bindings; a setup
 	// session's token resolves through the session grants instead.
 	b.sessionGrants = &sessionGrants{}
-	resolver := runCredentialResolver{runs: b.stateStoreGrants.Client, sessions: b.sessionGrants, config: b.cfgHolder, secrets: b.secrets}
+	resolver := runCredentialResolver{runs: b.stateStoreGrants.Client, sessions: b.sessionGrants, models: b.taskModels, config: b.cfgHolder, secrets: b.secrets}
 	// Without a harness secret store, Register refuses a Kit with a
 	// required OAuth credential.
 	oauthStore, _ := b.stateStore.(egress.OAuthStore)

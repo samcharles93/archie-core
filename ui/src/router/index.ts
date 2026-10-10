@@ -11,6 +11,7 @@ import OrgAgentsPage from "@/org/OrgAgentsPage.vue";
 import OrgWorkspacesPage from "@/org/OrgWorkspacesPage.vue";
 import OrgAccessPage from "@/org/OrgAccessPage.vue";
 import OrgTokensPage from "@/org/OrgTokensPage.vue";
+import OrgModelsPage from "@/org/OrgModelsPage.vue";
 import SchedulingPolicyPage from "@/settings/SchedulingPolicyPage.vue";
 import ReviewSettingsPage from "@/settings/ReviewSettingsPage.vue";
 import ToolsPage from "@/settings/ToolsPage.vue";
@@ -218,6 +219,12 @@ const routes = [
         name: "org-tokens",
         component: OrgTokensPage,
         meta: { label: "Tokens", navPath: "/org" },
+      },
+      {
+        path: "models",
+        name: "org-models",
+        component: OrgModelsPage,
+        meta: { label: "Models", navPath: "/org" },
       },
     ],
   },

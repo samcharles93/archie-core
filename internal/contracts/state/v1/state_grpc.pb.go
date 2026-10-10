@@ -51,7 +51,7 @@ const (
 	StateStoreService_Update_FullMethodName                     = "/state.v1.StateStoreService/Update"
 	StateStoreService_StartStep_FullMethodName                  = "/state.v1.StateStoreService/StartStep"
 	StateStoreService_RecordUsage_FullMethodName                = "/state.v1.StateStoreService/RecordUsage"
-	StateStoreService_TaskModelAliases_FullMethodName           = "/state.v1.StateStoreService/TaskModelAliases"
+	StateStoreService_TaskModels_FullMethodName                 = "/state.v1.StateStoreService/TaskModels"
 	StateStoreService_FinishStep_FullMethodName                 = "/state.v1.StateStoreService/FinishStep"
 	StateStoreService_CancelExecution_FullMethodName            = "/state.v1.StateStoreService/CancelExecution"
 	StateStoreService_ListSteps_FullMethodName                  = "/state.v1.StateStoreService/ListSteps"
@@ -209,10 +209,10 @@ type StateStoreServiceClient interface {
 	// RecordUsage appends one model call's usage record. A run credential may
 	// record usage only for its own task.
 	RecordUsage(ctx context.Context, in *RecordUsageRequest, opts ...grpc.CallOption) (*RecordUsageResponse, error)
-	// TaskModelAliases answers the model aliases a task resolves against: the
-	// instance aliases with the task's org's own aliases over them. The org is
-	// the task's, never the caller's.
-	TaskModelAliases(ctx context.Context, in *TaskModelAliasesRequest, opts ...grpc.CallOption) (*TaskModelAliasesResponse, error)
+	// TaskModels answers what a task's models resolve against: the aliases its
+	// org may use and the org's own providers. The org is the task's, never
+	// the caller's.
+	TaskModels(ctx context.Context, in *TaskModelsRequest, opts ...grpc.CallOption) (*TaskModelsResponse, error)
 	FinishStep(ctx context.Context, in *FinishStepRequest, opts ...grpc.CallOption) (*FinishStepResponse, error)
 	// Cancellation. Deliberately administrative (deny-by-default for a
 	// task-scoped grant): a cancel is a dashboard, API and dispatch action
@@ -717,10 +717,10 @@ func (c *stateStoreServiceClient) RecordUsage(ctx context.Context, in *RecordUsa
 	return out, nil
 }
 
-func (c *stateStoreServiceClient) TaskModelAliases(ctx context.Context, in *TaskModelAliasesRequest, opts ...grpc.CallOption) (*TaskModelAliasesResponse, error) {
+func (c *stateStoreServiceClient) TaskModels(ctx context.Context, in *TaskModelsRequest, opts ...grpc.CallOption) (*TaskModelsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(TaskModelAliasesResponse)
-	err := c.cc.Invoke(ctx, StateStoreService_TaskModelAliases_FullMethodName, in, out, cOpts...)
+	out := new(TaskModelsResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_TaskModels_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1746,10 +1746,10 @@ type StateStoreServiceServer interface {
 	// RecordUsage appends one model call's usage record. A run credential may
 	// record usage only for its own task.
 	RecordUsage(context.Context, *RecordUsageRequest) (*RecordUsageResponse, error)
-	// TaskModelAliases answers the model aliases a task resolves against: the
-	// instance aliases with the task's org's own aliases over them. The org is
-	// the task's, never the caller's.
-	TaskModelAliases(context.Context, *TaskModelAliasesRequest) (*TaskModelAliasesResponse, error)
+	// TaskModels answers what a task's models resolve against: the aliases its
+	// org may use and the org's own providers. The org is the task's, never
+	// the caller's.
+	TaskModels(context.Context, *TaskModelsRequest) (*TaskModelsResponse, error)
 	FinishStep(context.Context, *FinishStepRequest) (*FinishStepResponse, error)
 	// Cancellation. Deliberately administrative (deny-by-default for a
 	// task-scoped grant): a cancel is a dashboard, API and dispatch action
@@ -2030,8 +2030,8 @@ func (UnimplementedStateStoreServiceServer) StartStep(context.Context, *StartSte
 func (UnimplementedStateStoreServiceServer) RecordUsage(context.Context, *RecordUsageRequest) (*RecordUsageResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RecordUsage not implemented")
 }
-func (UnimplementedStateStoreServiceServer) TaskModelAliases(context.Context, *TaskModelAliasesRequest) (*TaskModelAliasesResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method TaskModelAliases not implemented")
+func (UnimplementedStateStoreServiceServer) TaskModels(context.Context, *TaskModelsRequest) (*TaskModelsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method TaskModels not implemented")
 }
 func (UnimplementedStateStoreServiceServer) FinishStep(context.Context, *FinishStepRequest) (*FinishStepResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method FinishStep not implemented")
@@ -2909,20 +2909,20 @@ func _StateStoreService_RecordUsage_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
-func _StateStoreService_TaskModelAliases_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(TaskModelAliasesRequest)
+func _StateStoreService_TaskModels_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TaskModelsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(StateStoreServiceServer).TaskModelAliases(ctx, in)
+		return srv.(StateStoreServiceServer).TaskModels(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: StateStoreService_TaskModelAliases_FullMethodName,
+		FullMethod: StateStoreService_TaskModels_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(StateStoreServiceServer).TaskModelAliases(ctx, req.(*TaskModelAliasesRequest))
+		return srv.(StateStoreServiceServer).TaskModels(ctx, req.(*TaskModelsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -4716,8 +4716,8 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _StateStoreService_RecordUsage_Handler,
 		},
 		{
-			MethodName: "TaskModelAliases",
-			Handler:    _StateStoreService_TaskModelAliases_Handler,
+			MethodName: "TaskModels",
+			Handler:    _StateStoreService_TaskModels_Handler,
 		},
 		{
 			MethodName: "FinishStep",

@@ -106,10 +106,11 @@ const MODEL_ALIAS_NAME = /^[a-z0-9][a-z0-9._-]*$/;
 
 /** validateModelAliases mirrors the server's validateModelAliases: alias
  * names are lowercase tokens, each value splits on its first slash into a
- * non-empty provider and model, and a non-empty table has a default alias. */
+ * non-empty provider and model. The instance table's default alias is
+ * checked on save by the server, which knows whose table it is. */
 export function validateModelAliases(value: unknown): FieldIssue[] {
   const aliases = (value ?? {}) as Record<string, string>;
-  const issues: FieldIssue[] = Object.entries(aliases).flatMap(([alias, model]): FieldIssue[] => {
+  return Object.entries(aliases).flatMap(([alias, model]): FieldIssue[] => {
     if (!MODEL_ALIAS_NAME.test(alias))
       return [{ path: alias, label: alias || "Alias", message: "Use lowercase letters, digits, '.', '_' or '-'." }];
     const slash = String(model).indexOf("/");
@@ -117,9 +118,6 @@ export function validateModelAliases(value: unknown): FieldIssue[] {
       return [{ path: alias, label: alias, message: "Use provider/model." }];
     return [];
   });
-  if (Object.keys(aliases).length > 0 && !("default" in aliases))
-    issues.push({ path: "default", label: "default", message: "The default alias is required." });
-  return issues;
 }
 
 /** The rules the store applies to a dirty draft, keyed by resource kind. */

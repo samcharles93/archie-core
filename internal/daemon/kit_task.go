@@ -122,9 +122,23 @@ type ModelEgress interface {
 	Close(token string)
 }
 
-// TaskModels answers a task's org and the model aliases it resolves against.
+// TaskModels answers what a task's org resolves models against.
 type TaskModels interface {
-	TaskModelAliases(ctx context.Context, taskID int64) (org string, aliases map[string]string, err error)
+	TaskModels(ctx context.Context, taskID int64) (config.OrgModels, error)
+}
+
+// taskConfig is task's configuration with its org's model aliases and own
+// providers.
+func (d *Daemon) taskConfig(ctx context.Context, task *workflow.Task) (config.Config, error) {
+	cfg := d.configFor(task)
+	if d.TaskModels == nil {
+		return cfg, nil
+	}
+	models, err := d.TaskModels.TaskModels(ctx, task.ID)
+	if err != nil {
+		return config.Config{}, fmt.Errorf("resolve the task's models: %w", err)
+	}
+	return cfg.WithOrgModels(models), nil
 }
 
 // ModelSession is what a native container needs for its model proxy session.
@@ -135,8 +149,11 @@ type ModelSession struct {
 
 // openModelEgress opens task's model session, or refuses: provider keys
 // never reach a container, so without the proxy no model call can run.
-func (d *Daemon) openModelEgress(task *workflow.Task, credential string) (ModelSession, func(), error) {
-	cfg := d.configFor(task)
+func (d *Daemon) openModelEgress(ctx context.Context, task *workflow.Task, credential string) (ModelSession, func(), error) {
+	cfg, err := d.taskConfig(ctx, task)
+	if err != nil {
+		return ModelSession{}, nil, err
+	}
 	if d.ModelEgress == nil {
 		for _, p := range cfg.Providers {
 			if p.APIKeyEnv != "" {

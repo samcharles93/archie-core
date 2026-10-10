@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/infrastructure/egress"
 )
@@ -25,6 +26,9 @@ type runCredentialResolver struct {
 	sessions interface {
 		GrantedFor(token string) (org string, services []string, ok bool)
 	}
+	// models answers a task's org's own providers. Nil grants only the
+	// instance providers.
+	models  daemon.TaskModels
 	config  *config.Holder
 	secrets interface {
 		Resolve(config.SecretRef) (string, error)
@@ -46,7 +50,7 @@ func (r runCredentialResolver) Resolve(ctx context.Context, credential, service 
 	org := task.OrgOrDefault()
 	// A configured model provider's key is granted to every run of the org:
 	// any agent stage needs model access.
-	if _, ok := cfg.Providers[service]; ok {
+	if r.isModelProvider(ctx, cfg, task, service) {
 		granted = append(slices.Clone(granted), service)
 	}
 	return r.resolveBinding(org, granted, service)
@@ -68,4 +72,21 @@ func (r runCredentialResolver) resolveBinding(org string, granted []string, serv
 		return "", egress.ErrUnbound
 	}
 	return r.secrets.Resolve(binding.Secret)
+}
+
+// isModelProvider reports whether service is a provider the task's models
+// run on: an instance provider, or one of its org's own.
+func (r runCredentialResolver) isModelProvider(ctx context.Context, cfg config.Config, task *workflow.Task, service string) bool {
+	if _, ok := cfg.Providers[service]; ok {
+		return true
+	}
+	if r.models == nil {
+		return false
+	}
+	models, err := r.models.TaskModels(ctx, task.ID)
+	if err != nil {
+		return false
+	}
+	_, ok := models.Providers[service]
+	return ok
 }

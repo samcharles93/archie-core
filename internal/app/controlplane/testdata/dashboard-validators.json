@@ -51,11 +51,11 @@
         "valid": false
       },
       {
-        "why": "aliases without the default alias",
+        "why": "aliases without the default alias: an org's own table inherits the instance default, so only the instance save requires it",
         "value": {
           "fast": "openai/gpt-4o"
         },
-        "valid": false
+        "valid": true
       },
       {
         "why": "an alias name with capitals or spaces",

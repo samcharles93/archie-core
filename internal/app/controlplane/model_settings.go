@@ -78,9 +78,6 @@ func validateModelAliases(input []byte) error {
 				return fmt.Errorf("model alias %q must reference provider/model", alias)
 			}
 		}
-		if _, ok := models[config.DefaultModelAlias]; !ok && len(models) > 0 {
-			return fmt.Errorf("model alias %q is required", config.DefaultModelAlias)
-		}
 		return nil
 	})
 }

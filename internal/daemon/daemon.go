@@ -1842,7 +1842,7 @@ func (d *Daemon) acquireTaskContainer(
 		return nil, "", nil, false
 	}
 
-	model, closeModel, err := d.openModelEgress(task, credential)
+	model, closeModel, err := d.openModelEgress(ctx, task, credential)
 	if err != nil {
 		revokeCredential()
 		d.teardownStorage(ctx, task, repo, workDir)
@@ -1943,14 +1943,10 @@ func (d *Daemon) recordPark(ctx context.Context, taskID int64, reason string) {
 // credential is the task's run credential; the agent presents it to push the
 // task's branch.
 func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo config.Repo, profile config.AgentProfile, harness *agentrun.HarnessSpec, credential string) {
-	cfg := d.configFor(task)
-	if d.TaskModels != nil {
-		_, aliases, err := d.TaskModels.TaskModelAliases(ctx, task.ID)
-		if err != nil {
-			d.parkRunningTask(ctx, task.ID, "resolve the task's model aliases: "+err.Error(), taskstate.ParkTransient)
-			return
-		}
-		cfg.Models = aliases
+	cfg, err := d.taskConfig(ctx, task)
+	if err != nil {
+		d.parkRunningTask(ctx, task.ID, err.Error(), taskstate.ParkTransient)
+		return
 	}
 	taskCfg := cfg.ForTask()
 	d.captureAttemptConfig(ctx, task, taskCfg)

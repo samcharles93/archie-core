@@ -16,6 +16,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SettingRow } from "@/components/ui/setting-row";
+import { Switch } from "@/components/ui/switch";
+import { instanceAdmin, loadOrg, orgs } from "@/org/org";
 import { resourcesForPage, useControlPlaneStore } from "@/stores/control-plane";
 import DraftHint from "./DraftHint.vue";
 import HistoryLink from "./HistoryLink.vue";
@@ -38,7 +40,7 @@ const CLASSES = ["openai", "anthropic", "azure", "cohere", "deepseek", "gemini",
 
 const store = useControlPlaneStore();
 const { catalog: resourceCatalog, catalogError } = storeToRefs(store);
-onMounted(() => Promise.all([store.load(), loadConfig()]));
+onMounted(() => Promise.all([store.load(), loadConfig(), loadOrg()]));
 
 const resources = computed(() => resourcesForPage(resourceCatalog.value, "models"));
 const providers = computed(() => store.drafts["provider-settings"]?.value as Record<string, Provider> | undefined);
@@ -117,6 +119,28 @@ function addProvider() {
 }
 const keySource = (p: Provider) =>
   p.api_key_ref.key ? `${p.api_key_ref.engine} / ${p.api_key_ref.key}` : p.api_key_env ? `env ${p.api_key_env}` : "no key";
+// Org access: which instance models each other org may use, and whether it may
+// add its own providers. An org with no entry may use nothing.
+interface OrgPolicy {
+  allowed: string[];
+  own_providers: boolean;
+}
+const policies = computed(() => store.drafts["org-model-policy"]?.value as Record<string, OrgPolicy> | undefined);
+const otherOrgs = computed(() => (instanceAdmin.value ? orgs.value.filter((o) => o.id !== "org-sys") : []));
+const providerWildcards = computed(() => configuredIds.value.map((id) => `${id}/*`));
+function policyFor(id: string): OrgPolicy {
+  return policies.value?.[id] ?? { allowed: [], own_providers: false };
+}
+function setPolicy(id: string, next: Partial<OrgPolicy>) {
+  if (!policies.value) return;
+  const merged = { ...policyFor(id), ...next };
+  if (!merged.allowed.length && !merged.own_providers) delete policies.value[id];
+  else policies.value[id] = merged;
+}
+const allowedText = (id: string) => policyFor(id).allowed.join(", ");
+function setAllowed(id: string, text: string) {
+  setPolicy(id, { allowed: text.split(",").map((ref) => ref.trim()).filter(Boolean) });
+}
 const eyebrow = "mb-2 text-[11px] font-medium tracking-[0.06em] text-fg-subtle uppercase";
 </script>
 
@@ -181,6 +205,31 @@ const eyebrow = "mb-2 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
           <Input v-model="newAlias" class="max-w-56 font-mono" placeholder="alias" aria-label="New alias" />
           <Button type="submit" variant="outline" size="sm" :disabled="!newAlias.trim()"><Plus data-icon="inline-start" />Add alias</Button>
         </form>
+      </div>
+    </template>
+
+    <template v-if="policies && otherOrgs.length">
+      <h2 :class="[eyebrow, 'mt-10']">Org access</h2>
+      <datalist id="org-allowed">
+        <option v-for="m in [...providerWildcards, ...modelOptions]" :key="m" :value="m" />
+      </datalist>
+      <div class="rounded-lg border border-border bg-card">
+        <div v-for="o in otherOrgs" :key="o.id" class="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2.5 last-of-type:border-b-0">
+          <span class="w-28 truncate text-sm font-medium" :title="o.id">{{ o.name }}</span>
+          <Input
+            :model-value="allowedText(o.id)"
+            list="org-allowed"
+            class="max-w-md flex-1 font-mono"
+            placeholder="no models"
+            :aria-label="`Models ${o.name} may use`"
+            @update:model-value="(v) => setAllowed(o.id, String(v))"
+          />
+          <label class="flex items-center gap-2 text-xs text-fg-muted">
+            <Switch :model-value="policyFor(o.id).own_providers" @update:model-value="(v) => setPolicy(o.id, { own_providers: !!v })" />
+            Own providers
+          </label>
+          <DraftHint kind="org-model-policy" :path="o.id" />
+        </div>
       </div>
     </template>
 

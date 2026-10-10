@@ -57,3 +57,26 @@ func ChatAliases(aliases map[string]string) []string {
 	}
 	return out
 }
+
+// OrgModels is what one org resolves models against: the aliases it may use
+// and its own providers, which are never the instance's.
+type OrgModels struct {
+	Org       string
+	Aliases   map[string]string
+	Providers map[string]Provider
+}
+
+// WithOrgModels is c for a run in models.Org: its aliases, and the instance
+// providers with the org's own beside them.
+func (c Config) WithOrgModels(models OrgModels) Config {
+	c.Models = models.Aliases
+	if len(models.Providers) > 0 {
+		providers := maps.Clone(c.Providers)
+		if providers == nil {
+			providers = map[string]Provider{}
+		}
+		maps.Copy(providers, models.Providers)
+		c.Providers = providers
+	}
+	return c
+}

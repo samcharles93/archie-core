@@ -143,8 +143,7 @@ func Run(ctx context.Context, options Options) error { //nolint:cyclop // the co
 	b.announceReady()
 
 	deps := b.stateStoreDeps(grants)
-	deps.ControlPlane = control
-	deps.ModelAliases = control.ModelAliasesFor
+	controlPlaneDeps(&deps, control)
 	return serveStateStore(ctx, listener, deps, opts)
 }
 
@@ -585,4 +584,14 @@ func newPackageProjections(pool *pgxpool.Pool) (map[string]storepkg.FamilyProjec
 		storepkg.FamilyPlaybooks: playbooks,
 		storepkg.FamilyProfiles:  profiles,
 	}, nil
+}
+
+// controlPlaneDeps serves the control plane and the per-org model answers
+// built on it.
+func controlPlaneDeps(deps *staterpc.Deps, control *controlplane.Server) {
+	deps.ControlPlane = control
+	deps.OrgModels = func(ctx context.Context, orgID string) (map[string]string, map[string]config.Provider, error) {
+		models, err := control.ModelsFor(ctx, orgID)
+		return models.Aliases, models.Providers, err
+	}
 }

@@ -8,6 +8,7 @@ import (
 
 	"google.golang.org/grpc"
 
+	"github.com/samcharles93/archie-core/internal/config"
 	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
@@ -126,14 +127,17 @@ func (c *Client) Transition(ctx context.Context, taskID int64, from, to, detail 
 	return unmapError(err)
 }
 
-// TaskModelAliases returns the task's org and the model aliases it resolves
-// against.
-func (c *Client) TaskModelAliases(ctx context.Context, taskID int64) (string, map[string]string, error) {
-	r, err := c.client.TaskModelAliases(ctx, &pb.TaskModelAliasesRequest{TaskId: taskID})
+// TaskModels returns what the task's org resolves models against.
+func (c *Client) TaskModels(ctx context.Context, taskID int64) (config.OrgModels, error) {
+	r, err := c.client.TaskModels(ctx, &pb.TaskModelsRequest{TaskId: taskID})
 	if err != nil {
-		return "", nil, unmapError(err)
+		return config.OrgModels{}, unmapError(err)
 	}
-	return r.OrgId, r.Aliases, nil
+	providers := make(map[string]config.Provider, len(r.Providers))
+	for name, p := range r.Providers {
+		providers[name] = config.Provider{Class: p.GetClass(), BaseURL: p.GetBaseUrl(), APIKeyEnv: p.GetApiKeyEnv()}
+	}
+	return config.OrgModels{Org: r.OrgId, Aliases: r.Aliases, Providers: providers}, nil
 }
 
 // RecordUsage appends one model call's usage record.

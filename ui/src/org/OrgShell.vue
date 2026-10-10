@@ -28,6 +28,7 @@ const TABS = [
   { path: "/org/workspaces", label: "Workspaces" },
   { path: "/org/access", label: "Access", home: true },
   { path: "/org/tokens", label: "Tokens", home: true },
+  { path: "/org/models", label: "Models", home: true, member: true },
 ];
 
 const route = useRoute();
@@ -37,7 +38,10 @@ const router = useRouter();
 // hidden while an instance admin views another org rather than editing the
 // wrong one.
 const away = computed(() => !!org.value && org.value.id !== homeOrg.value);
-const tabs = computed(() => TABS.filter((tab) => !(away.value && tab.home)));
+// Models is an org's own; the system org configures models in Settings.
+const tabs = computed(() =>
+  TABS.filter((tab) => !(away.value && tab.home) && !(tab.member && homeOrg.value === "org-sys")),
+);
 watch(away, (isAway) => {
   if (isAway && TABS.some((tab) => tab.home && route.path.startsWith(tab.path))) {
     void router.replace("/org");

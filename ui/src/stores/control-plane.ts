@@ -200,7 +200,7 @@ const PAGE_RESOURCES: Record<ControlPlanePage, string[]> = {
   credentials: ["credential-bindings"],
   playbooks: ["eda-playbooks"],
   tasks: ["workflow-execution-settings","task-policy"],
-  models: ["provider-settings", "model-aliases"],
+  models: ["provider-settings", "model-aliases", "org-model-policy"],
   repositories: ["repository-policies"],
   channels: ["channel-settings"],
   scheduling: ["scheduling-policy"],

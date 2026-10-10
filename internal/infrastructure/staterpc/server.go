@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/samcharles93/archie-core/internal/config"
 	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
 	"github.com/samcharles93/archie-core/internal/domain/access"
@@ -108,9 +109,9 @@ type Deps struct {
 	// Usage appends model usage records. Optional: nil answers RecordUsage
 	// with codes.Unavailable.
 	Usage usage.Recorder
-	// ModelAliases answers an org's effective model aliases. Optional: nil
-	// answers TaskModelAliases with codes.Unavailable.
-	ModelAliases func(ctx context.Context, orgID string) (map[string]string, error)
+	// OrgModels answers an org's effective model aliases and own providers.
+	// Optional: nil answers TaskModels with codes.Unavailable.
+	OrgModels func(ctx context.Context, orgID string) (map[string]string, map[string]config.Provider, error)
 	// Canceller is the one cancel path:
 	// an operator action's guarded write over the execution and its steps.
 	// Optional: nil answers the RPC with codes.Unavailable.
@@ -270,27 +271,28 @@ func (s *server) RecordUsage(ctx context.Context, r *pb.RecordUsageRequest) (*pb
 	return &pb.RecordUsageResponse{}, nil
 }
 
-// TaskModelAliases answers the aliases the task's org resolves against.
-func (s *server) TaskModelAliases(ctx context.Context, r *pb.TaskModelAliasesRequest) (*pb.TaskModelAliasesResponse, error) {
-	if s.deps.ModelAliases == nil {
+// TaskModels answers what the task's org resolves models against.
+func (s *server) TaskModels(ctx context.Context, r *pb.TaskModelsRequest) (*pb.TaskModelsResponse, error) {
+	if s.deps.OrgModels == nil {
 		return nil, status.Error(codes.Unavailable, "model aliases unavailable")
 	}
 	t, err := s.deps.Tasks.TaskByID(ctx, r.TaskId)
 	if err != nil {
-		return nil, s.logErr("TaskModelAliases", err)
+		return nil, s.logErr("TaskModels", err)
 	}
 	if t == nil {
 		return nil, status.Error(codes.NotFound, "task not found")
 	}
-	orgID := string(t.Org)
-	if orgID == "" {
-		orgID = storecontract.DefaultOrgID
-	}
-	aliases, err := s.deps.ModelAliases(ctx, orgID)
+	orgID := t.OrgOrDefault()
+	aliases, providers, err := s.deps.OrgModels(ctx, orgID)
 	if err != nil {
-		return nil, s.logErr("TaskModelAliases", err)
+		return nil, s.logErr("TaskModels", err)
 	}
-	return &pb.TaskModelAliasesResponse{OrgId: orgID, Aliases: aliases}, nil
+	out := make(map[string]*pb.ModelProvider, len(providers))
+	for name, p := range providers {
+		out[name] = &pb.ModelProvider{Class: p.Class, BaseUrl: p.BaseURL, ApiKeyEnv: p.APIKeyEnv}
+	}
+	return &pb.TaskModelsResponse{OrgId: orgID, Aliases: aliases, Providers: out}, nil
 }
 
 // CancelExecution is the one cancel path:
