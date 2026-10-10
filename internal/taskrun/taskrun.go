@@ -28,8 +28,8 @@ type Request struct {
 	RunCredential string `json:"run_credential,omitempty"`
 	// WorkflowDefinition is the exact YAML pinned on Task before dispatch.
 	WorkflowDefinition string `json:"workflow_definition"`
-	// Tools is the agent profile's tool allowlist; empty allows every tool.
-	Tools []string `json:"tools,omitempty"`
+	// Tools is the tool allowlist: nil allows every tool, an empty list none.
+	Tools []string `json:"tools"`
 	// Harness, set for a Kit profile, runs every agent stage on the Kit's
 	// CLI instead of the built-in loop.
 	Harness *agentrun.HarnessSpec `json:"harness,omitempty"`

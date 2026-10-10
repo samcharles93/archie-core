@@ -191,6 +191,9 @@ type Daemon struct {
 	IdentityRepository identity.Repository
 	RootIdentityID     identity.IdentityID
 
+	// PackageAuthorities bounds the tools a package workflow's run is offered.
+	PackageAuthorities PackageAuthorities
+
 	// Playbooks are the loaded EDA playbooks, consulted before kind/label
 	// bindings when pinning a workflow. Nil means none.
 	Playbooks interface {
@@ -1954,7 +1957,7 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo conf
 		MCPServers:         cfg.Tools.MCPServers,
 		RunCredential:      credential,
 		WorkflowDefinition: task.WorkflowDefinitionYAML,
-		Tools:              profile.Tools,
+		Tools:              d.toolAllowlist(ctx, task, profile.Tools),
 		Harness:            harness,
 	}
 	data, err := json.Marshal(req)

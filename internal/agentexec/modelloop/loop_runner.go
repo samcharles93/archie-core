@@ -31,7 +31,7 @@ type LoopRunner struct {
 	// Limits bounds the size of tool results fed back into the stage. The
 	// zero value applies no limits.
 	Limits ToolLimits
-	// AllowTools is the profile's allowlist over archie-added tools. Empty allows
+	// AllowTools is the allowlist over archie-added tools. Nil allows
 	// all. Capture tools and agentloop's built-in file tools are never
 	// filtered.
 	AllowTools []string
@@ -187,9 +187,9 @@ func makeCaptureHandler(spec agentrun.CaptureTool, captures map[string][]json.Ra
 	}
 }
 
-// allowedTools keeps the tools allow names; an empty allow keeps them all.
+// allowedTools keeps the tools allow names; a nil allow keeps them all.
 func allowedTools(set core.ToolSet, allow []string) core.ToolSet {
-	if len(allow) == 0 {
+	if allow == nil {
 		return set
 	}
 	kept := core.ToolSet{}

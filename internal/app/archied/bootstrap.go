@@ -572,6 +572,7 @@ func (b *boot) buildDaemon() {
 		Bus:                 b.bus,
 		Forge:               b.forgeClient,
 		Trees:               b.trees,
+		PackageAuthorities:  installedAuthorities{b.stateStoreGrants.Client},
 		Storage:             b.storeBackend,
 		Log:                 log,
 		Tasks:               b.natsClient,
