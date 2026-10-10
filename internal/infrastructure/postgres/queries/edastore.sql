@@ -128,12 +128,13 @@ VALUES ($1, $2, $3, $4);
 DELETE FROM playbook_dispatches WHERE playbook_id = $1;
 
 -- name: InsertToolCall :exec
-INSERT INTO tool_calls (id, task_id, attempt, tool, result, error, called_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7);
+INSERT INTO tool_calls (id, task_id, attempt, tool, result, error, called_at, org_id, workspace_id)
+SELECT sqlc.arg(id), t.id, sqlc.arg(attempt), sqlc.arg(tool), sqlc.arg(result), sqlc.arg(error), sqlc.arg(called_at), t.org_id, t.workspace_id
+FROM tasks t WHERE t.id = sqlc.arg(task_id);
 
 -- name: TaskToolCalls :many
 SELECT id, task_id, attempt, tool, result, error, called_at
-FROM tool_calls WHERE task_id = $1 ORDER BY called_at ASC;
+FROM tool_calls WHERE task_id = sqlc.arg(task_id) AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org)) ORDER BY called_at ASC;
 
 -- name: InsertEventType :exec
 INSERT INTO event_types (id, source, name, rule, schema, org_id)

@@ -245,19 +245,13 @@ func (s *sseStream) drain(ctx context.Context, conn <-chan liveUpdate, stale <-c
 	}
 }
 
+// relayTask sends a broadcast event by reading the backlog up to it, never
+// the broadcast itself: the pump broadcasts every org's events, and the
+// backlog read is confined to the viewer's org.
 func (s *sseStream) relayTask(ctx context.Context, e events.Event) bool {
 	cursor := storecontract.EventCursor(e.At, e.ID)
 	if cursor <= s.since {
 		return true
 	}
-	if !s.catchUp(ctx, cursor) {
-		return false
-	}
-	if cursor > s.since {
-		if sseVisible(e) && !s.send(e) {
-			return false
-		}
-		s.since = cursor
-	}
-	return true
+	return s.catchUp(ctx, cursor)
 }

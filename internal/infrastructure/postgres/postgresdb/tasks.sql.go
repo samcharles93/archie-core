@@ -14,13 +14,18 @@ import (
 
 const activeTasksByOrigin = `-- name: ActiveTasksByOrigin :many
 SELECT id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth, outputs, review_gate, rereview_rounds, retry_mode, resume_from, resume_results, pending_reviews, origin, call_key FROM tasks
-WHERE origin = $1 AND origin <> '' AND status IN ('queued', 'running')
+WHERE origin = $1 AND origin <> '' AND status IN ('queued', 'running') AND ($2::text IS NULL OR org_id = $2)
 ORDER BY id
 `
 
+type ActiveTasksByOriginParams struct {
+	Origin   string
+	ScopeOrg pgtype.Text
+}
+
 // The queued and running tasks one conversation created, for its /stop.
-func (q *Queries) ActiveTasksByOrigin(ctx context.Context, origin string) ([]Task, error) {
-	rows, err := q.db.Query(ctx, activeTasksByOrigin, origin)
+func (q *Queries) ActiveTasksByOrigin(ctx context.Context, arg ActiveTasksByOriginParams) ([]Task, error) {
+	rows, err := q.db.Query(ctx, activeTasksByOrigin, arg.Origin, arg.ScopeOrg)
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +311,7 @@ func (q *Queries) ClearTerminalTasks(ctx context.Context) (int64, error) {
 }
 
 const countTasksByStatus = `-- name: CountTasksByStatus :many
-SELECT status, count(*)::int AS count FROM tasks GROUP BY status
+SELECT status, count(*)::int AS count FROM tasks WHERE ($1::text IS NULL OR org_id = $1) GROUP BY status
 `
 
 type CountTasksByStatusRow struct {
@@ -314,8 +319,8 @@ type CountTasksByStatusRow struct {
 	Count  int32
 }
 
-func (q *Queries) CountTasksByStatus(ctx context.Context) ([]CountTasksByStatusRow, error) {
-	rows, err := q.db.Query(ctx, countTasksByStatus)
+func (q *Queries) CountTasksByStatus(ctx context.Context, scopeOrg pgtype.Text) ([]CountTasksByStatusRow, error) {
+	rows, err := q.db.Query(ctx, countTasksByStatus, scopeOrg)
 	if err != nil {
 		return nil, err
 	}
@@ -486,23 +491,24 @@ func (q *Queries) InsertChatTask(ctx context.Context, arg InsertChatTaskParams) 
 }
 
 const insertTransition = `-- name: InsertTransition :exec
-INSERT INTO transitions (task_id, from_status, to_status, detail)
-VALUES ($1, $2, $3, $4)
+INSERT INTO transitions (task_id, from_status, to_status, detail, org_id, workspace_id)
+SELECT t.id, $1, $2, $3, t.org_id, t.workspace_id
+FROM tasks t WHERE t.id = $4
 `
 
 type InsertTransitionParams struct {
-	TaskID     int64
 	FromStatus string
 	ToStatus   string
 	Detail     string
+	TaskID     int64
 }
 
 func (q *Queries) InsertTransition(ctx context.Context, arg InsertTransitionParams) error {
 	_, err := q.db.Exec(ctx, insertTransition,
-		arg.TaskID,
 		arg.FromStatus,
 		arg.ToStatus,
 		arg.Detail,
+		arg.TaskID,
 	)
 	return err
 }
@@ -566,14 +572,16 @@ SELECT id, owner, repo, issue_number, title, status, workflow,
        created_at, updated_at, plan, source, identity, binding_id, binding_version,
        outputs, review_gate, rereview_rounds
 FROM tasks
-WHERE (cardinality($1::text[]) = 0 OR status = ANY($1::text[]))
-  AND ($2::timestamptz IS NULL
-       OR (updated_at, id) < ($2::timestamptz, $3::bigint))
+WHERE ($1::text IS NULL OR org_id = $1)
+  AND (cardinality($2::text[]) = 0 OR status = ANY($2::text[]))
+  AND ($3::timestamptz IS NULL
+       OR (updated_at, id) < ($3::timestamptz, $4::bigint))
 ORDER BY updated_at DESC, id DESC
-LIMIT $4
+LIMIT $5
 `
 
 type ListTaskSummariesParams struct {
+	ScopeOrg      pgtype.Text
 	Statuses      []string
 	BeforeUpdated pgtype.Timestamptz
 	BeforeID      int64
@@ -617,6 +625,7 @@ type ListTaskSummariesRow struct {
 // answers"), and the round count is the cap's visible half.
 func (q *Queries) ListTaskSummaries(ctx context.Context, arg ListTaskSummariesParams) ([]ListTaskSummariesRow, error) {
 	rows, err := q.db.Query(ctx, listTaskSummaries,
+		arg.ScopeOrg,
 		arg.Statuses,
 		arg.BeforeUpdated,
 		arg.BeforeID,
@@ -919,11 +928,16 @@ func (q *Queries) StampTaskBinding(ctx context.Context, arg StampTaskBindingPara
 }
 
 const taskByID = `-- name: TaskByID :one
-SELECT id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth, outputs, review_gate, rereview_rounds, retry_mode, resume_from, resume_results, pending_reviews, origin, call_key FROM tasks WHERE id = $1
+SELECT id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth, outputs, review_gate, rereview_rounds, retry_mode, resume_from, resume_results, pending_reviews, origin, call_key FROM tasks WHERE id = $1 AND ($2::text IS NULL OR org_id = $2)
 `
 
-func (q *Queries) TaskByID(ctx context.Context, id int64) (Task, error) {
-	row := q.db.QueryRow(ctx, taskByID, id)
+type TaskByIDParams struct {
+	ID       int64
+	ScopeOrg pgtype.Text
+}
+
+func (q *Queries) TaskByID(ctx context.Context, arg TaskByIDParams) (Task, error) {
+	row := q.db.QueryRow(ctx, taskByID, arg.ID, arg.ScopeOrg)
 	var i Task
 	err := row.Scan(
 		&i.ID,

@@ -700,6 +700,7 @@ func (s *Store) Tasks(ctx context.Context, limit int) ([]workflow.Task, error) {
 // TasksPage returns one page of tasks, most recently updated first.
 func (s *Store) TasksPage(ctx context.Context, page storecontract.TaskPage) ([]workflow.Task, error) {
 	params := postgresdb.ListTaskSummariesParams{
+		ScopeOrg:  scopeOrg(ctx),
 		Statuses:  append([]string{}, page.Statuses...),
 		PageLimit: int32(min(max(page.Limit, 1), 500)), // clamped
 	}
@@ -730,7 +731,7 @@ func (s *Store) TasksPage(ctx context.Context, page storecontract.TaskPage) ([]w
 
 // StatusCounts returns task counts by status.
 func (s *Store) StatusCounts(ctx context.Context) (map[string]int, error) {
-	rows, err := s.queries().CountTasksByStatus(ctx)
+	rows, err := s.queries().CountTasksByStatus(ctx, scopeOrg(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -771,7 +772,7 @@ func (s *Store) OpenTaskByPR(ctx context.Context, owner, repo string, number int
 
 // TaskByID returns the task with the given database ID, or nil.
 func (s *Store) TaskByID(ctx context.Context, taskID int64) (*workflow.Task, error) {
-	t, err := s.queries().TaskByID(ctx, taskID)
+	t, err := s.queries().TaskByID(ctx, postgresdb.TaskByIDParams{ID: taskID, ScopeOrg: scopeOrg(ctx)})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -815,7 +816,7 @@ func (s *Store) StartCall(ctx context.Context, callerTaskID int64, callKey, wf s
 
 // callRefusal explains why EnqueueCallTask inserted nothing.
 func (s *Store) callRefusal(ctx context.Context, callerTaskID int64) error {
-	caller, err := s.queries().TaskByID(ctx, callerTaskID)
+	caller, err := s.queries().TaskByID(ctx, postgresdb.TaskByIDParams{ID: callerTaskID, ScopeOrg: scopeOrg(ctx)})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("store: workflow.call caller task %d does not exist: %w", callerTaskID, storecontract.ErrCallNotYours)
 	}
@@ -833,7 +834,7 @@ func (s *Store) callRefusal(ctx context.Context, callerTaskID int64) error {
 // check is the row check the wire grant cannot do: a caller reads only the
 // tasks it started.
 func (s *Store) CallStatus(ctx context.Context, callerTaskID, callTaskID int64) (string, string, map[string]any, error) {
-	callee, err := s.queries().TaskByID(ctx, callTaskID)
+	callee, err := s.queries().TaskByID(ctx, postgresdb.TaskByIDParams{ID: callTaskID, ScopeOrg: scopeOrg(ctx)})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", "", nil, storecontract.ErrCallNotYours
 	}
@@ -863,7 +864,7 @@ func (s *Store) CallStatus(ctx context.Context, callerTaskID, callTaskID int64) 
 // ActiveTasksByOrigin returns the queued and running tasks the conversation
 // origin created.
 func (s *Store) ActiveTasksByOrigin(ctx context.Context, origin string) ([]*workflow.Task, error) {
-	rows, err := s.queries().ActiveTasksByOrigin(ctx, origin)
+	rows, err := s.queries().ActiveTasksByOrigin(ctx, postgresdb.ActiveTasksByOriginParams{Origin: origin, ScopeOrg: scopeOrg(ctx)})
 	if err != nil {
 		return nil, fmt.Errorf("store: active tasks by origin: %w", err)
 	}

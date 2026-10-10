@@ -175,7 +175,7 @@ func (s *Store) FinishStep(ctx context.Context, finish task.StepFinish) (events.
 		return events.Event{}, fmt.Errorf("%w: %s -> %s is not a step transition",
 			storecontract.ErrIllegalTransition, finish.From, finish.To)
 	}
-	execution, err := q.TaskByID(ctx, step.ExecutionID)
+	execution, err := q.TaskByID(ctx, postgresdb.TaskByIDParams{ID: step.ExecutionID, ScopeOrg: scopeOrg(ctx)})
 	if err != nil {
 		return events.Event{}, err
 	}
@@ -245,6 +245,7 @@ func stepEventData(to taskstate.StepStatus, durationMS int64, detail string) map
 // 0.
 func (s *Store) ListSteps(ctx context.Context, executionID int64, attempt int) ([]task.StepExecution, error) {
 	rows, err := s.queries().ListStepExecutions(ctx, postgresdb.ListStepExecutionsParams{
+		ScopeOrg:    scopeOrg(ctx),
 		ExecutionID: executionID, Attempt: int64(attempt),
 	})
 	if err != nil {

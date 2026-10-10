@@ -680,29 +680,30 @@ func (q *Queries) InsertSource(ctx context.Context, arg InsertSourceParams) erro
 }
 
 const insertToolCall = `-- name: InsertToolCall :exec
-INSERT INTO tool_calls (id, task_id, attempt, tool, result, error, called_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO tool_calls (id, task_id, attempt, tool, result, error, called_at, org_id, workspace_id)
+SELECT $1, t.id, $2, $3, $4, $5, $6, t.org_id, t.workspace_id
+FROM tasks t WHERE t.id = $7
 `
 
 type InsertToolCallParams struct {
 	ID       string
-	TaskID   int64
 	Attempt  int64
 	Tool     string
 	Result   string
 	Error    string
 	CalledAt time.Time
+	TaskID   int64
 }
 
 func (q *Queries) InsertToolCall(ctx context.Context, arg InsertToolCallParams) error {
 	_, err := q.db.Exec(ctx, insertToolCall,
 		arg.ID,
-		arg.TaskID,
 		arg.Attempt,
 		arg.Tool,
 		arg.Result,
 		arg.Error,
 		arg.CalledAt,
+		arg.TaskID,
 	)
 	return err
 }
@@ -1177,8 +1178,13 @@ func (q *Queries) SourceExists(ctx context.Context, path string) (bool, error) {
 
 const taskToolCalls = `-- name: TaskToolCalls :many
 SELECT id, task_id, attempt, tool, result, error, called_at
-FROM tool_calls WHERE task_id = $1 ORDER BY called_at ASC
+FROM tool_calls WHERE task_id = $1 AND ($2::text IS NULL OR org_id = $2) ORDER BY called_at ASC
 `
+
+type TaskToolCallsParams struct {
+	TaskID   int64
+	ScopeOrg pgtype.Text
+}
 
 type TaskToolCallsRow struct {
 	ID       string
@@ -1190,8 +1196,8 @@ type TaskToolCallsRow struct {
 	CalledAt time.Time
 }
 
-func (q *Queries) TaskToolCalls(ctx context.Context, taskID int64) ([]TaskToolCallsRow, error) {
-	rows, err := q.db.Query(ctx, taskToolCalls, taskID)
+func (q *Queries) TaskToolCalls(ctx context.Context, arg TaskToolCallsParams) ([]TaskToolCallsRow, error) {
+	rows, err := q.db.Query(ctx, taskToolCalls, arg.TaskID, arg.ScopeOrg)
 	if err != nil {
 		return nil, err
 	}

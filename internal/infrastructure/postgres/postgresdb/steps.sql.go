@@ -192,12 +192,14 @@ const listStepExecutions = `-- name: ListStepExecutions :many
 SELECT id, execution_id, attempt, parent_id, depth, kind, name, status, detail, tokens_used, started_at, finished_at, called_execution_id
 FROM step_executions
 WHERE execution_id = $1::bigint AND ($2::bigint = 0 OR attempt = $2::bigint)
+  AND ($3::text IS NULL OR org_id = $3)
 ORDER BY attempt, id
 `
 
 type ListStepExecutionsParams struct {
 	ExecutionID int64
 	Attempt     int64
+	ScopeOrg    pgtype.Text
 }
 
 type ListStepExecutionsRow struct {
@@ -220,7 +222,7 @@ type ListStepExecutionsRow struct {
 // (execution_id, attempt, id) makes both this and the single-attempt form a
 // straight index scan.
 func (q *Queries) ListStepExecutions(ctx context.Context, arg ListStepExecutionsParams) ([]ListStepExecutionsRow, error) {
-	rows, err := q.db.Query(ctx, listStepExecutions, arg.ExecutionID, arg.Attempt)
+	rows, err := q.db.Query(ctx, listStepExecutions, arg.ExecutionID, arg.Attempt, arg.ScopeOrg)
 	if err != nil {
 		return nil, err
 	}

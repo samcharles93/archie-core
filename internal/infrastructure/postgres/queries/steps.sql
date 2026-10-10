@@ -77,6 +77,7 @@ RETURNING id, name;
 SELECT id, execution_id, attempt, parent_id, depth, kind, name, status, detail, tokens_used, started_at, finished_at, called_execution_id
 FROM step_executions
 WHERE execution_id = @execution_id::bigint AND (@attempt::bigint = 0 OR attempt = @attempt::bigint)
+  AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org))
 ORDER BY attempt, id;
 -- name: WaitingCallSteps :many
 -- The call steps of the execution's current attempt that are still open and

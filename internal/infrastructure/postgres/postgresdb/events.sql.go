@@ -8,6 +8,8 @@ package postgresdb
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const insertEvent = `-- name: InsertEvent :one
@@ -15,9 +17,11 @@ const insertEvent = `-- name: InsertEvent :one
 WITH append_lock AS (
     SELECT pg_advisory_xact_lock(hashtextextended('archie.events.insert', 0))
 )
-INSERT INTO events (at, kind, task_id, repo, issue, workflow, stage, attempt, actor_id, actor_kind, principal_id, detail, data)
-SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
-FROM append_lock
+INSERT INTO events (at, kind, task_id, repo, issue, workflow, stage, attempt, actor_id, actor_kind, principal_id, detail, data, org_id, workspace_id)
+SELECT $1, $2, $3, $4, $5, $6, $7,
+       $8, $9, $10, $11, $12, $13,
+       COALESCE(t.org_id, $14::text), COALESCE(t.workspace_id, 'default')
+FROM append_lock LEFT JOIN tasks t ON t.id = $3
 RETURNING id
 `
 
@@ -35,6 +39,7 @@ type InsertEventParams struct {
 	PrincipalID string
 	Detail      string
 	Data        string
+	OrgID       string
 }
 
 // Event-log queries. The (at, id) cursor is a wire contract: at is the
@@ -60,6 +65,7 @@ func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) (int64
 		arg.PrincipalID,
 		arg.Detail,
 		arg.Data,
+		arg.OrgID,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -69,19 +75,25 @@ func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) (int64
 const listEventsAfter = `-- name: ListEventsAfter :many
 SELECT id, at, kind, task_id, repo, issue, workflow, stage, attempt, actor_id, actor_kind, principal_id, detail, data, org_id, workspace_id
 FROM events
-WHERE at > $1 OR (at = $1 AND id > $2)
+WHERE (at > $1 OR (at = $1 AND id > $2)) AND ($3::text IS NULL OR org_id = $3)
 ORDER BY at, id
-LIMIT $3
+LIMIT $4
 `
 
 type ListEventsAfterParams struct {
-	At    time.Time
-	ID    int64
-	Limit int32
+	At        time.Time
+	ID        int64
+	ScopeOrg  pgtype.Text
+	PageLimit int32
 }
 
 func (q *Queries) ListEventsAfter(ctx context.Context, arg ListEventsAfterParams) ([]Event, error) {
-	rows, err := q.db.Query(ctx, listEventsAfter, arg.At, arg.ID, arg.Limit)
+	rows, err := q.db.Query(ctx, listEventsAfter,
+		arg.At,
+		arg.ID,
+		arg.ScopeOrg,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -120,12 +132,18 @@ func (q *Queries) ListEventsAfter(ctx context.Context, arg ListEventsAfterParams
 const listEventsFromBeginning = `-- name: ListEventsFromBeginning :many
 SELECT id, at, kind, task_id, repo, issue, workflow, stage, attempt, actor_id, actor_kind, principal_id, detail, data, org_id, workspace_id
 FROM events
+WHERE ($1::text IS NULL OR org_id = $1)
 ORDER BY at, id
-LIMIT $1
+LIMIT $2
 `
 
-func (q *Queries) ListEventsFromBeginning(ctx context.Context, limit int32) ([]Event, error) {
-	rows, err := q.db.Query(ctx, listEventsFromBeginning, limit)
+type ListEventsFromBeginningParams struct {
+	ScopeOrg  pgtype.Text
+	PageLimit int32
+}
+
+func (q *Queries) ListEventsFromBeginning(ctx context.Context, arg ListEventsFromBeginningParams) ([]Event, error) {
+	rows, err := q.db.Query(ctx, listEventsFromBeginning, arg.ScopeOrg, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -164,10 +182,10 @@ func (q *Queries) ListEventsFromBeginning(ctx context.Context, limit int32) ([]E
 const stageStats = `-- name: StageStats :many
 SELECT workflow, stage,
        COUNT(*)::int AS runs,
-       CAST(AVG((data::jsonb ->> 'duration_ms')::numeric) AS bigint) AS avg_ms,
+       COALESCE(CAST(AVG((data::jsonb ->> 'duration_ms')::numeric) AS bigint), 0)::bigint AS avg_ms,
        COUNT(*) FILTER (WHERE (data::jsonb ->> 'error') IS NOT NULL)::int AS errors
 FROM events
-WHERE kind = 'stage_finish'
+WHERE kind = 'stage_finish' AND ($1::text IS NULL OR org_id = $1)
 GROUP BY workflow, stage
 ORDER BY workflow, stage
 `
@@ -180,8 +198,8 @@ type StageStatsRow struct {
 	Errors   int32
 }
 
-func (q *Queries) StageStats(ctx context.Context) ([]StageStatsRow, error) {
-	rows, err := q.db.Query(ctx, stageStats)
+func (q *Queries) StageStats(ctx context.Context, scopeOrg pgtype.Text) ([]StageStatsRow, error) {
+	rows, err := q.db.Query(ctx, stageStats, scopeOrg)
 	if err != nil {
 		return nil, err
 	}
@@ -209,12 +227,17 @@ func (q *Queries) StageStats(ctx context.Context) ([]StageStatsRow, error) {
 const taskEventsByID = `-- name: TaskEventsByID :many
 SELECT id, at, kind, task_id, repo, issue, workflow, stage, attempt, actor_id, actor_kind, principal_id, detail, data, org_id, workspace_id
 FROM events
-WHERE task_id = $1
+WHERE task_id = $1 AND ($2::text IS NULL OR org_id = $2)
 ORDER BY id
 `
 
-func (q *Queries) TaskEventsByID(ctx context.Context, taskID int64) ([]Event, error) {
-	rows, err := q.db.Query(ctx, taskEventsByID, taskID)
+type TaskEventsByIDParams struct {
+	TaskID   int64
+	ScopeOrg pgtype.Text
+}
+
+func (q *Queries) TaskEventsByID(ctx context.Context, arg TaskEventsByIDParams) ([]Event, error) {
+	rows, err := q.db.Query(ctx, taskEventsByID, arg.TaskID, arg.ScopeOrg)
 	if err != nil {
 		return nil, err
 	}
@@ -256,14 +279,14 @@ WITH event_totals AS (
         SUM(CASE WHEN jsonb_typeof(data::jsonb -> 'tokens') = 'number'
             THEN (data::jsonb ->> 'tokens')::bigint ELSE 0 END) AS tokens,
         SUM(CASE WHEN jsonb_typeof(data::jsonb -> 'tokens') = 'number' THEN 1 ELSE 0 END) AS valid_tokens
-    FROM events WHERE kind = 'agent_finish'
+    FROM events WHERE kind = 'agent_finish' AND ($2::text IS NULL OR org_id = $2)
     GROUP BY task_id, day
 ), usage AS (
     SELECT day, tokens FROM event_totals WHERE valid_tokens > 0
     UNION ALL
     SELECT to_char(t.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD'), t.tokens_used
     FROM tasks t
-    WHERE t.tokens_used != 0 AND NOT EXISTS (
+    WHERE t.tokens_used != 0 AND ($2::text IS NULL OR t.org_id = $2) AND NOT EXISTS (
         SELECT 1 FROM event_totals e
         WHERE e.task_id = t.id AND e.valid_tokens > 0
     )
@@ -272,13 +295,18 @@ SELECT day, SUM(tokens)::bigint AS tokens
 FROM usage GROUP BY day ORDER BY day DESC LIMIT $1
 `
 
+type TokensByDayParams struct {
+	Days     int32
+	ScopeOrg pgtype.Text
+}
+
 type TokensByDayRow struct {
 	Day    string
 	Tokens int64
 }
 
-func (q *Queries) TokensByDay(ctx context.Context, limit int32) ([]TokensByDayRow, error) {
-	rows, err := q.db.Query(ctx, tokensByDay, limit)
+func (q *Queries) TokensByDay(ctx context.Context, arg TokensByDayParams) ([]TokensByDayRow, error) {
+	rows, err := q.db.Query(ctx, tokensByDay, arg.Days, arg.ScopeOrg)
 	if err != nil {
 		return nil, err
 	}
@@ -308,7 +336,7 @@ SELECT workflow,
        AVG(iterations)::float8 AS avg_steps,
        SUM(tokens_used)::bigint AS total_tokens
 FROM tasks
-WHERE workflow <> ''
+WHERE workflow <> '' AND ($1::text IS NULL OR org_id = $1)
 GROUP BY workflow
 ORDER BY COUNT(*) DESC
 `
@@ -325,8 +353,8 @@ type WorkflowStatsRow struct {
 	TotalTokens int64
 }
 
-func (q *Queries) WorkflowStats(ctx context.Context) ([]WorkflowStatsRow, error) {
-	rows, err := q.db.Query(ctx, workflowStats)
+func (q *Queries) WorkflowStats(ctx context.Context, scopeOrg pgtype.Text) ([]WorkflowStatsRow, error) {
+	rows, err := q.db.Query(ctx, workflowStats, scopeOrg)
 	if err != nil {
 		return nil, err
 	}

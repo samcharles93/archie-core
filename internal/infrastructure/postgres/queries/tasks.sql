@@ -17,7 +17,7 @@ WHERE id = (
 RETURNING *;
 
 -- name: TaskByID :one
-SELECT * FROM tasks WHERE id = $1;
+SELECT * FROM tasks WHERE id = sqlc.arg(id) AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org));
 
 -- name: TaskByIssue :one
 SELECT * FROM tasks WHERE owner = $1 AND repo = $2 AND issue_number = $3;
@@ -43,14 +43,15 @@ SELECT id, owner, repo, issue_number, title, status, workflow,
        created_at, updated_at, plan, source, identity, binding_id, binding_version,
        outputs, review_gate, rereview_rounds
 FROM tasks
-WHERE (cardinality(@statuses::text[]) = 0 OR status = ANY(@statuses::text[]))
+WHERE (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org))
+  AND (cardinality(@statuses::text[]) = 0 OR status = ANY(@statuses::text[]))
   AND (sqlc.narg(before_updated)::timestamptz IS NULL
        OR (updated_at, id) < (sqlc.narg(before_updated)::timestamptz, @before_id::bigint))
 ORDER BY updated_at DESC, id DESC
 LIMIT @page_limit;
 
 -- name: CountTasksByStatus :many
-SELECT status, count(*)::int AS count FROM tasks GROUP BY status;
+SELECT status, count(*)::int AS count FROM tasks WHERE (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org)) GROUP BY status;
 
 -- name: InsertChatTask :one
 -- The synthetic issue number keeps chat-sourced tasks off the forge's real
@@ -84,7 +85,7 @@ RETURNING *;
 -- name: ActiveTasksByOrigin :many
 -- The queued and running tasks one conversation created, for its /stop.
 SELECT * FROM tasks
-WHERE origin = sqlc.arg(origin) AND origin <> '' AND status IN ('queued', 'running')
+WHERE origin = sqlc.arg(origin) AND origin <> '' AND status IN ('queued', 'running') AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org))
 ORDER BY id;
 
 -- name: StampTaskBinding :exec
@@ -123,8 +124,9 @@ SET status = $2,
 WHERE id = $1 AND status = $5;
 
 -- name: InsertTransition :exec
-INSERT INTO transitions (task_id, from_status, to_status, detail)
-VALUES ($1, $2, $3, $4);
+INSERT INTO transitions (task_id, from_status, to_status, detail, org_id, workspace_id)
+SELECT t.id, sqlc.arg(from_status), sqlc.arg(to_status), sqlc.arg(detail), t.org_id, t.workspace_id
+FROM tasks t WHERE t.id = sqlc.arg(task_id);
 
 -- name: ParkTask :execrows
 UPDATE tasks

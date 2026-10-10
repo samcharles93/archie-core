@@ -561,7 +561,7 @@ func (s *EDA) SetDispatchTask(ctx context.Context, bindingID, captureID string, 
 
 // ListDispatches returns the newest ledger rows matching filter.
 func (s *EDA) ListDispatches(ctx context.Context, filter storecontract.DispatchFilter) ([]storecontract.Dispatch, error) {
-	params := postgresdb.ListBindingDispatchesParams{EntryLimit: int32(min(max(filter.Limit, 1), 500))} // clamped
+	params := postgresdb.ListBindingDispatchesParams{EntryLimit: int32(min(max(filter.Limit, 1), 500)), ScopeOrg: scopeOrg(ctx)} // clamped
 	if filter.BindingID != "" {
 		params.Binding = pgtype.Text{String: filter.BindingID, Valid: true}
 	}
@@ -652,7 +652,7 @@ func (s *EDA) InsertToolCall(ctx context.Context, tc ToolCall) error {
 
 // TaskToolCalls returns one task's tool calls in call order.
 func (s *EDA) TaskToolCalls(ctx context.Context, taskID int64) ([]ToolCall, error) {
-	rows, err := s.q.TaskToolCalls(ctx, taskID)
+	rows, err := s.q.TaskToolCalls(ctx, postgresdb.TaskToolCallsParams{TaskID: taskID, ScopeOrg: scopeOrg(ctx)})
 	if err != nil {
 		return nil, fmt.Errorf("edastore: list tool calls: %w", err)
 	}

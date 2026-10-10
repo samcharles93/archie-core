@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/postgresdb"
@@ -28,6 +29,7 @@ func insertEventQ(ctx context.Context, q *postgresdb.Queries, e events.Event) (i
 		Issue: int64(e.Issue), Workflow: e.Workflow, Stage: e.Stage,
 		Attempt: int64(e.Attempt), ActorID: e.ActorID, ActorKind: e.ActorKind,
 		PrincipalID: e.PrincipalID, Detail: clip(e.Detail, 4000), Data: string(data),
+		OrgID: string(org.OrgFromContext(ctx)),
 	})
 }
 
@@ -63,7 +65,7 @@ func (s *Store) EventsSince(ctx context.Context, cursor string, limit int) ([]ev
 		return s.listEventsFromBeginning(ctx, limit)
 	}
 	rows, err := s.queries().ListEventsAfter(ctx, postgresdb.ListEventsAfterParams{
-		At: atTime, ID: id, Limit: int32(limit),
+		At: atTime, ID: id, PageLimit: int32(limit), ScopeOrg: scopeOrg(ctx),
 	})
 	if err != nil {
 		return nil, err
@@ -72,7 +74,7 @@ func (s *Store) EventsSince(ctx context.Context, cursor string, limit int) ([]ev
 }
 
 func (s *Store) listEventsFromBeginning(ctx context.Context, limit int) ([]events.Event, error) {
-	rows, err := s.queries().ListEventsFromBeginning(ctx, int32(limit))
+	rows, err := s.queries().ListEventsFromBeginning(ctx, postgresdb.ListEventsFromBeginningParams{PageLimit: int32(limit), ScopeOrg: scopeOrg(ctx)})
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +91,7 @@ func eventsFromRows(rows []postgresdb.Event) []events.Event {
 
 // TaskEvents returns a task's full timeline, oldest first.
 func (s *Store) TaskEvents(ctx context.Context, taskID int64) ([]events.Event, error) {
-	rows, err := s.queries().TaskEventsByID(ctx, taskID)
+	rows, err := s.queries().TaskEventsByID(ctx, postgresdb.TaskEventsByIDParams{TaskID: taskID, ScopeOrg: scopeOrg(ctx)})
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +100,7 @@ func (s *Store) TaskEvents(ctx context.Context, taskID int64) ([]events.Event, e
 
 // WorkflowStats aggregates outcomes and spend per workflow.
 func (s *Store) WorkflowStats(ctx context.Context) ([]storecontract.WorkflowStat, error) {
-	rows, err := s.queries().WorkflowStats(ctx)
+	rows, err := s.queries().WorkflowStats(ctx, scopeOrg(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +124,7 @@ func (s *Store) WorkflowStats(ctx context.Context) ([]storecontract.WorkflowStat
 // StageStats aggregates stage_finish events -- where time goes, and which
 // stages fail.
 func (s *Store) StageStats(ctx context.Context) ([]storecontract.StageStat, error) {
-	rows, err := s.queries().StageStats(ctx)
+	rows, err := s.queries().StageStats(ctx, scopeOrg(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +141,7 @@ func (s *Store) StageStats(ctx context.Context) ([]storecontract.StageStat, erro
 // TokensByDay sums task token spend per UTC day, using agent_finish events as
 // the per-run accounting source and tasks.tokens_used as the durable fallback.
 func (s *Store) TokensByDay(ctx context.Context, days int) ([]storecontract.DayTokens, error) {
-	rows, err := s.queries().TokensByDay(ctx, int32(days))
+	rows, err := s.queries().TokensByDay(ctx, postgresdb.TokensByDayParams{Days: int32(days), ScopeOrg: scopeOrg(ctx)})
 	if err != nil {
 		return nil, err
 	}
