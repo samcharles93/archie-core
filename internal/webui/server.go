@@ -401,8 +401,9 @@ func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 }
 
 // assets serves the embedded dashboard, falling back to index.html so client
-// routes deep-link correctly. An unserved /api path is a 404, never the page. Under the no_ui build tag the assets are absent
-// and a plain explanation is served instead of a confusing 404.
+// routes deep-link correctly. An unserved /api path is a 404, never the page.
+// Under the no_ui build tag the assets are absent and a plain explanation is
+// served instead of a confusing 404.
 func (s *Server) assets() http.Handler {
 	if ui.DistDirFS == nil {
 		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
