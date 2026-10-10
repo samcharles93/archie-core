@@ -50,6 +50,34 @@ type ExtensionView struct {
 	Declared    authorityView  `json:"declared"`
 	Accepted    *authorityView `json:"accepted"`
 	Enabled     bool           `json:"enabled"`
+	// Pending is an update waiting for approval, with only the grants it adds
+	// to what the operator accepted.
+	Pending     *pendingView `json:"pending"`
+	CanRollback bool         `json:"can_rollback"`
+}
+
+type pendingView struct {
+	Digest string        `json:"digest"`
+	Added  authorityView `json:"added"`
+}
+
+// addedGrants returns the grants want asks for that held does not grant.
+func addedGrants(held *storepkg.Authority, want storepkg.Authority) authorityView {
+	var have storepkg.Authority
+	if held != nil {
+		have = *held
+	}
+	missing := func(have, want []string) []string {
+		return slices.DeleteFunc(slices.Clone(want), func(grant string) bool { return slices.Contains(have, grant) })
+	}
+	return authorityOf(storepkg.Authority{
+		CredentialServices: missing(have.CredentialServices, want.CredentialServices),
+		EgressHosts:        missing(have.EgressHosts, want.EgressHosts),
+		ForgePermissions:   missing(have.ForgePermissions, want.ForgePermissions),
+		Triggers:           missing(have.Triggers, want.Triggers),
+		Tools:              missing(have.Tools, want.Tools),
+		Env:                missing(have.Env, want.Env),
+	})
 }
 
 func extensionView(p storepkg.Installed, enabled bool) ExtensionView {
@@ -62,6 +90,10 @@ func extensionView(p storepkg.Installed, enabled bool) ExtensionView {
 		if !slices.Contains(view.Surfaces, extension.Surface) {
 			view.Surfaces = append(view.Surfaces, extension.Surface)
 		}
+	}
+	view.CanRollback = p.Previous != nil
+	if p.Pending != nil && p.PendingAuthority != nil {
+		view.Pending = &pendingView{Digest: p.Pending.Digest, Added: addedGrants(p.AcceptedAuthority, *p.PendingAuthority)}
 	}
 	if p.AcceptedAuthority != nil {
 		accepted := authorityOf(*p.AcceptedAuthority)
@@ -138,6 +170,8 @@ func writePackageError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, storepkg.ErrNotFound):
 		http.Error(w, "extension not installed", http.StatusNotFound)
+	case errors.Is(err, storepkg.ErrNoPendingUpdate), errors.Is(err, storepkg.ErrNoPrevious), errors.Is(err, storepkg.ErrRequired):
+		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, storepkg.ErrInstalled):
 		http.Error(w, "extension already installed", http.StatusConflict)
 	default:
@@ -210,6 +244,36 @@ func (s *Server) handleExtensionAccept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, err := s.Packages.AcceptPackageAuthority(r.Context(), name, installed.Descriptor.Authority)
+	if err != nil {
+		writePackageError(w, err)
+		return
+	}
+	writeJSON(w, extensionView(p, false))
+}
+
+// handleExtensionUpdate moves a package to the catalogue's digest: an update
+// that adds no authority applies, one that does waits as pending.
+func (s *Server) handleExtensionUpdate(w http.ResponseWriter, r *http.Request) {
+	s.packageTransition(w, r, s.Packages.UpdatePackage)
+}
+
+// handleExtensionApproveUpdate applies the pending update and accepts the
+// authority it declares.
+func (s *Server) handleExtensionApproveUpdate(w http.ResponseWriter, r *http.Request) {
+	s.packageTransition(w, r, s.Packages.ApprovePackageUpdate)
+}
+
+// handleExtensionRollback restores the previous digest and its accepted
+// authority.
+func (s *Server) handleExtensionRollback(w http.ResponseWriter, r *http.Request) {
+	s.packageTransition(w, r, s.Packages.RollbackPackage)
+}
+
+func (s *Server) packageTransition(w http.ResponseWriter, r *http.Request, do func(context.Context, string) (storepkg.Installed, error)) {
+	if !s.extensionsReady(w) {
+		return
+	}
+	p, err := do(r.Context(), r.PathValue("name"))
 	if err != nil {
 		writePackageError(w, err)
 		return

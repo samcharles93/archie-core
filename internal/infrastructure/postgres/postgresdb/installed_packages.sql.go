@@ -7,6 +7,8 @@ package postgresdb
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const acceptInstalledPackageAuthority = `-- name: AcceptInstalledPackageAuthority :execrows
@@ -28,6 +30,22 @@ func (q *Queries) AcceptInstalledPackageAuthority(ctx context.Context, arg Accep
 	return result.RowsAffected(), nil
 }
 
+const countInstalledDependents = `-- name: CountInstalledDependents :one
+SELECT count(*) FROM installed_package_requirements WHERE org_id = $1 AND required_name = $2
+`
+
+type CountInstalledDependentsParams struct {
+	OrgID        string
+	RequiredName string
+}
+
+func (q *Queries) CountInstalledDependents(ctx context.Context, arg CountInstalledDependentsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countInstalledDependents, arg.OrgID, arg.RequiredName)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteInstalledPackage = `-- name: DeleteInstalledPackage :execrows
 DELETE FROM installed_packages WHERE org_id = $1 AND name = $2
 `
@@ -45,8 +63,23 @@ func (q *Queries) DeleteInstalledPackage(ctx context.Context, arg DeleteInstalle
 	return result.RowsAffected(), nil
 }
 
+const deleteInstalledRequirements = `-- name: DeleteInstalledRequirements :exec
+DELETE FROM installed_package_requirements WHERE org_id = $1 AND package_name = $2
+`
+
+type DeleteInstalledRequirementsParams struct {
+	OrgID       string
+	PackageName string
+}
+
+func (q *Queries) DeleteInstalledRequirements(ctx context.Context, arg DeleteInstalledRequirementsParams) error {
+	_, err := q.db.Exec(ctx, deleteInstalledRequirements, arg.OrgID, arg.PackageName)
+	return err
+}
+
 const getInstalledPackage = `-- name: GetInstalledPackage :one
-SELECT org_id, name, reference, digest, descriptor, layer, update_policy, accepted_authority
+SELECT org_id, name, reference, digest, descriptor, layer, update_policy, accepted_authority,
+    pending_reference, pending_digest, pending_authority, previous_reference, previous_digest, previous_accepted_authority
 FROM installed_packages WHERE org_id = $1 AND name = $2
 `
 
@@ -56,14 +89,20 @@ type GetInstalledPackageParams struct {
 }
 
 type GetInstalledPackageRow struct {
-	OrgID             string
-	Name              string
-	Reference         string
-	Digest            string
-	Descriptor        []byte
-	Layer             []byte
-	UpdatePolicy      string
-	AcceptedAuthority []byte
+	OrgID                     string
+	Name                      string
+	Reference                 string
+	Digest                    string
+	Descriptor                []byte
+	Layer                     []byte
+	UpdatePolicy              string
+	AcceptedAuthority         []byte
+	PendingReference          pgtype.Text
+	PendingDigest             pgtype.Text
+	PendingAuthority          []byte
+	PreviousReference         pgtype.Text
+	PreviousDigest            pgtype.Text
+	PreviousAcceptedAuthority []byte
 }
 
 func (q *Queries) GetInstalledPackage(ctx context.Context, arg GetInstalledPackageParams) (GetInstalledPackageRow, error) {
@@ -78,6 +117,12 @@ func (q *Queries) GetInstalledPackage(ctx context.Context, arg GetInstalledPacka
 		&i.Layer,
 		&i.UpdatePolicy,
 		&i.AcceptedAuthority,
+		&i.PendingReference,
+		&i.PendingDigest,
+		&i.PendingAuthority,
+		&i.PreviousReference,
+		&i.PreviousDigest,
+		&i.PreviousAcceptedAuthority,
 	)
 	return i, err
 }
@@ -151,19 +196,26 @@ func (q *Queries) InsertInstalledRequirement(ctx context.Context, arg InsertInst
 }
 
 const listInstalledPackages = `-- name: ListInstalledPackages :many
-SELECT org_id, name, reference, digest, descriptor, layer, update_policy, accepted_authority
+SELECT org_id, name, reference, digest, descriptor, layer, update_policy, accepted_authority,
+    pending_reference, pending_digest, pending_authority, previous_reference, previous_digest, previous_accepted_authority
 FROM installed_packages WHERE org_id = $1 ORDER BY name
 `
 
 type ListInstalledPackagesRow struct {
-	OrgID             string
-	Name              string
-	Reference         string
-	Digest            string
-	Descriptor        []byte
-	Layer             []byte
-	UpdatePolicy      string
-	AcceptedAuthority []byte
+	OrgID                     string
+	Name                      string
+	Reference                 string
+	Digest                    string
+	Descriptor                []byte
+	Layer                     []byte
+	UpdatePolicy              string
+	AcceptedAuthority         []byte
+	PendingReference          pgtype.Text
+	PendingDigest             pgtype.Text
+	PendingAuthority          []byte
+	PreviousReference         pgtype.Text
+	PreviousDigest            pgtype.Text
+	PreviousAcceptedAuthority []byte
 }
 
 func (q *Queries) ListInstalledPackages(ctx context.Context, orgID string) ([]ListInstalledPackagesRow, error) {
@@ -184,6 +236,12 @@ func (q *Queries) ListInstalledPackages(ctx context.Context, orgID string) ([]Li
 			&i.Layer,
 			&i.UpdatePolicy,
 			&i.AcceptedAuthority,
+			&i.PendingReference,
+			&i.PendingDigest,
+			&i.PendingAuthority,
+			&i.PreviousReference,
+			&i.PreviousDigest,
+			&i.PreviousAcceptedAuthority,
 		); err != nil {
 			return nil, err
 		}
@@ -202,4 +260,68 @@ SELECT pg_advisory_xact_lock(hashtextextended('installed-packages:' || $1::text,
 func (q *Queries) LockInstalledPackages(ctx context.Context, dollar_1 string) error {
 	_, err := q.db.Exec(ctx, lockInstalledPackages, dollar_1)
 	return err
+}
+
+const replaceInstalledPackage = `-- name: ReplaceInstalledPackage :execrows
+UPDATE installed_packages SET
+    previous_reference = reference, previous_digest = digest,
+    previous_accepted_authority = accepted_authority,
+    reference = $3, digest = $4, descriptor = $5, layer = $6, accepted_authority = $7,
+    pending_reference = NULL, pending_digest = NULL, pending_authority = NULL
+WHERE org_id = $1 AND name = $2
+`
+
+type ReplaceInstalledPackageParams struct {
+	OrgID             string
+	Name              string
+	Reference         string
+	Digest            string
+	Descriptor        []byte
+	Layer             []byte
+	AcceptedAuthority []byte
+}
+
+// The right-hand sides read the row as it was, so the replaced pin becomes
+// the previous one in the same statement.
+func (q *Queries) ReplaceInstalledPackage(ctx context.Context, arg ReplaceInstalledPackageParams) (int64, error) {
+	result, err := q.db.Exec(ctx, replaceInstalledPackage,
+		arg.OrgID,
+		arg.Name,
+		arg.Reference,
+		arg.Digest,
+		arg.Descriptor,
+		arg.Layer,
+		arg.AcceptedAuthority,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setInstalledPackagePending = `-- name: SetInstalledPackagePending :execrows
+UPDATE installed_packages SET pending_reference = $3, pending_digest = $4, pending_authority = $5
+WHERE org_id = $1 AND name = $2
+`
+
+type SetInstalledPackagePendingParams struct {
+	OrgID            string
+	Name             string
+	PendingReference pgtype.Text
+	PendingDigest    pgtype.Text
+	PendingAuthority []byte
+}
+
+func (q *Queries) SetInstalledPackagePending(ctx context.Context, arg SetInstalledPackagePendingParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setInstalledPackagePending,
+		arg.OrgID,
+		arg.Name,
+		arg.PendingReference,
+		arg.PendingDigest,
+		arg.PendingAuthority,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

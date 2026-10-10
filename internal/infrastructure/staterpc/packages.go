@@ -126,10 +126,32 @@ func packageProto(p storepkg.Installed, includeLayer bool) *pb.InstalledPackage 
 	if p.AcceptedAuthority != nil {
 		value.AcceptedAuthority = authorityProto(*p.AcceptedAuthority)
 	}
+	value.Pending = pinProto(p.Pending)
+	value.Previous = pinProto(p.Previous)
+	if p.PendingAuthority != nil {
+		value.PendingAuthority = authorityProto(*p.PendingAuthority)
+	}
+	if p.PreviousAccepted != nil {
+		value.PreviousAcceptedAuthority = authorityProto(*p.PreviousAccepted)
+	}
 	if includeLayer {
 		value.Layer = p.Layer
 	}
 	return value
+}
+
+func pinProto(p *storepkg.Pin) *pb.PackagePin {
+	if p == nil {
+		return nil
+	}
+	return &pb.PackagePin{Reference: p.Reference, Digest: p.Digest}
+}
+
+func pinPtr(p *pb.PackagePin) *storepkg.Pin {
+	if p == nil {
+		return nil
+	}
+	return &storepkg.Pin{Reference: p.GetReference(), Digest: p.GetDigest()}
 }
 
 func authorityProto(a storepkg.Authority) *pb.PackageAuthority {
@@ -166,6 +188,8 @@ func packageValue(value *pb.InstalledPackage) (storepkg.Installed, error) {
 		OrgID: value.GetOrgId(), Name: value.GetName(), Reference: value.GetReference(),
 		Digest: value.GetDigest(), Descriptor: descriptor, Layer: value.GetLayer(),
 		UpdatePolicy: value.GetUpdatePolicy(), AcceptedAuthority: authorityPtr(value.GetAcceptedAuthority()),
+		Pending: pinPtr(value.GetPending()), PendingAuthority: authorityPtr(value.GetPendingAuthority()), Previous: pinPtr(value.GetPrevious()),
+		PreviousAccepted: authorityPtr(value.GetPreviousAcceptedAuthority()),
 	}, nil
 }
 
@@ -223,6 +247,63 @@ func (c *Client) ListCatalogue(ctx context.Context) (storepkg.Catalogue, error) 
 
 func (c *Client) InstallFromCatalogue(ctx context.Context, name string) (storepkg.Installed, error) {
 	response, err := c.client.InstallFromCatalogue(ctx, &pb.InstallFromCatalogueRequest{Name: name})
+	if err != nil {
+		return storepkg.Installed{}, unmapError(err)
+	}
+	return packageValue(response.GetPackage())
+}
+
+func (s *server) UpdatePackage(ctx context.Context, request *pb.UpdatePackageRequest) (*pb.UpdatePackageResponse, error) {
+	if s.deps.Packages == nil {
+		return nil, status.Error(codes.Unavailable, "package store unavailable")
+	}
+	p, err := s.deps.Packages.UpdatePackage(ctx, string(org.OrgFromContext(ctx)), request.GetName())
+	if err != nil {
+		return nil, s.logErr("UpdatePackage", err)
+	}
+	return &pb.UpdatePackageResponse{Package: packageProto(p, true)}, nil
+}
+
+func (s *server) ApprovePackageUpdate(ctx context.Context, request *pb.ApprovePackageUpdateRequest) (*pb.ApprovePackageUpdateResponse, error) {
+	if s.deps.Packages == nil {
+		return nil, status.Error(codes.Unavailable, "package store unavailable")
+	}
+	p, err := s.deps.Packages.ApprovePackageUpdate(ctx, string(org.OrgFromContext(ctx)), request.GetName())
+	if err != nil {
+		return nil, s.logErr("ApprovePackageUpdate", err)
+	}
+	return &pb.ApprovePackageUpdateResponse{Package: packageProto(p, true)}, nil
+}
+
+func (s *server) RollbackPackage(ctx context.Context, request *pb.RollbackPackageRequest) (*pb.RollbackPackageResponse, error) {
+	if s.deps.Packages == nil {
+		return nil, status.Error(codes.Unavailable, "package store unavailable")
+	}
+	p, err := s.deps.Packages.RollbackPackage(ctx, string(org.OrgFromContext(ctx)), request.GetName())
+	if err != nil {
+		return nil, s.logErr("RollbackPackage", err)
+	}
+	return &pb.RollbackPackageResponse{Package: packageProto(p, true)}, nil
+}
+
+func (c *Client) UpdatePackage(ctx context.Context, name string) (storepkg.Installed, error) {
+	response, err := c.client.UpdatePackage(ctx, &pb.UpdatePackageRequest{Name: name})
+	if err != nil {
+		return storepkg.Installed{}, unmapError(err)
+	}
+	return packageValue(response.GetPackage())
+}
+
+func (c *Client) ApprovePackageUpdate(ctx context.Context, name string) (storepkg.Installed, error) {
+	response, err := c.client.ApprovePackageUpdate(ctx, &pb.ApprovePackageUpdateRequest{Name: name})
+	if err != nil {
+		return storepkg.Installed{}, unmapError(err)
+	}
+	return packageValue(response.GetPackage())
+}
+
+func (c *Client) RollbackPackage(ctx context.Context, name string) (storepkg.Installed, error) {
+	response, err := c.client.RollbackPackage(ctx, &pb.RollbackPackageRequest{Name: name})
 	if err != nil {
 		return storepkg.Installed{}, unmapError(err)
 	}

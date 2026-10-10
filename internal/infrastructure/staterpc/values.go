@@ -516,6 +516,8 @@ var wireErrors = []struct {
 	{storepkg.ErrInstalled, codes.AlreadyExists, storepkg.ErrInstalled.Error()},
 	{storepkg.ErrRequired, codes.FailedPrecondition, storepkg.ErrRequired.Error()},
 	{storepkg.ErrAuthorityNotDeclared, codes.FailedPrecondition, storepkg.ErrAuthorityNotDeclared.Error()},
+	{storepkg.ErrNoPendingUpdate, codes.FailedPrecondition, storepkg.ErrNoPendingUpdate.Error()},
+	{storepkg.ErrNoPrevious, codes.FailedPrecondition, storepkg.ErrNoPrevious.Error()},
 	{storepkg.ErrContributionCollision, codes.InvalidArgument, storepkg.ErrContributionCollision.Error()},
 	{logging.ErrTaskLogsUnavailable, codes.Unavailable, msgTaskLogsUnavailable},
 }

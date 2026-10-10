@@ -35,6 +35,22 @@ type Installed struct {
 	// pinned digest. A nil Authority means the operator has not accepted;
 	// until then the package's authority at use time is nothing.
 	AcceptedAuthority *Authority
+	// Pending is an update waiting for an admin to approve widened authority.
+	// The live pin and AcceptedAuthority stay as they were until then.
+	Pending *Pin
+	// PendingAuthority is what the pending update declares.
+	PendingAuthority *Authority
+	// Previous is the pin an update or rollback replaced, with the authority
+	// accepted against it, so a rollback restores both.
+	Previous *Pin
+	// PreviousAccepted is the authority accepted against Previous.
+	PreviousAccepted *Authority
+}
+
+// Pin is an immutable package reference at a digest.
+type Pin struct {
+	Reference string
+	Digest    string
 }
 
 // Repository owns installed package records and dependency-safe deletion.
@@ -46,6 +62,12 @@ type Repository interface {
 	// Accept records the operator's accepted authority against the package's
 	// currently pinned digest.
 	Accept(context.Context, string, string, Authority) error
+	// SetPending records an update waiting for approval, leaving the live pin.
+	SetPending(ctx context.Context, orgID, name string, pending Pin, declared Authority) error
+	// Replace swaps the live pin, descriptor, layer and accepted authority for
+	// next's, keeping the replaced pin and its accepted authority as Previous
+	// and clearing Pending.
+	Replace(ctx context.Context, next Installed) error
 }
 
 // Registry reads a package by immutable OCI manifest digest.
@@ -62,6 +84,14 @@ type Manager interface {
 	AcceptPackageAuthority(ctx context.Context, orgID, name string, accepted Authority) (Installed, error)
 	ListCatalogue(ctx context.Context) (Catalogue, error)
 	InstallFromCatalogue(ctx context.Context, orgID, name string) (Installed, error)
+	OrgUpdates
+}
+
+// OrgUpdates is the update lifecycle of an installed package in one org.
+type OrgUpdates interface {
+	UpdatePackage(ctx context.Context, orgID, name string) (Installed, error)
+	ApprovePackageUpdate(ctx context.Context, orgID, name string) (Installed, error)
+	RollbackPackage(ctx context.Context, orgID, name string) (Installed, error)
 }
 
 // Installations is Manager as a remote caller sees it: the State Store acts
@@ -74,6 +104,14 @@ type Installations interface {
 	AcceptPackageAuthority(ctx context.Context, name string, accepted Authority) (Installed, error)
 	ListCatalogue(ctx context.Context) (Catalogue, error)
 	InstallFromCatalogue(ctx context.Context, name string) (Installed, error)
+	Updates
+}
+
+// Updates is OrgUpdates as a remote caller sees it.
+type Updates interface {
+	UpdatePackage(ctx context.Context, name string) (Installed, error)
+	ApprovePackageUpdate(ctx context.Context, name string) (Installed, error)
+	RollbackPackage(ctx context.Context, name string) (Installed, error)
 }
 
 // Service validates the registry content before persisting an installation.

@@ -21,6 +21,9 @@ export interface Extension {
   declared: Authority;
   accepted: Authority | null;
   enabled: boolean;
+  /** An update waiting for approval, with only the grants it adds. */
+  pending: { digest: string; added: Authority } | null;
+  can_rollback: boolean;
 }
 
 /** A package the verified catalogue offers. */
@@ -118,6 +121,9 @@ export const useExtensionsStore = defineStore("extensions", () => {
     installFromCatalogue: (name: string) =>
       mutate(name, () => call(`/api/extensions/catalogue/${encodeURIComponent(name)}/install`, { method: "POST" })),
     accept: (name: string) => mutate(name, () => call(`${path(name)}/accept`, { method: "POST" })),
+    update: (name: string) => mutate(name, () => call(`${path(name)}/update`, { method: "POST" })),
+    approveUpdate: (name: string) => mutate(name, () => call(`${path(name)}/approve-update`, { method: "POST" })),
+    rollback: (name: string) => mutate(name, () => call(`${path(name)}/rollback`, { method: "POST" })),
     setEnabled: (name: string, enabled: boolean) =>
       mutate(name, () => call(`${path(name)}/enabled`, { method: "PUT", body: JSON.stringify({ enabled }) })),
     remove: (name: string) => mutate(name, () => call(path(name), { method: "DELETE" })),

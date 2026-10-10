@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/samcharles93/archie-core/internal/domain/storepkg"
@@ -96,7 +97,7 @@ func (s *InstalledPackages) Get(ctx context.Context, orgID, name string) (storep
 	if err != nil {
 		return storepkg.Installed{}, err
 	}
-	return installedFromRow(row.OrgID, row.Name, row.Reference, row.Digest, row.Descriptor, row.Layer, row.UpdatePolicy, row.AcceptedAuthority)
+	return installedFromRow(row.OrgID, row.Name, row.Reference, row.Digest, row.Descriptor, row.Layer, row.UpdatePolicy, row.AcceptedAuthority, updateColumns{row.PendingReference, row.PendingDigest, row.PreviousReference, row.PreviousDigest, row.PendingAuthority, row.PreviousAcceptedAuthority})
 }
 
 func (s *InstalledPackages) List(ctx context.Context, orgID string) ([]storepkg.Installed, error) {
@@ -106,7 +107,7 @@ func (s *InstalledPackages) List(ctx context.Context, orgID string) ([]storepkg.
 	}
 	packages := make([]storepkg.Installed, 0, len(rows))
 	for _, row := range rows {
-		p, err := installedFromRow(row.OrgID, row.Name, row.Reference, row.Digest, row.Descriptor, row.Layer, row.UpdatePolicy, row.AcceptedAuthority)
+		p, err := installedFromRow(row.OrgID, row.Name, row.Reference, row.Digest, row.Descriptor, row.Layer, row.UpdatePolicy, row.AcceptedAuthority, updateColumns{row.PendingReference, row.PendingDigest, row.PreviousReference, row.PreviousDigest, row.PendingAuthority, row.PreviousAcceptedAuthority})
 		if err != nil {
 			return nil, err
 		}
@@ -161,7 +162,92 @@ func (s *InstalledPackages) Accept(ctx context.Context, orgID, name string, auth
 	return nil
 }
 
-func installedFromRow(orgID, name, reference, digest string, raw, layer []byte, updatePolicy string, accepted []byte) (storepkg.Installed, error) {
+// updateColumns are the nullable pending and previous pin columns of a row.
+type updateColumns struct {
+	pendingReference, pendingDigest, previousReference, previousDigest pgtype.Text
+	pendingAuthority, previousAccepted                                 []byte
+}
+
+func pinOf(reference, digest pgtype.Text) *storepkg.Pin {
+	if !reference.Valid || !digest.Valid {
+		return nil
+	}
+	return &storepkg.Pin{Reference: reference.String, Digest: digest.String}
+}
+
+func (s *InstalledPackages) SetPending(ctx context.Context, orgID, name string, pending storepkg.Pin, declared storepkg.Authority) error {
+	encoded, err := json.Marshal(declared)
+	if err != nil {
+		return err
+	}
+	rows, err := postgresdb.New(s.pool).SetInstalledPackagePending(ctx, postgresdb.SetInstalledPackagePendingParams{
+		OrgID: orgID, Name: name, PendingReference: pgtype.Text{String: pending.Reference, Valid: true}, PendingDigest: pgtype.Text{String: pending.Digest, Valid: true}, PendingAuthority: encoded,
+	})
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return storepkg.ErrNotFound
+	}
+	return nil
+}
+
+// Replace swaps the live pin under the org's package lock. Another package
+// pinning this one's digest, or a requirement the new descriptor cannot
+// meet, refuses the swap.
+func (s *InstalledPackages) Replace(ctx context.Context, p storepkg.Installed) error {
+	if err := p.Descriptor.Validate(); err != nil {
+		return err
+	}
+	descriptor, err := json.Marshal(p.Descriptor)
+	if err != nil {
+		return err
+	}
+	var accepted []byte
+	if p.AcceptedAuthority != nil {
+		if accepted, err = json.Marshal(p.AcceptedAuthority); err != nil {
+			return err
+		}
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := postgresdb.New(tx)
+	if err := q.LockInstalledPackages(ctx, p.OrgID); err != nil {
+		return err
+	}
+	dependents, err := q.CountInstalledDependents(ctx, postgresdb.CountInstalledDependentsParams{OrgID: p.OrgID, RequiredName: p.Name})
+	if err != nil {
+		return err
+	}
+	if dependents > 0 {
+		return storepkg.ErrRequired
+	}
+	if err := checkInstalledRequirements(ctx, q, p); err != nil {
+		return err
+	}
+	rows, err := q.ReplaceInstalledPackage(ctx, postgresdb.ReplaceInstalledPackageParams{
+		OrgID: p.OrgID, Name: p.Name, Reference: p.Reference, Digest: p.Digest,
+		Descriptor: descriptor, Layer: p.Layer, AcceptedAuthority: accepted,
+	})
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return storepkg.ErrNotFound
+	}
+	if err := q.DeleteInstalledRequirements(ctx, postgresdb.DeleteInstalledRequirementsParams{OrgID: p.OrgID, PackageName: p.Name}); err != nil {
+		return err
+	}
+	if err := insertInstalledRequirements(ctx, q, p); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func installedFromRow(orgID, name, reference, digest string, raw, layer []byte, updatePolicy string, accepted []byte, update updateColumns) (storepkg.Installed, error) {
 	var descriptor storepkg.Descriptor
 	if err := json.Unmarshal(raw, &descriptor); err != nil {
 		return storepkg.Installed{}, fmt.Errorf("decode installed package: %w", err)
@@ -170,7 +256,20 @@ func installedFromRow(orgID, name, reference, digest string, raw, layer []byte, 
 	if err != nil {
 		return storepkg.Installed{}, err
 	}
-	return storepkg.Installed{OrgID: orgID, Name: name, Reference: reference, Digest: digest, Descriptor: descriptor, Layer: layer, UpdatePolicy: updatePolicy, AcceptedAuthority: authority}, nil
+	pendingAuthority, err := acceptedFromRow(update.pendingAuthority)
+	if err != nil {
+		return storepkg.Installed{}, err
+	}
+	previousAccepted, err := acceptedFromRow(update.previousAccepted)
+	if err != nil {
+		return storepkg.Installed{}, err
+	}
+	return storepkg.Installed{
+		OrgID: orgID, Name: name, Reference: reference, Digest: digest, Descriptor: descriptor, Layer: layer,
+		UpdatePolicy: updatePolicy, AcceptedAuthority: authority,
+		Pending: pinOf(update.pendingReference, update.pendingDigest), PendingAuthority: pendingAuthority,
+		Previous: pinOf(update.previousReference, update.previousDigest), PreviousAccepted: previousAccepted,
+	}, nil
 }
 
 func acceptedFromRow(raw []byte) (*storepkg.Authority, error) {

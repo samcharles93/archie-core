@@ -28,6 +28,13 @@ service StateStoreService {
   // Administrative until org-scoped principals land.
   rpc AcceptPackageAuthority(AcceptPackageAuthorityRequest) returns (AcceptPackageAuthorityResponse);
   rpc RemoveInstalledPackage(RemoveInstalledPackageRequest) returns (RemoveInstalledPackageResponse);
+  // UpdatePackage moves a package to the digest the verified catalogue lists:
+  // a non-widening update applies, a widening one waits as pending.
+  // ApprovePackageUpdate applies the pending update and accepts its authority;
+  // RollbackPackage restores the previous digest and its accepted authority.
+  rpc UpdatePackage(UpdatePackageRequest) returns (UpdatePackageResponse);
+  rpc ApprovePackageUpdate(ApprovePackageUpdateRequest) returns (ApprovePackageUpdateResponse);
+  rpc RollbackPackage(RollbackPackageRequest) returns (RollbackPackageResponse);
   // Administrative task credential lifecycle. Worker credentials cannot call these.
   rpc RegisterTaskGrant(RegisterTaskGrantRequest) returns (RegisterTaskGrantResponse);
   rpc RevokeTaskGrant(RevokeTaskGrantRequest) returns (RevokeTaskGrantResponse);
@@ -1320,6 +1327,19 @@ message InstalledPackage {
   // The operator's accepted authority, recorded against the pinned digest.
   // Absent until the operator accepts (docs/prds/store.md, "Authority").
   PackageAuthority accepted_authority = 8;
+  // An update waiting for approval of widened authority; the live pin above
+  // is unchanged until then.
+  PackagePin pending = 9;
+  // The pin the last update or rollback replaced, with the authority accepted
+  // against it.
+  PackagePin previous = 10;
+  PackageAuthority previous_accepted_authority = 11;
+  // What the pending update declares.
+  PackageAuthority pending_authority = 12;
+}
+message PackagePin {
+  string reference = 1;
+  string digest = 2;
 }
 // PackageAuthority mirrors storepkg.Authority: the grants a package needs to
 // operate. An acceptance record is an upper bound, checked field by field.
@@ -1377,6 +1397,12 @@ message RemoveInstalledPackageRequest {
   string name = 2;
 }
 message RemoveInstalledPackageResponse {}
+message UpdatePackageRequest { string name = 1; }
+message UpdatePackageResponse { InstalledPackage package = 1; }
+message ApprovePackageUpdateRequest { string name = 1; }
+message ApprovePackageUpdateResponse { InstalledPackage package = 1; }
+message RollbackPackageRequest { string name = 1; }
+message RollbackPackageResponse { InstalledPackage package = 1; }
 
 // Task mirrors internal/domain/workflow.Task.
 

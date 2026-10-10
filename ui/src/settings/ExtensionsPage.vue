@@ -83,6 +83,17 @@ const tones = {
             <StatusPill :tone="tones[stage(extension)].tone" :dot="tones[stage(extension)].dot">
               {{ tones[stage(extension)].label }}
             </StatusPill>
+            <div v-if="extension.pending" class="w-full rounded-md border border-border px-3 py-2">
+              <p class="text-xs font-medium">Update waiting for approval, it adds:</p>
+              <ul class="font-mono text-xs">
+                <li v-for="line in grants(extension.pending.added).filter((l) => !l.startsWith('network:'))" :key="line">{{ line }}</li>
+              </ul>
+              <Button size="sm" class="mt-2" :disabled="!!store.busy" @click="store.approveUpdate(extension.name)">Approve</Button>
+            </div>
+            <Button variant="ghost" size="sm" :disabled="!!store.busy" @click="store.update(extension.name)">Update</Button>
+            <Button v-if="extension.can_rollback" variant="ghost" size="sm" :disabled="!!store.busy" @click="store.rollback(extension.name)"
+              >Roll back</Button
+            >
             <Button
               v-if="stage(extension) === 'accept'"
               variant="ghost"

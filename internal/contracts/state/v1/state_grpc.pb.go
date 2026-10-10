@@ -27,6 +27,9 @@ const (
 	StateStoreService_ListInstalledPackages_FullMethodName      = "/state.v1.StateStoreService/ListInstalledPackages"
 	StateStoreService_AcceptPackageAuthority_FullMethodName     = "/state.v1.StateStoreService/AcceptPackageAuthority"
 	StateStoreService_RemoveInstalledPackage_FullMethodName     = "/state.v1.StateStoreService/RemoveInstalledPackage"
+	StateStoreService_UpdatePackage_FullMethodName              = "/state.v1.StateStoreService/UpdatePackage"
+	StateStoreService_ApprovePackageUpdate_FullMethodName       = "/state.v1.StateStoreService/ApprovePackageUpdate"
+	StateStoreService_RollbackPackage_FullMethodName            = "/state.v1.StateStoreService/RollbackPackage"
 	StateStoreService_RegisterTaskGrant_FullMethodName          = "/state.v1.StateStoreService/RegisterTaskGrant"
 	StateStoreService_RevokeTaskGrant_FullMethodName            = "/state.v1.StateStoreService/RevokeTaskGrant"
 	StateStoreService_ResolveTaskGrant_FullMethodName           = "/state.v1.StateStoreService/ResolveTaskGrant"
@@ -174,6 +177,13 @@ type StateStoreServiceClient interface {
 	// Administrative until org-scoped principals land.
 	AcceptPackageAuthority(ctx context.Context, in *AcceptPackageAuthorityRequest, opts ...grpc.CallOption) (*AcceptPackageAuthorityResponse, error)
 	RemoveInstalledPackage(ctx context.Context, in *RemoveInstalledPackageRequest, opts ...grpc.CallOption) (*RemoveInstalledPackageResponse, error)
+	// UpdatePackage moves a package to the digest the verified catalogue lists:
+	// a non-widening update applies, a widening one waits as pending.
+	// ApprovePackageUpdate applies the pending update and accepts its authority;
+	// RollbackPackage restores the previous digest and its accepted authority.
+	UpdatePackage(ctx context.Context, in *UpdatePackageRequest, opts ...grpc.CallOption) (*UpdatePackageResponse, error)
+	ApprovePackageUpdate(ctx context.Context, in *ApprovePackageUpdateRequest, opts ...grpc.CallOption) (*ApprovePackageUpdateResponse, error)
+	RollbackPackage(ctx context.Context, in *RollbackPackageRequest, opts ...grpc.CallOption) (*RollbackPackageResponse, error)
 	// Administrative task credential lifecycle. Worker credentials cannot call these.
 	RegisterTaskGrant(ctx context.Context, in *RegisterTaskGrantRequest, opts ...grpc.CallOption) (*RegisterTaskGrantResponse, error)
 	RevokeTaskGrant(ctx context.Context, in *RevokeTaskGrantRequest, opts ...grpc.CallOption) (*RevokeTaskGrantResponse, error)
@@ -475,6 +485,36 @@ func (c *stateStoreServiceClient) RemoveInstalledPackage(ctx context.Context, in
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RemoveInstalledPackageResponse)
 	err := c.cc.Invoke(ctx, StateStoreService_RemoveInstalledPackage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) UpdatePackage(ctx context.Context, in *UpdatePackageRequest, opts ...grpc.CallOption) (*UpdatePackageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdatePackageResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_UpdatePackage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ApprovePackageUpdate(ctx context.Context, in *ApprovePackageUpdateRequest, opts ...grpc.CallOption) (*ApprovePackageUpdateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ApprovePackageUpdateResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ApprovePackageUpdate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) RollbackPackage(ctx context.Context, in *RollbackPackageRequest, opts ...grpc.CallOption) (*RollbackPackageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RollbackPackageResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_RollbackPackage_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1724,6 +1764,13 @@ type StateStoreServiceServer interface {
 	// Administrative until org-scoped principals land.
 	AcceptPackageAuthority(context.Context, *AcceptPackageAuthorityRequest) (*AcceptPackageAuthorityResponse, error)
 	RemoveInstalledPackage(context.Context, *RemoveInstalledPackageRequest) (*RemoveInstalledPackageResponse, error)
+	// UpdatePackage moves a package to the digest the verified catalogue lists:
+	// a non-widening update applies, a widening one waits as pending.
+	// ApprovePackageUpdate applies the pending update and accepts its authority;
+	// RollbackPackage restores the previous digest and its accepted authority.
+	UpdatePackage(context.Context, *UpdatePackageRequest) (*UpdatePackageResponse, error)
+	ApprovePackageUpdate(context.Context, *ApprovePackageUpdateRequest) (*ApprovePackageUpdateResponse, error)
+	RollbackPackage(context.Context, *RollbackPackageRequest) (*RollbackPackageResponse, error)
 	// Administrative task credential lifecycle. Worker credentials cannot call these.
 	RegisterTaskGrant(context.Context, *RegisterTaskGrantRequest) (*RegisterTaskGrantResponse, error)
 	RevokeTaskGrant(context.Context, *RevokeTaskGrantRequest) (*RevokeTaskGrantResponse, error)
@@ -1974,6 +2021,15 @@ func (UnimplementedStateStoreServiceServer) AcceptPackageAuthority(context.Conte
 }
 func (UnimplementedStateStoreServiceServer) RemoveInstalledPackage(context.Context, *RemoveInstalledPackageRequest) (*RemoveInstalledPackageResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RemoveInstalledPackage not implemented")
+}
+func (UnimplementedStateStoreServiceServer) UpdatePackage(context.Context, *UpdatePackageRequest) (*UpdatePackageResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdatePackage not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ApprovePackageUpdate(context.Context, *ApprovePackageUpdateRequest) (*ApprovePackageUpdateResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ApprovePackageUpdate not implemented")
+}
+func (UnimplementedStateStoreServiceServer) RollbackPackage(context.Context, *RollbackPackageRequest) (*RollbackPackageResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RollbackPackage not implemented")
 }
 func (UnimplementedStateStoreServiceServer) RegisterTaskGrant(context.Context, *RegisterTaskGrantRequest) (*RegisterTaskGrantResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RegisterTaskGrant not implemented")
@@ -2493,6 +2549,60 @@ func _StateStoreService_RemoveInstalledPackage_Handler(srv interface{}, ctx cont
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StateStoreServiceServer).RemoveInstalledPackage(ctx, req.(*RemoveInstalledPackageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_UpdatePackage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdatePackageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).UpdatePackage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_UpdatePackage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).UpdatePackage(ctx, req.(*UpdatePackageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ApprovePackageUpdate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ApprovePackageUpdateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ApprovePackageUpdate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ApprovePackageUpdate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ApprovePackageUpdate(ctx, req.(*ApprovePackageUpdateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_RollbackPackage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RollbackPackageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).RollbackPackage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_RollbackPackage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).RollbackPackage(ctx, req.(*RollbackPackageRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -4656,6 +4766,18 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RemoveInstalledPackage",
 			Handler:    _StateStoreService_RemoveInstalledPackage_Handler,
+		},
+		{
+			MethodName: "UpdatePackage",
+			Handler:    _StateStoreService_UpdatePackage_Handler,
+		},
+		{
+			MethodName: "ApprovePackageUpdate",
+			Handler:    _StateStoreService_ApprovePackageUpdate_Handler,
+		},
+		{
+			MethodName: "RollbackPackage",
+			Handler:    _StateStoreService_RollbackPackage_Handler,
 		},
 		{
 			MethodName: "RegisterTaskGrant",

@@ -195,15 +195,21 @@ type IdentitySubject struct {
 }
 
 type InstalledPackage struct {
-	OrgID             string
-	Name              string
-	Reference         string
-	Digest            string
-	Descriptor        []byte
-	Layer             []byte
-	UpdatePolicy      string
-	InstalledAt       time.Time
-	AcceptedAuthority []byte
+	OrgID                     string
+	Name                      string
+	Reference                 string
+	Digest                    string
+	Descriptor                []byte
+	Layer                     []byte
+	UpdatePolicy              string
+	InstalledAt               time.Time
+	AcceptedAuthority         []byte
+	PendingReference          pgtype.Text
+	PendingDigest             pgtype.Text
+	PendingAuthority          []byte
+	PreviousReference         pgtype.Text
+	PreviousDigest            pgtype.Text
+	PreviousAcceptedAuthority []byte
 }
 
 type InstalledPackageContribution struct {
