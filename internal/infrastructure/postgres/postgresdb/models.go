@@ -354,6 +354,7 @@ type Session struct {
 	BranchName      string
 	CreatedAt       int64
 	LastActiveAt    int64
+	OrgID           string
 }
 
 type Source struct {

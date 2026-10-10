@@ -9,6 +9,22 @@ import (
 	"context"
 )
 
+const claimSession = `-- name: ClaimSession :exec
+INSERT INTO sessions (session_id, org_id) VALUES ($1, $2)
+ON CONFLICT (session_id) DO NOTHING
+`
+
+type ClaimSessionParams struct {
+	SessionID string
+	OrgID     string
+}
+
+// A write to a session no row names yet makes the writing org its owner.
+func (q *Queries) ClaimSession(ctx context.Context, arg ClaimSessionParams) error {
+	_, err := q.db.Exec(ctx, claimSession, arg.SessionID, arg.OrgID)
+	return err
+}
+
 const countMessages = `-- name: CountMessages :one
 SELECT COUNT(*) FROM messages WHERE session_id = $1
 `
@@ -280,13 +296,14 @@ func (q *Queries) ListRecoverableTurns(ctx context.Context) ([]Turn, error) {
 
 const listSessions = `-- name: ListSessions :many
 SELECT session_id, platform, bot_user, channel_id, thread_id,
-	title, parent_session_id, branch_name, created_at, last_active_at
+	title, parent_session_id, branch_name, created_at, last_active_at, org_id
 FROM sessions
+WHERE org_id = $1
 ORDER BY GREATEST(last_active_at, created_at) DESC
 `
 
-func (q *Queries) ListSessions(ctx context.Context) ([]Session, error) {
-	rows, err := q.db.Query(ctx, listSessions)
+func (q *Queries) ListSessions(ctx context.Context, orgID string) ([]Session, error) {
+	rows, err := q.db.Query(ctx, listSessions, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -305,6 +322,7 @@ func (q *Queries) ListSessions(ctx context.Context) ([]Session, error) {
 			&i.BranchName,
 			&i.CreatedAt,
 			&i.LastActiveAt,
+			&i.OrgID,
 		); err != nil {
 			return nil, err
 		}
@@ -523,12 +541,12 @@ func (q *Queries) RetryTurn(ctx context.Context, arg RetryTurnParams) (int64, er
 	return result.RowsAffected(), nil
 }
 
-const saveSession = `-- name: SaveSession :exec
+const saveSession = `-- name: SaveSession :execrows
 
 
 INSERT INTO sessions (session_id, platform, bot_user, channel_id, thread_id,
-	title, parent_session_id, branch_name, created_at, last_active_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	title, parent_session_id, branch_name, created_at, last_active_at, org_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 ON CONFLICT (session_id) DO UPDATE SET
 	platform = EXCLUDED.platform,
 	bot_user = EXCLUDED.bot_user,
@@ -539,6 +557,7 @@ ON CONFLICT (session_id) DO UPDATE SET
 	branch_name = EXCLUDED.branch_name,
 	created_at = EXCLUDED.created_at,
 	last_active_at = EXCLUDED.last_active_at
+WHERE sessions.org_id = EXCLUDED.org_id
 `
 
 type SaveSessionParams struct {
@@ -552,13 +571,16 @@ type SaveSessionParams struct {
 	BranchName      string
 	CreatedAt       int64
 	LastActiveAt    int64
+	OrgID           string
 }
 
 // Gateway conversation queries: sessions, messages, turns, full-text search.
 // These back internal/gateway's PostgreSQL SessionStore.
 // ── Sessions ────────────────────────────────────────────────────────────────
-func (q *Queries) SaveSession(ctx context.Context, arg SaveSessionParams) error {
-	_, err := q.db.Exec(ctx, saveSession,
+// Updates only a session the writing org owns: another org's session of the
+// same id is left untouched and the zero row count refuses the write.
+func (q *Queries) SaveSession(ctx context.Context, arg SaveSessionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, saveSession,
 		arg.SessionID,
 		arg.Platform,
 		arg.BotUser,
@@ -569,8 +591,12 @@ func (q *Queries) SaveSession(ctx context.Context, arg SaveSessionParams) error 
 		arg.BranchName,
 		arg.CreatedAt,
 		arg.LastActiveAt,
+		arg.OrgID,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const saveTurn = `-- name: SaveTurn :execrows
@@ -706,12 +732,17 @@ func (q *Queries) SearchMessagesPage(ctx context.Context, arg SearchMessagesPage
 
 const sessionByID = `-- name: SessionByID :one
 SELECT session_id, platform, bot_user, channel_id, thread_id,
-	title, parent_session_id, branch_name, created_at, last_active_at
-FROM sessions WHERE session_id = $1
+	title, parent_session_id, branch_name, created_at, last_active_at, org_id
+FROM sessions WHERE session_id = $1 AND org_id = $2
 `
 
-func (q *Queries) SessionByID(ctx context.Context, sessionID string) (Session, error) {
-	row := q.db.QueryRow(ctx, sessionByID, sessionID)
+type SessionByIDParams struct {
+	SessionID string
+	OrgID     string
+}
+
+func (q *Queries) SessionByID(ctx context.Context, arg SessionByIDParams) (Session, error) {
+	row := q.db.QueryRow(ctx, sessionByID, arg.SessionID, arg.OrgID)
 	var i Session
 	err := row.Scan(
 		&i.SessionID,
@@ -724,25 +755,38 @@ func (q *Queries) SessionByID(ctx context.Context, sessionID string) (Session, e
 		&i.BranchName,
 		&i.CreatedAt,
 		&i.LastActiveAt,
+		&i.OrgID,
 	)
 	return i, err
 }
 
+const sessionOrg = `-- name: SessionOrg :one
+SELECT org_id FROM sessions WHERE session_id = $1
+`
+
+func (q *Queries) SessionOrg(ctx context.Context, sessionID string) (string, error) {
+	row := q.db.QueryRow(ctx, sessionOrg, sessionID)
+	var org_id string
+	err := row.Scan(&org_id)
+	return org_id, err
+}
+
 const sessionsByChannel = `-- name: SessionsByChannel :many
 SELECT session_id, platform, bot_user, channel_id, thread_id,
-	title, parent_session_id, branch_name, created_at, last_active_at
+	title, parent_session_id, branch_name, created_at, last_active_at, org_id
 FROM sessions
-WHERE platform = $1 AND channel_id = $2
+WHERE platform = $1 AND channel_id = $2 AND org_id = $3
 ORDER BY GREATEST(last_active_at, created_at) DESC
 `
 
 type SessionsByChannelParams struct {
 	Platform  string
 	ChannelID string
+	OrgID     string
 }
 
 func (q *Queries) SessionsByChannel(ctx context.Context, arg SessionsByChannelParams) ([]Session, error) {
-	rows, err := q.db.Query(ctx, sessionsByChannel, arg.Platform, arg.ChannelID)
+	rows, err := q.db.Query(ctx, sessionsByChannel, arg.Platform, arg.ChannelID, arg.OrgID)
 	if err != nil {
 		return nil, err
 	}
@@ -761,6 +805,7 @@ func (q *Queries) SessionsByChannel(ctx context.Context, arg SessionsByChannelPa
 			&i.BranchName,
 			&i.CreatedAt,
 			&i.LastActiveAt,
+			&i.OrgID,
 		); err != nil {
 			return nil, err
 		}

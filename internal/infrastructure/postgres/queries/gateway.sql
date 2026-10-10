@@ -3,10 +3,12 @@
 
 -- ── Sessions ────────────────────────────────────────────────────────────────
 
--- name: SaveSession :exec
+-- name: SaveSession :execrows
+-- Updates only a session the writing org owns: another org's session of the
+-- same id is left untouched and the zero row count refuses the write.
 INSERT INTO sessions (session_id, platform, bot_user, channel_id, thread_id,
-	title, parent_session_id, branch_name, created_at, last_active_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	title, parent_session_id, branch_name, created_at, last_active_at, org_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 ON CONFLICT (session_id) DO UPDATE SET
 	platform = EXCLUDED.platform,
 	bot_user = EXCLUDED.bot_user,
@@ -16,24 +18,34 @@ ON CONFLICT (session_id) DO UPDATE SET
 	parent_session_id = EXCLUDED.parent_session_id,
 	branch_name = EXCLUDED.branch_name,
 	created_at = EXCLUDED.created_at,
-	last_active_at = EXCLUDED.last_active_at;
+	last_active_at = EXCLUDED.last_active_at
+WHERE sessions.org_id = EXCLUDED.org_id;
+
+-- name: ClaimSession :exec
+-- A write to a session no row names yet makes the writing org its owner.
+INSERT INTO sessions (session_id, org_id) VALUES ($1, $2)
+ON CONFLICT (session_id) DO NOTHING;
+
+-- name: SessionOrg :one
+SELECT org_id FROM sessions WHERE session_id = $1;
 
 -- name: SessionByID :one
 SELECT session_id, platform, bot_user, channel_id, thread_id,
-	title, parent_session_id, branch_name, created_at, last_active_at
-FROM sessions WHERE session_id = $1;
+	title, parent_session_id, branch_name, created_at, last_active_at, org_id
+FROM sessions WHERE session_id = $1 AND org_id = $2;
 
 -- name: SessionsByChannel :many
 SELECT session_id, platform, bot_user, channel_id, thread_id,
-	title, parent_session_id, branch_name, created_at, last_active_at
+	title, parent_session_id, branch_name, created_at, last_active_at, org_id
 FROM sessions
-WHERE platform = $1 AND channel_id = $2
+WHERE platform = $1 AND channel_id = $2 AND org_id = $3
 ORDER BY GREATEST(last_active_at, created_at) DESC;
 
 -- name: ListSessions :many
 SELECT session_id, platform, bot_user, channel_id, thread_id,
-	title, parent_session_id, branch_name, created_at, last_active_at
+	title, parent_session_id, branch_name, created_at, last_active_at, org_id
 FROM sessions
+WHERE org_id = $1
 ORDER BY GREATEST(last_active_at, created_at) DESC;
 
 -- name: DeleteSessionMessages :exec

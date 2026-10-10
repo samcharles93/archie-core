@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/postgresdb"
 )
 
@@ -40,7 +41,7 @@ func (s *postgresSessionStore) Close() error {
 
 func (s *postgresSessionStore) Save(ctx context.Context, sc SessionContext) error {
 	q := postgresdb.New(s.pool)
-	err := q.SaveSession(ctx, postgresdb.SaveSessionParams{
+	saved, err := q.SaveSession(ctx, postgresdb.SaveSessionParams{
 		SessionID:       sc.SessionID,
 		Platform:        sc.Source.Platform,
 		BotUser:         sc.Source.BotUser,
@@ -51,16 +52,20 @@ func (s *postgresSessionStore) Save(ctx context.Context, sc SessionContext) erro
 		BranchName:      sc.BranchName,
 		CreatedAt:       sc.CreatedAt.UnixMilli(),
 		LastActiveAt:    sc.LastActiveAt.UnixMilli(),
+		OrgID:           callerOrg(ctx),
 	})
 	if err != nil {
 		return fmt.Errorf("sessionstore: save: %w", err)
+	}
+	if saved == 0 {
+		return ErrSessionNotFound
 	}
 	return nil
 }
 
 func (s *postgresSessionStore) Get(ctx context.Context, sessionID string) (*SessionContext, error) {
 	q := postgresdb.New(s.pool)
-	row, err := q.SessionByID(ctx, sessionID)
+	row, err := q.SessionByID(ctx, postgresdb.SessionByIDParams{SessionID: sessionID, OrgID: callerOrg(ctx)})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -74,7 +79,7 @@ func (s *postgresSessionStore) Get(ctx context.Context, sessionID string) (*Sess
 func (s *postgresSessionStore) GetByChannel(ctx context.Context, platform, channelID string) ([]SessionContext, error) {
 	q := postgresdb.New(s.pool)
 	rows, err := q.SessionsByChannel(ctx, postgresdb.SessionsByChannelParams{
-		Platform: platform, ChannelID: channelID,
+		Platform: platform, ChannelID: channelID, OrgID: callerOrg(ctx),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("sessionstore: get by channel: %w", err)
@@ -83,6 +88,9 @@ func (s *postgresSessionStore) GetByChannel(ctx context.Context, platform, chann
 }
 
 func (s *postgresSessionStore) Delete(ctx context.Context, sessionID string) error {
+	if err := s.mayWrite(ctx, sessionID); err != nil {
+		return err
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("sessionstore: delete: begin: %w", err)
@@ -106,6 +114,9 @@ func (s *postgresSessionStore) Delete(ctx context.Context, sessionID string) err
 }
 
 func (s *postgresSessionStore) Touch(ctx context.Context, sessionID string) error {
+	if err := s.mayWrite(ctx, sessionID); err != nil {
+		return err
+	}
 	q := postgresdb.New(s.pool)
 	err := q.TouchSession(ctx, postgresdb.TouchSessionParams{
 		SessionID: sessionID, LastActiveAt: time.Now().UTC().UnixMilli(),
@@ -118,7 +129,7 @@ func (s *postgresSessionStore) Touch(ctx context.Context, sessionID string) erro
 
 func (s *postgresSessionStore) List(ctx context.Context) ([]SessionContext, error) {
 	q := postgresdb.New(s.pool)
-	rows, err := q.ListSessions(ctx)
+	rows, err := q.ListSessions(ctx, callerOrg(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("sessionstore: list: %w", err)
 	}
@@ -148,6 +159,9 @@ func sessionsFromRows(rows []postgresdb.Session) []SessionContext {
 // ── Messages ────────────────────────────────────────────────────────────────
 
 func (s *postgresSessionStore) SaveMessage(ctx context.Context, sessionID string, msg messaging.Message) error {
+	if err := s.mayWrite(ctx, sessionID); err != nil {
+		return err
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("sessionstore: save message: begin: %w", err)
@@ -168,6 +182,9 @@ func (s *postgresSessionStore) SaveMessage(ctx context.Context, sessionID string
 }
 
 func (s *postgresSessionStore) SaveMessages(ctx context.Context, sessionID string, msgs []messaging.Message) error {
+	if err := s.mayWrite(ctx, sessionID); err != nil {
+		return err
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("sessionstore: save messages: begin: %w", err)
@@ -270,6 +287,9 @@ func (s *postgresSessionStore) ReplaceMessages(
 	msgs []messaging.Message,
 	superseded []string,
 ) error {
+	if err := s.mayWrite(ctx, sessionID); err != nil {
+		return err
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("sessionstore: replace messages: begin: %w", err)
@@ -309,6 +329,9 @@ func (s *postgresSessionStore) ReplaceMessages(
 }
 
 func (s *postgresSessionStore) FindPriorReply(ctx context.Context, sessionID, sourceID, identity string) (string, error) {
+	if err := s.mayRead(ctx, sessionID); err != nil {
+		return "", err
+	}
 	if sourceID == "" {
 		return "", nil
 	}
@@ -341,6 +364,9 @@ func (s *postgresSessionStore) FindPriorReply(ctx context.Context, sessionID, so
 }
 
 func (s *postgresSessionStore) RecentMessages(ctx context.Context, sessionID string, n int) ([]messaging.Message, error) {
+	if err := s.mayRead(ctx, sessionID); err != nil {
+		return nil, err
+	}
 	if n <= 0 {
 		return nil, nil
 	}
@@ -358,6 +384,9 @@ func (s *postgresSessionStore) RecentMessages(ctx context.Context, sessionID str
 }
 
 func (s *postgresSessionStore) DeleteRecentMessages(ctx context.Context, sessionID string, n int) (int, error) {
+	if err := s.mayWrite(ctx, sessionID); err != nil {
+		return 0, err
+	}
 	if n <= 0 {
 		return 0, nil
 	}
@@ -375,6 +404,9 @@ func (s *postgresSessionStore) DeleteRecentMessages(ctx context.Context, session
 }
 
 func (s *postgresSessionStore) MessageCount(ctx context.Context, sessionID string) (int, error) {
+	if err := s.mayRead(ctx, sessionID); err != nil {
+		return 0, err
+	}
 	q := postgresdb.New(s.pool)
 	n, err := q.CountMessages(ctx, sessionID)
 	if err != nil {
@@ -456,6 +488,9 @@ func rowMessage(base messaging.Message, mediaRaw string) messaging.Message {
 // SearchMessages full-text searches a session's message text and sender with
 // plainto_tsquery. Truncated is always false.
 func (s *postgresSessionStore) SearchMessages(ctx context.Context, sessionID string, q MessageQuery) (MessagePage, error) {
+	if err := s.mayRead(ctx, sessionID); err != nil {
+		return MessagePage{}, err
+	}
 	query := strings.TrimSpace(q.Query)
 	if query == "" {
 		return MessagePage{}, nil
@@ -521,6 +556,9 @@ func (s *postgresSessionStore) SearchMessages(ctx context.Context, sessionID str
 func (s *postgresSessionStore) ClaimTurn(ctx context.Context, initial TurnRecord) (TurnRecord, TurnClaim, error) {
 	initial, initialToolCalls, err := prepareInitialTurn(initial, time.Now().UTC())
 	if err != nil {
+		return TurnRecord{}, "", err
+	}
+	if err := s.mayWrite(ctx, initial.SessionID); err != nil {
 		return TurnRecord{}, "", err
 	}
 
@@ -666,10 +704,18 @@ func (s *postgresSessionStore) GetTurn(ctx context.Context, turnID string) (Turn
 	if err != nil {
 		return TurnRecord{}, false, err
 	}
+	if err := s.mayRead(ctx, record.SessionID); errors.Is(err, ErrSessionNotFound) {
+		return TurnRecord{}, false, nil
+	} else if err != nil {
+		return TurnRecord{}, false, err
+	}
 	return record, true, nil
 }
 
 func (s *postgresSessionStore) RecentTurns(ctx context.Context, sessionID string, n int) ([]TurnRecord, error) {
+	if err := s.mayRead(ctx, sessionID); err != nil {
+		return nil, err
+	}
 	if n <= 0 {
 		return []TurnRecord{}, nil
 	}
@@ -698,6 +744,9 @@ func (s *postgresSessionStore) RecentTurns(ctx context.Context, sessionID string
 func (s *postgresSessionStore) SaveTurn(ctx context.Context, turn TurnRecord) error {
 	if turn.TurnID == "" {
 		return fmt.Errorf("sessionstore: turn ID is required")
+	}
+	if err := s.mayWrite(ctx, turn.SessionID); err != nil {
+		return err
 	}
 	q := postgresdb.New(s.pool)
 	current, err := q.TurnAttemptOwner(ctx, turn.TurnID)
@@ -780,4 +829,35 @@ func turnFromRow(row postgresdb.Turn) (TurnRecord, error) {
 		CreatedAt:          time.UnixMilli(row.CreatedAt).UTC(),
 		UpdatedAt:          time.UnixMilli(row.UpdatedAt).UTC(),
 	}, nil
+}
+
+// ErrSessionNotFound is a session the caller's org does not own. Another
+// org's session is indistinguishable from one that does not exist.
+var ErrSessionNotFound = errors.New("sessionstore: session not found")
+
+func callerOrg(ctx context.Context) string { return string(org.OrgFromContext(ctx)) }
+
+// mayRead allows a read of sessionID when the caller's org owns it. Messages
+// with no session row predate orgs and belong to the system org.
+func (s *postgresSessionStore) mayRead(ctx context.Context, sessionID string) error {
+	owner, err := postgresdb.New(s.pool).SessionOrg(ctx, sessionID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		owner = string(org.DefaultOrgID)
+	} else if err != nil {
+		return fmt.Errorf("sessionstore: session org: %w", err)
+	}
+	if owner != callerOrg(ctx) {
+		return ErrSessionNotFound
+	}
+	return nil
+}
+
+// mayWrite allows a write to sessionID when the caller's org owns it, making
+// the caller's org the owner of a session nobody has written yet.
+func (s *postgresSessionStore) mayWrite(ctx context.Context, sessionID string) error {
+	q := postgresdb.New(s.pool)
+	if err := q.ClaimSession(ctx, postgresdb.ClaimSessionParams{SessionID: sessionID, OrgID: callerOrg(ctx)}); err != nil {
+		return fmt.Errorf("sessionstore: claim session: %w", err)
+	}
+	return s.mayRead(ctx, sessionID)
 }
