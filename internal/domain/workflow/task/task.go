@@ -209,3 +209,12 @@ type Definition struct {
 func (t Task) HasRepository() bool {
 	return t.Owner != "" || t.Repo != ""
 }
+
+// OrgOrDefault is the task's org, or the default org for a task written
+// before orgs existed.
+func (t Task) OrgOrDefault() string {
+	if t.Org == "" {
+		return string(org.DefaultOrgID)
+	}
+	return string(t.Org)
+}

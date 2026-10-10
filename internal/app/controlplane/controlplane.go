@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -259,14 +260,8 @@ func mapError(err error) error {
 // checkModelAliases refuses workflow definitions whose agent steps name a
 // model alias the instance does not define.
 func (s *Server) checkModelAliases(ctx context.Context, value []byte) error {
-	aliases := map[string]string{}
-	resource, err := s.store.Resource(ctx, storecontract.DefaultOrgID, ModelAliasesKind)
-	switch {
-	case err == nil:
-		if err := json.Unmarshal(resource.Value, &aliases); err != nil {
-			return fmt.Errorf("read model aliases: %w", err)
-		}
-	case !errors.Is(err, storecontract.ErrResourceNotFound):
+	aliases, err := s.modelAliases(ctx, storecontract.DefaultOrgID)
+	if err != nil {
 		return err
 	}
 	var collection workflow.WorkflowDefinitionCollection
@@ -277,4 +272,34 @@ func (s *Server) checkModelAliases(ctx context.Context, value []byte) error {
 		return fmt.Errorf("%w: %w", ErrValidation, err)
 	}
 	return nil
+}
+
+// ModelAliasesFor is the alias table orgID resolves against: the instance
+// aliases with orgID's own aliases over them.
+func (s *Server) ModelAliasesFor(ctx context.Context, orgID string) (map[string]string, error) {
+	aliases, err := s.modelAliases(ctx, storecontract.DefaultOrgID)
+	if err != nil || orgID == "" || orgID == storecontract.DefaultOrgID {
+		return aliases, err
+	}
+	own, err := s.modelAliases(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	maps.Copy(aliases, own)
+	return aliases, nil
+}
+
+func (s *Server) modelAliases(ctx context.Context, orgID string) (map[string]string, error) {
+	aliases := map[string]string{}
+	resource, err := s.store.Resource(ctx, orgID, ModelAliasesKind)
+	if errors.Is(err, storecontract.ErrResourceNotFound) {
+		return aliases, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(resource.Value, &aliases); err != nil {
+		return nil, fmt.Errorf("read %s model aliases: %w", orgID, err)
+	}
+	return aliases, nil
 }

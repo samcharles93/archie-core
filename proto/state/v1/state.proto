@@ -64,6 +64,10 @@ service StateStoreService {
   // RecordUsage appends one model call's usage record. A run credential may
   // record usage only for its own task.
   rpc RecordUsage(RecordUsageRequest) returns (RecordUsageResponse);
+  // TaskModelAliases answers the model aliases a task resolves against: the
+  // instance aliases with the task's org's own aliases over them. The org is
+  // the task's, never the caller's.
+  rpc TaskModelAliases(TaskModelAliasesRequest) returns (TaskModelAliasesResponse);
   rpc FinishStep(FinishStepRequest) returns (FinishStepResponse);
   // Cancellation. Deliberately administrative (deny-by-default for a
   // task-scoped grant): a cancel is a dashboard, API and dispatch action
@@ -1516,3 +1520,8 @@ message UsageRecord {
 }
 message RecordUsageRequest { UsageRecord record = 1; }
 message RecordUsageResponse {}
+message TaskModelAliasesRequest { int64 task_id = 1; }
+message TaskModelAliasesResponse {
+  string org_id = 1;
+  map<string, string> aliases = 2;
+}

@@ -144,6 +144,7 @@ func Run(ctx context.Context, options Options) error { //nolint:cyclop // the co
 
 	deps := b.stateStoreDeps(grants)
 	deps.ControlPlane = control
+	deps.ModelAliases = control.ModelAliasesFor
 	return serveStateStore(ctx, listener, deps, opts)
 }
 

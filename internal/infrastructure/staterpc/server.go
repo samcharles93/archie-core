@@ -108,6 +108,9 @@ type Deps struct {
 	// Usage appends model usage records. Optional: nil answers RecordUsage
 	// with codes.Unavailable.
 	Usage usage.Recorder
+	// ModelAliases answers an org's effective model aliases. Optional: nil
+	// answers TaskModelAliases with codes.Unavailable.
+	ModelAliases func(ctx context.Context, orgID string) (map[string]string, error)
 	// Canceller is the one cancel path:
 	// an operator action's guarded write over the execution and its steps.
 	// Optional: nil answers the RPC with codes.Unavailable.
@@ -265,6 +268,29 @@ func (s *server) RecordUsage(ctx context.Context, r *pb.RecordUsageRequest) (*pb
 		return nil, s.logErr("RecordUsage", err)
 	}
 	return &pb.RecordUsageResponse{}, nil
+}
+
+// TaskModelAliases answers the aliases the task's org resolves against.
+func (s *server) TaskModelAliases(ctx context.Context, r *pb.TaskModelAliasesRequest) (*pb.TaskModelAliasesResponse, error) {
+	if s.deps.ModelAliases == nil {
+		return nil, status.Error(codes.Unavailable, "model aliases unavailable")
+	}
+	t, err := s.deps.Tasks.TaskByID(ctx, r.TaskId)
+	if err != nil {
+		return nil, s.logErr("TaskModelAliases", err)
+	}
+	if t == nil {
+		return nil, status.Error(codes.NotFound, "task not found")
+	}
+	orgID := string(t.Org)
+	if orgID == "" {
+		orgID = storecontract.DefaultOrgID
+	}
+	aliases, err := s.deps.ModelAliases(ctx, orgID)
+	if err != nil {
+		return nil, s.logErr("TaskModelAliases", err)
+	}
+	return &pb.TaskModelAliasesResponse{OrgId: orgID, Aliases: aliases}, nil
 }
 
 // CancelExecution is the one cancel path:

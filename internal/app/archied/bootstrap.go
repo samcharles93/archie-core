@@ -96,6 +96,7 @@ type boot struct {
 	// [services.state].target. It is set by openStateStoreAdapter, which
 	// requires [services.state].target to be set.
 	stateStore storecontract.TaskStore
+	taskModels daemon.TaskModels
 	// accessChain is the daemon's policy engine, built once from the stored
 	// policies (openAccessChain); accessProblems is what the readiness
 	// surface reports. Both are nil when no policy store is wired.
@@ -269,6 +270,7 @@ func (b *boot) openStateStoreAdapter(ctx context.Context) error {
 		return err
 	}
 	b.stateStore = client
+	b.taskModels = client
 	b.controlPlaneRPC = client.ControlPlane()
 	b.controlPlane = controlplane.NewRPCClient(b.controlPlaneRPC)
 	b.applyStatus = applystatus.New(b.processName, client, b.log)
@@ -578,6 +580,7 @@ func (b *boot) buildDaemon() {
 		ContainerPool:       b.containerPool,
 		KitLauncher:         b.kitLauncher,
 		ModelEgress:         b.modelEgress,
+		TaskModels:          b.taskModels,
 		Identities:          b.identityRunners,
 		RootIdentityID:      identity.StableID(servicekit.IdentityNames(b.cfg)[0]),
 		TaskLogs:            b.taskLogs,

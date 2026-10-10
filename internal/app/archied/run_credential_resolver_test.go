@@ -41,7 +41,7 @@ func TestEgressResolvesOnlyGrantedCredentials(t *testing.T) {
 		}},
 	}
 	r := runCredentialResolver{
-		runs:    runsByToken{"root-run": {ID: 1}, "acme-run": {ID: 2, Identity: "acme-bot"}},
+		runs:    runsByToken{"root-run": {ID: 1}, "acme-run": {ID: 2, Identity: "acme-bot", Org: "acme"}, "acme-row-run": {ID: 3, Org: "acme"}},
 		config:  config.NewHolder(cfg),
 		secrets: secretValues{"GH": "gh-secret", "ROOT_AI": "root-ai", "ACME_AI": "acme-ai", "ROOT_OPENAI": "root-openai", "ACME_OPENAI": "acme-openai", "ROOT_DEEPSEEK": "root-deepseek"},
 	}
@@ -56,6 +56,7 @@ func TestEgressResolvesOnlyGrantedCredentials(t *testing.T) {
 		{"a model provider key needs no grant", "root-run", "openai", "root-openai"},
 		{"a model provider key is the run's own org's", "acme-run", "openai", "acme-openai"},
 		{"another org's model provider key is unbound", "acme-run", "deepseek", ""},
+		{"the task's own org decides, not the identity mapping", "acme-row-run", "openai", "acme-openai"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -86,7 +87,7 @@ func TestEgressResolvesASessionGrant(t *testing.T) {
 	sessions.Grant("acme-session", "acme", []string{"github", "linear"})
 	sessions.Grant("other-session", "other", []string{"github"})
 	r := runCredentialResolver{
-		runs:     runsByToken{"acme-run": {ID: 1, Identity: "acme-bot"}},
+		runs:     runsByToken{"acme-run": {ID: 1, Identity: "acme-bot", Org: "acme"}},
 		sessions: sessions,
 		config:   config.NewHolder(cfg),
 		secrets:  secretValues{"ACME_GH": "acme-gh"},

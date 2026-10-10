@@ -126,6 +126,16 @@ func (c *Client) Transition(ctx context.Context, taskID int64, from, to, detail 
 	return unmapError(err)
 }
 
+// TaskModelAliases returns the task's org and the model aliases it resolves
+// against.
+func (c *Client) TaskModelAliases(ctx context.Context, taskID int64) (string, map[string]string, error) {
+	r, err := c.client.TaskModelAliases(ctx, &pb.TaskModelAliasesRequest{TaskId: taskID})
+	if err != nil {
+		return "", nil, unmapError(err)
+	}
+	return r.OrgId, r.Aliases, nil
+}
+
 // RecordUsage appends one model call's usage record.
 func (c *Client) RecordUsage(ctx context.Context, r usage.Record) error {
 	_, err := c.client.RecordUsage(ctx, &pb.RecordUsageRequest{Record: usageProto(r)})

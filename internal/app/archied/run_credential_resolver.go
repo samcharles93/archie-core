@@ -42,7 +42,8 @@ func (r runCredentialResolver) Resolve(ctx context.Context, credential, service 
 		return "", egress.ErrUnbound
 	}
 	cfg := r.config.Get()
-	org, granted := cfg.CredentialAccess(task.Identity)
+	_, granted := cfg.CredentialAccess(task.Identity)
+	org := task.OrgOrDefault()
 	// A configured model provider's key is granted to every run of the org:
 	// any agent stage needs model access.
 	if _, ok := cfg.Providers[service]; ok {

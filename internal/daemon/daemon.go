@@ -155,6 +155,9 @@ type Daemon struct {
 	// ModelEgress gives native task containers model access without provider
 	// keys. Nil parks a task whose providers need a key.
 	ModelEgress ModelEgress
+	// TaskModels answers the model aliases a task's org resolves against.
+	// Nil runs every task on the instance aliases.
+	TaskModels TaskModels
 	// TaskRunReadyTimeout bounds how long runViaAgent retries a taskrun request
 	// while the new container has not subscribed yet. Zero uses
 	// defaultTaskRunReadyTimeout.
@@ -1941,6 +1944,14 @@ func (d *Daemon) recordPark(ctx context.Context, taskID int64, reason string) {
 // task's branch.
 func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo config.Repo, profile config.AgentProfile, harness *agentrun.HarnessSpec, credential string) {
 	cfg := d.configFor(task)
+	if d.TaskModels != nil {
+		_, aliases, err := d.TaskModels.TaskModelAliases(ctx, task.ID)
+		if err != nil {
+			d.parkRunningTask(ctx, task.ID, "resolve the task's model aliases: "+err.Error(), taskstate.ParkTransient)
+			return
+		}
+		cfg.Models = aliases
+	}
 	taskCfg := cfg.ForTask()
 	d.captureAttemptConfig(ctx, task, taskCfg)
 	req := taskrun.Request{

@@ -122,6 +122,11 @@ type ModelEgress interface {
 	Close(token string)
 }
 
+// TaskModels answers a task's org and the model aliases it resolves against.
+type TaskModels interface {
+	TaskModelAliases(ctx context.Context, taskID int64) (org string, aliases map[string]string, err error)
+}
+
 // ModelSession is what a native container needs for its model proxy session.
 type ModelSession struct {
 	Env    []string
@@ -143,8 +148,7 @@ func (d *Daemon) openModelEgress(task *workflow.Task, credential string) (ModelS
 	if credential == "" {
 		return ModelSession{}, nil, fmt.Errorf("model egress needs a run credential, and no State Store issues one")
 	}
-	org, _ := cfg.CredentialAccess(task.Identity)
-	session, err := d.ModelEgress.Open(credential, org, cfg.Providers)
+	session, err := d.ModelEgress.Open(credential, task.OrgOrDefault(), cfg.Providers)
 	if err != nil {
 		return ModelSession{}, nil, err
 	}
