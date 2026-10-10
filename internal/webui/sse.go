@@ -36,13 +36,15 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stream.logsSince = cursors.Logs
+	stream.instance = instanceViewer(r)
 
 	// Register before reading the backlog. An event published between the
 	// backlog read and subscription would otherwise be lost permanently.
 	conn, snapshot, stale, unregister := s.registerSSEConn()
 	defer unregister()
 	var logs <-chan logging.Entry
-	if r.URL.Query().Get("topics") == "logs" && s.LogFeed != nil {
+	wantLogs := stream.instance && r.URL.Query().Get("topics") == "logs"
+	if wantLogs && s.LogFeed != nil {
 		logs = s.LogFeed.Subscribe(r.Context())
 	}
 	// Headers make an idle stream live before any resource changes.
@@ -57,7 +59,7 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if r.URL.Query().Get("topics") == "logs" && !stream.sendLogSnapshot(s.LogFeed) {
+	if wantLogs && !stream.sendLogSnapshot(s.LogFeed) {
 		return
 	}
 	stream.drain(r.Context(), conn, stale, logs)
@@ -106,6 +108,9 @@ type sseStream struct {
 	fl        http.Flusher
 	since     string
 	logsSince int64
+	// instance is whether the viewer may see the instance-wide topics: the
+	// system org's resources, identities, apply status and service logs.
+	instance bool
 }
 
 // newSSEStream builds a stream over w, reporting false if w cannot be
@@ -149,7 +154,14 @@ func (s *sseStream) sendLog(entry logging.Entry) bool {
 	return true
 }
 
-func (s *sseStream) sendLive(update liveUpdate) bool { return s.writeLive(update, "") }
+// sendLive sends a state topic. Every state topic the hub publishes is
+// instance-wide, so a viewer from another org receives none of them.
+func (s *sseStream) sendLive(update liveUpdate) bool {
+	if !s.instance && update.topic != "logs-status" {
+		return true
+	}
+	return s.writeLive(update, "")
+}
 
 func (s *sseStream) writeLive(update liveUpdate, id string) bool {
 	body, err := marshalLiveFrame(update)

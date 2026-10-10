@@ -240,10 +240,10 @@ func (s *Server) registerCoreRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/workflows/{id}/enabled", s.handleWorkflowEnabled)
 	mux.HandleFunc("POST /api/work-requests", s.handleWorkRequest)
 	mux.HandleFunc("GET /api/skills", s.handleSkills)
-	mux.HandleFunc("GET /api/curators", s.handleCurators)
+	mux.HandleFunc("GET /api/curators", instanceOnly(s.handleCurators))
 	mux.HandleFunc("GET /api/captures", s.handleCaptures)
-	mux.HandleFunc("GET /api/channels", s.handleChannels)
-	mux.HandleFunc("POST /api/channels/{id}/reload", s.handleChannelReload)
+	mux.HandleFunc("GET /api/channels", instanceOnly(s.handleChannels))
+	mux.HandleFunc("POST /api/channels/{id}/reload", instanceOnly(s.handleChannelReload))
 	mux.HandleFunc("GET /api/version", s.handleVersion)
 	mux.HandleFunc("GET /api/capabilities", s.handleCapabilities)
 }
@@ -313,8 +313,8 @@ func (s *Server) registerConfigAndLogRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/extensions/{name}/enabled", s.handleExtensionEnabled)
 	mux.HandleFunc("DELETE /api/extensions/{name}", s.handleExtensionRemove)
 	mux.HandleFunc("GET /api/control-plane/catalog", s.handleControlPlaneCatalog)
-	mux.HandleFunc("GET /api/control-plane/apply-status", s.handleApplyStatus)
-	mux.HandleFunc("GET /api/services", s.handleServices)
+	mux.HandleFunc("GET /api/control-plane/apply-status", instanceOnly(s.handleApplyStatus))
+	mux.HandleFunc("GET /api/services", instanceOnly(s.handleServices))
 	mux.HandleFunc("GET /api/access/policies", s.handleListPolicies)
 	mux.HandleFunc("PUT /api/access/policies", s.handlePutPolicy)
 	mux.HandleFunc("DELETE /api/access/policies", s.handleDeletePolicy)
@@ -322,7 +322,7 @@ func (s *Server) registerConfigAndLogRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/control-plane/resources/{kind}/history", s.handleControlPlaneHistory)
 	mux.HandleFunc("POST /api/control-plane/resources/{kind}/commands/{command}", s.handleControlPlaneCommand)
 	mux.HandleFunc("GET /api/control-plane/audit", s.handleAudit)
-	mux.HandleFunc("GET /api/identities", s.handleIdentitiesList)
+	mux.HandleFunc("GET /api/identities", instanceOnly(s.handleIdentitiesList))
 	mux.HandleFunc("GET /api/orgs", s.handleOrgsList)
 	mux.HandleFunc("POST /api/orgs", s.handleOrgCreate)
 	mux.HandleFunc("GET /api/orgs/{id}", s.handleOrgGet)
@@ -335,10 +335,10 @@ func (s *Server) registerConfigAndLogRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/tokens", s.handlePersonalTokensList)
 	mux.HandleFunc("POST /api/tokens", s.handlePersonalTokenCreate)
 	mux.HandleFunc("DELETE /api/tokens/{id}", s.handlePersonalTokenRevoke)
-	mux.HandleFunc("POST /api/identities", s.handleIdentityCreate)
-	mux.HandleFunc("POST /api/identities/{id}/{command}", s.handleIdentityCommand)
-	mux.HandleFunc("GET /api/config", s.handleConfig)
-	mux.HandleFunc("GET /api/logs", s.handleLogs)
+	mux.HandleFunc("POST /api/identities", instanceOnly(s.handleIdentityCreate))
+	mux.HandleFunc("POST /api/identities/{id}/{command}", instanceOnly(s.handleIdentityCommand))
+	mux.HandleFunc("GET /api/config", instanceOnly(s.handleConfig))
+	mux.HandleFunc("GET /api/logs", instanceOnly(s.handleLogs))
 }
 
 func (s *Server) registerChatRoutes(mux *http.ServeMux) {
@@ -366,7 +366,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerConfigAndLogRoutes(mux)
 	s.registerChatRoutes(mux)
 
-	mux.HandleFunc("GET /health/detailed", s.handleHealthDetailed)
+	mux.HandleFunc("GET /health/detailed", instanceOnly(s.handleHealthDetailed))
 	mux.HandleFunc("GET /api/stream", s.handleSSE)
 	mux.Handle("GET /", s.assets())
 
