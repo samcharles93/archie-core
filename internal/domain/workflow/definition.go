@@ -18,8 +18,12 @@ import (
 
 // YAMLDefinition is the portable, versioned workflow representation.
 type YAMLDefinition struct {
-	ID    string       `yaml:"id" json:"id"`
-	Steps []StepRecord `yaml:"steps" json:"steps"`
+	ID string `yaml:"id" json:"id"`
+	// Package names the installed package that contributed this workflow. The
+	// package projector sets it; a run of the workflow is bounded by the
+	// authority accepted for that package.
+	Package string       `yaml:"package,omitempty" json:"package,omitempty"`
+	Steps   []StepRecord `yaml:"steps" json:"steps"`
 	// WorkflowInterface declares the workflow's inputs, repository mode and
 	// agent profile.
 	task.WorkflowInterface `yaml:",inline" json:",inline"`
@@ -106,6 +110,18 @@ func ParseDefinition(src string, registry StepRegistry) (YAMLDefinition, error) 
 		}
 	}
 	return definition, nil
+}
+
+// PackageOf returns the package a pinned definition was projected from, or
+// empty for a workflow the operator wrote.
+func PackageOf(src string) string {
+	var declared struct {
+		Package string `yaml:"package"`
+	}
+	if err := yaml.Unmarshal([]byte(src), &declared); err != nil {
+		return ""
+	}
+	return declared.Package
 }
 
 // StageNames returns the names a definition's steps run under, in order. It

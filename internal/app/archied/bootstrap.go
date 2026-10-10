@@ -527,7 +527,7 @@ func (b *boot) registerNATSRPC() error {
 		log.Error("nats connection unavailable for task RPC", "err", err)
 		return err
 	}
-	unsubscribe, err := registerTaskRPCServers(coreConn, b.forgeClient, b.trees, b.identityRunners, b.stateStoreGrants.Client, log)
+	unsubscribe, err := registerTaskRPCServers(coreConn, b.forgeClient, b.trees, b.identityRunners, b.stateStoreGrants.Client, installedAuthorities{b.stateStoreGrants.Client}, log)
 	if err != nil {
 		log.Error("task RPC server registration failed", "err", err)
 		return err

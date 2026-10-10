@@ -56,7 +56,10 @@ func (p *WorkflowProjector) Apply(ctx context.Context, orgID, name, digest strin
 		if err != nil {
 			return fmt.Errorf("contributed workflow %q: %w", contentName, err)
 		}
-		entries = append(entries, workflow.WorkflowDefinitionEntry{ID: id, YAML: string(content)})
+		if workflow.PackageOf(string(content)) != "" {
+			return fmt.Errorf("contributed workflow %q: package is set by the installer, not the workflow", contentName)
+		}
+		entries = append(entries, workflow.WorkflowDefinitionEntry{ID: id, YAML: "package: " + strconv.Quote(name) + "\n" + string(content)})
 		recorded = append(recorded, storepkg.ProjectionEntry{Family: storepkg.FamilyWorkflows, EntryID: id})
 	}
 	// One apply, one request: a retried PutResource reuses the same request ID

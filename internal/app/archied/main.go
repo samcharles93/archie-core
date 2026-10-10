@@ -356,7 +356,7 @@ func subscribeAgentEvents(nc *natsio.Conn, bus *events.Bus, log *slog.Logger) (u
 // tasks, and one server pair per identity answers that identity's scoped
 // subjects so a container-mode task owned by a non-root identity has its RPC
 // calls served by its own forge client and worktree manager.
-func registerTaskRPCServers(nc *natsio.Conn, forgeClient forge.Forge, trees *worktree.Manager, identities []*daemon.IdentityRunner, runs worktreerpc.Runs, log *slog.Logger) (unsubscribe func(), err error) {
+func registerTaskRPCServers(nc *natsio.Conn, forgeClient forge.Forge, trees *worktree.Manager, identities []*daemon.IdentityRunner, runs worktreerpc.Runs, authorities forgerpc.Authorities, log *slog.Logger) (unsubscribe func(), err error) {
 	unsubs := make([]func(), 0, 2+2*len(identities))
 	unsubAll := func() {
 		for _, u := range unsubs {
@@ -365,7 +365,7 @@ func registerTaskRPCServers(nc *natsio.Conn, forgeClient forge.Forge, trees *wor
 	}
 
 	registerForge := func(fg forge.Forge, identity string) error {
-		srv := &forgerpc.Server{Forge: fg, Runs: runs, Log: log.With("rpc_identity", identity)}
+		srv := &forgerpc.Server{Forge: fg, Runs: runs, Authorities: authorities, Log: log.With("rpc_identity", identity)}
 		u, err := srv.RegisterFor(nc, identity)
 		if err != nil {
 			return fmt.Errorf("register forgerpc%s: %w", identitySuffix(identity), err)

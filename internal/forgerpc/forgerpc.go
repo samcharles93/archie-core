@@ -8,12 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go"
 
 	domainidentity "github.com/samcharles93/archie-core/internal/domain/identity"
+	"github.com/samcharles93/archie-core/internal/domain/storepkg"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/natsrpc"
@@ -136,11 +138,18 @@ type Response struct {
 	natsrpc.Envelope
 }
 
+// Authorities answers what operator accepted for an installed package. A
+// package that is not installed, or not accepted, has no authority.
+type Authorities interface {
+	AcceptedAuthority(ctx context.Context, name string) (storepkg.Authority, error)
+}
+
 // Server proxies forgerpc requests to a real forge.Forge implementation.
 type Server struct {
-	Forge forge.Forge
-	Runs  Runs
-	Log   *slog.Logger
+	Forge       forge.Forge
+	Runs        Runs
+	Authorities Authorities
+	Log         *slog.Logger
 }
 
 // Register subscribes all handlers on nc under the root (identity-less)
@@ -166,8 +175,10 @@ func (s *Server) RegisterFor(nc *nats.Conn, identity string) (unsubscribe func()
 }
 
 // authorize checks that target's credential belongs to a live run of this
-// server's identity and that the run's repository is the one targeted.
-func (s *Server) authorize(identity string, target Target) error {
+// server's identity and that the run's repository is the one targeted. A run
+// of a package's workflow also needs the forge permission accepted for that
+// package.
+func (s *Server) authorize(identity string, target Target, permission string) error {
 	if s.Runs == nil || target.Credential == "" {
 		return errors.New("forge request needs a run credential")
 	}
@@ -179,6 +190,20 @@ func (s *Server) authorize(identity string, target Target) error {
 		!strings.EqualFold(task.Owner, target.Owner) || !strings.EqualFold(task.Repo, target.Repo) {
 		return errors.New("forge request is outside its run's repository")
 	}
+	name := workflow.PackageOf(task.WorkflowDefinitionYAML)
+	if name == "" {
+		return nil
+	}
+	if s.Authorities == nil {
+		return fmt.Errorf("package %q: forge permission %q is not accepted", name, permission)
+	}
+	accepted, err := s.Authorities.AcceptedAuthority(context.Background(), name)
+	if err != nil {
+		return fmt.Errorf("package %q authority: %w", name, err)
+	}
+	if !slices.Contains(accepted.ForgePermissions, permission) {
+		return fmt.Errorf("package %q: forge permission %q is not accepted", name, permission)
+	}
 	return nil
 }
 
@@ -188,7 +213,7 @@ func (s *Server) handleComment(identity string, msg *nats.Msg) {
 		s.respond(msg, CommentResponse{Envelope: natsrpc.NewEnvelope(fmt.Errorf("decode comment request: %w", err))})
 		return
 	}
-	if err := s.authorize(identity, req.Target); err != nil {
+	if err := s.authorize(identity, req.Target, "comment"); err != nil {
 		s.respond(msg, CommentResponse{Envelope: natsrpc.NewEnvelope(err)})
 		return
 	}
@@ -202,7 +227,7 @@ func (s *Server) handleCloseIssue(identity string, msg *nats.Msg) {
 		s.respond(msg, Response{Envelope: natsrpc.NewEnvelope(fmt.Errorf("decode close_issue request: %w", err))})
 		return
 	}
-	if err := s.authorize(identity, req.Target); err != nil {
+	if err := s.authorize(identity, req.Target, "comment"); err != nil {
 		s.respond(msg, Response{Envelope: natsrpc.NewEnvelope(err)})
 		return
 	}
@@ -216,7 +241,7 @@ func (s *Server) handleCreatePR(identity string, msg *nats.Msg) {
 		s.respond(msg, CreatePRResponse{Envelope: natsrpc.NewEnvelope(fmt.Errorf("decode create_pr request: %w", err))})
 		return
 	}
-	if err := s.authorize(identity, req.Target); err != nil {
+	if err := s.authorize(identity, req.Target, "open_pr"); err != nil {
 		s.respond(msg, CreatePRResponse{Envelope: natsrpc.NewEnvelope(err)})
 		return
 	}
@@ -230,7 +255,7 @@ func (s *Server) handleLinkBranch(identity string, msg *nats.Msg) {
 		s.respond(msg, Response{Envelope: natsrpc.NewEnvelope(fmt.Errorf("decode link_branch request: %w", err))})
 		return
 	}
-	if err := s.authorize(identity, req.Target); err != nil {
+	if err := s.authorize(identity, req.Target, "open_pr"); err != nil {
 		s.respond(msg, Response{Envelope: natsrpc.NewEnvelope(err)})
 		return
 	}
@@ -244,7 +269,7 @@ func (s *Server) handleCreateReviewComments(identity string, msg *nats.Msg) {
 		s.respond(msg, Response{Envelope: natsrpc.NewEnvelope(fmt.Errorf("decode create_review_comments request: %w", err))})
 		return
 	}
-	if err := s.authorize(identity, req.Target); err != nil {
+	if err := s.authorize(identity, req.Target, "review"); err != nil {
 		s.respond(msg, Response{Envelope: natsrpc.NewEnvelope(err)})
 		return
 	}
@@ -267,7 +292,7 @@ func (s *Server) handleReplyToReview(identity string, msg *nats.Msg) {
 		s.respond(msg, Response{Envelope: natsrpc.NewEnvelope(fmt.Errorf("decode reply_to_review request: %w", err))})
 		return
 	}
-	if err := s.authorize(identity, req.Target); err != nil {
+	if err := s.authorize(identity, req.Target, "review"); err != nil {
 		s.respond(msg, Response{Envelope: natsrpc.NewEnvelope(err)})
 		return
 	}
@@ -286,7 +311,7 @@ func (s *Server) handleSetStateLabel(identity string, msg *nats.Msg) {
 		s.respond(msg, Response{Envelope: natsrpc.NewEnvelope(fmt.Errorf("decode set_state_label request: %w", err))})
 		return
 	}
-	if err := s.authorize(identity, req.Target); err != nil {
+	if err := s.authorize(identity, req.Target, "comment"); err != nil {
 		s.respond(msg, Response{Envelope: natsrpc.NewEnvelope(err)})
 		return
 	}
