@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -135,11 +136,7 @@ func (b *server) disconnectAbsentMCPServers(ctx context.Context, desired map[str
 // applyDesiredMCPServers connects, reconnects or restarts the servers the
 // stored document names, skipping the ones already running unchanged.
 func (b *server) applyDesiredMCPServers(ctx context.Context, desired map[string]config.MCPServer, state mcpRegistryState) []error {
-	names := make([]string, 0, len(desired))
-	for name := range desired {
-		names = append(names, name)
-	}
-	slices.Sort(names)
+	names := slices.Sorted(maps.Keys(desired))
 
 	var problems []error
 	for _, name := range names {

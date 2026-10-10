@@ -3,9 +3,11 @@ package image
 import (
 	"errors"
 	"fmt"
-	"reflect"
+	"maps"
 	"slices"
 	"sync"
+
+	"github.com/samcharles93/archie-core/internal/domain/lifecycle"
 )
 
 // ErrDuplicate is returned when a provider name is already registered.
@@ -28,7 +30,7 @@ func NewRegistry() *Registry {
 // Registration fails on a nil provider, an invalid Capability, or a
 // duplicate name.
 func (r *Registry) Register(p Provider) error {
-	if isNilProvider(p) {
+	if lifecycle.IsNil(p) {
 		return errors.New("image: nil provider")
 	}
 	if err := p.Capability().Validate(); err != nil {
@@ -56,12 +58,7 @@ func (r *Registry) Get(name string) (Provider, bool) {
 func (r *Registry) Names() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	names := make([]string, 0, len(r.providers))
-	for name := range r.providers {
-		names = append(names, name)
-	}
-	slices.Sort(names)
-	return names
+	return slices.Sorted(maps.Keys(r.providers))
 }
 
 // ByClass returns the sorted names of registered providers matching class.
@@ -76,15 +73,4 @@ func (r *Registry) ByClass(class ProviderClass) []string {
 	}
 	slices.Sort(names)
 	return names
-}
-
-func isNilProvider(p Provider) bool {
-	v := reflect.ValueOf(p)
-	switch v.Kind() {
-	case reflect.Invalid:
-		return true
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return v.IsNil()
-	}
-	return false
 }

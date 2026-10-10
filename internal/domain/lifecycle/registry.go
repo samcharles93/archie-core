@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"reflect"
 	"slices"
 	"sync"
@@ -124,12 +125,7 @@ func (r *Registry[E, H]) Get(name string) (E, bool) {
 func (r *Registry[E, H]) Names() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	names := make([]string, 0, len(r.engines))
-	for name := range r.engines {
-		names = append(names, name)
-	}
-	slices.Sort(names)
-	return names
+	return slices.Sorted(maps.Keys(r.engines))
 }
 
 // Start starts every engine in registration order. An engine whose Start

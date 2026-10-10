@@ -5,11 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
+	"maps"
 	"slices"
 	"sync"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/lifecycle"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/tools"
 )
@@ -100,7 +101,7 @@ func (r *Registry) Register(engine Engine) error {
 // prepareRegistration validates an engine and builds its registration, the
 // validation Register, Add and Replace all share.
 func prepareRegistration(engine Engine, optional bool) (registration, error) {
-	if isNilEngine(engine) {
+	if lifecycle.IsNil(engine) {
 		return registration{}, errors.New("tool provider is nil")
 	}
 	manifest, err := safeManifest(engine)
@@ -390,11 +391,7 @@ func cloneRegistrations(source map[string]registration) map[string]registration 
 }
 
 func dependencyOrder(providers map[string]registration) ([]string, error) {
-	ids := make([]string, 0, len(providers))
-	for id := range providers {
-		ids = append(ids, id)
-	}
-	slices.Sort(ids)
+	ids := slices.Sorted(maps.Keys(providers))
 
 	indegree := make(map[string]int, len(providers))
 	dependents := make(map[string][]string, len(providers))
@@ -484,19 +481,6 @@ func cloneManifest(manifest plugin.Manifest) plugin.Manifest {
 	clone.Permissions = append([]plugin.Permission(nil), manifest.Permissions...)
 	clone.ConfigSchema = append([]byte(nil), manifest.ConfigSchema...)
 	return clone
-}
-
-func isNilEngine(engine Engine) bool {
-	if engine == nil {
-		return true
-	}
-	value := reflect.ValueOf(engine)
-	switch value.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return value.IsNil()
-	default:
-		return false
-	}
 }
 
 func safeManifest(engine Engine) (manifest plugin.Manifest, err error) {

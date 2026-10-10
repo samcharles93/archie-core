@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -13,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/lifecycle"
 	"github.com/samcharles93/archie-core/internal/domain/stableid"
 )
 
@@ -387,20 +387,7 @@ func (h *Host) ensureModulesLocked() {
 }
 
 func isNilModule(module Module) bool {
-	return isNilInterface(module)
-}
-
-func isNilInterface(value any) bool {
-	if value == nil {
-		return true
-	}
-	reflected := reflect.ValueOf(value)
-	switch reflected.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return reflected.IsNil()
-	default:
-		return false
-	}
+	return lifecycle.IsNil(module)
 }
 
 func safeManifest(module Module) (manifest Manifest, err error) {

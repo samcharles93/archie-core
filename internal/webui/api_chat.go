@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/samcharles93/archie-core/internal/domain/lifecycle"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
 )
@@ -147,16 +147,7 @@ func (s *Server) chatReady(w http.ResponseWriter) (*ChatService, bool) {
 }
 
 func chatUpdateServiceConfigured(updates ChatUpdateService) bool {
-	if updates == nil {
-		return false
-	}
-	value := reflect.ValueOf(updates)
-	switch value.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return !value.IsNil()
-	default:
-		return true
-	}
+	return !lifecycle.IsNil(updates)
 }
 
 func (s *Server) handleChatSessions(w http.ResponseWriter, r *http.Request) {

@@ -6,7 +6,9 @@ package tomlwrite
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -70,11 +72,7 @@ func Apply(src []byte, edits []Edit) ([]byte, error) {
 	}
 	a.indexTables()
 
-	tables := make([]string, 0, len(order))
-	for t := range order {
-		tables = append(tables, t)
-	}
-	sort.Strings(tables)
+	tables := slices.Sorted(maps.Keys(order))
 	for _, t := range tables {
 		a.resolveTable(t)
 	}

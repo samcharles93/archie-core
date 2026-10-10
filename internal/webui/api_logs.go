@@ -107,10 +107,8 @@ func mergeComponents(history []string, live []logging.Entry) []string {
 			seen[component] = struct{}{}
 		}
 	}
-	components := make([]string, 0, len(seen))
-	for component := range seen {
-		components = append(components, component)
-	}
+	// Non-nil so the JSON response carries [] rather than null.
+	components := slices.AppendSeq(make([]string, 0, len(seen)), maps.Keys(seen))
 	slices.Sort(components)
 	return components
 }

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -323,11 +324,7 @@ func renderSetting(resource SettingResource, descriptor SettingDescriptor) strin
 		}
 		return fmt.Sprintf("%s (version %d):\n%s", resource.Kind, resource.Version, value)
 	}
-	names := make([]string, 0, len(resource.Value))
-	for name := range resource.Value {
-		names = append(names, name)
-	}
-	sort.Strings(names)
+	names := slices.Sorted(maps.Keys(resource.Value))
 	lines := []string{fmt.Sprintf("%s (version %d):", resource.Kind, resource.Version)}
 	for _, name := range names {
 		field := descriptor.Fields[name]

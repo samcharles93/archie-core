@@ -4,10 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"reflect"
 	"slices"
 	"sync"
 
+	"github.com/samcharles93/archie-core/internal/domain/lifecycle"
 	"github.com/samcharles93/archie-core/internal/domain/stableid"
 )
 
@@ -58,7 +58,7 @@ func NewManager() *Manager {
 // none. It refuses nil or unnamed providers, bad identifiers, missing
 // factories, duplicates and types another provider already owns.
 func (m *Manager) Register(provider StepTypeProvider) error {
-	if isNilProvider(provider) {
+	if lifecycle.IsNil(provider) {
 		return errors.New("workflow step type provider is nil")
 	}
 	name := provider.Name()
@@ -123,12 +123,7 @@ func (m *Manager) Settings() map[string]any {
 // StepTypes returns every registered step type name, sorted.
 func (m *Manager) StepTypes() []string {
 	registry := m.Registry()
-	names := make([]string, 0, len(registry))
-	for name := range registry {
-		names = append(names, name)
-	}
-	slices.Sort(names)
-	return names
+	return slices.Sorted(maps.Keys(registry))
 }
 
 // Providers returns the registered provider names, sorted.
@@ -136,18 +131,4 @@ func (m *Manager) Providers() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return slices.Sorted(slices.Values(m.providers))
-}
-
-// isNilProvider catches a nil interface and a typed nil pointer alike: a
-// provider cannot answer Name() in either case, so it is refused rather than
-// dereferenced. Mirrors internal/domain/memory's engine check.
-func isNilProvider(provider StepTypeProvider) bool {
-	value := reflect.ValueOf(provider)
-	switch value.Kind() {
-	case reflect.Invalid:
-		return true
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return value.IsNil()
-	}
-	return false
 }

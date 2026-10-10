@@ -5,7 +5,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -236,11 +237,7 @@ func formatInstallFailure(err error) string {
 }
 
 func formatVersionChanges(result releaseupdate.Result) string {
-	ids := make([]string, 0, len(result.Installed))
-	for id := range result.Installed {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
+	ids := slices.Sorted(maps.Keys(result.Installed))
 	parts := make([]string, 0, len(ids))
 	for _, id := range ids {
 		installed := result.Installed[id]
@@ -266,11 +263,7 @@ func formatPendingReport(report releaseupdate.Report, running map[string]string)
 		return formatHealthyReport(report, report.Verify(running))
 	}
 
-	ids := make([]string, 0, len(report.Previous))
-	for id := range report.Previous {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
+	ids := slices.Sorted(maps.Keys(report.Previous))
 	versions := make([]string, 0, len(ids))
 	for _, id := range ids {
 		versions = append(versions, fmt.Sprintf("%s %s", id, report.Previous[id]))

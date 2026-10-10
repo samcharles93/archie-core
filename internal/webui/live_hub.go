@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"maps"
 	"reflect"
 	"slices"
 	"time"
@@ -59,11 +60,7 @@ func (s *Server) registerSSEConn() (<-chan liveUpdate, []liveUpdate, <-chan stru
 		s.conns = make(map[*liveSubscriber]struct{})
 	}
 	s.conns[subscriber] = struct{}{}
-	keys := make([]string, 0, len(s.latest))
-	for key := range s.latest {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
+	keys := slices.Sorted(maps.Keys(s.latest))
 	snapshot := make([]liveUpdate, 0, len(keys))
 	for _, key := range keys {
 		snapshot = append(snapshot, s.latest[key])

@@ -6,8 +6,10 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"maps"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -34,12 +36,7 @@ func BlastRadius(fsys fs.FS, changed []string) ([]string, error) {
 		delete(reached, file)
 	}
 
-	radius := make([]string, 0, len(reached))
-	for file := range reached {
-		radius = append(radius, file)
-	}
-	sort.Strings(radius)
-	return radius, nil
+	return slices.Sorted(maps.Keys(reached)), nil
 }
 
 // ExposureCounts returns, for each file BlastRadius reaches, how many changed

@@ -2,7 +2,8 @@ package binding
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
@@ -113,10 +114,5 @@ func (b Binding) RepositoryFrom(values map[string]any) (owner, repo string, ok b
 }
 
 func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
+	return slices.Sorted(maps.Keys(m))
 }

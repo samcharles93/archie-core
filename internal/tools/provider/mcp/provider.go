@@ -8,13 +8,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/lifecycle"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/tools"
 	protocol "github.com/samcharles93/archie-core/internal/tools/mcp"
@@ -106,7 +106,7 @@ func (p *Provider) Start(ctx context.Context) error {
 	if p.name == "" || p.segment == "" {
 		return errors.New("MCP tool provider name is required")
 	}
-	if isNilTransport(p.transport) {
+	if lifecycle.IsNil(p.transport) {
 		return errors.New("MCP tool provider transport is nil")
 	}
 	if err := p.Manifest().Validate(); err != nil {
@@ -198,7 +198,7 @@ func (p *Provider) Stop(ctx context.Context) error {
 			return fmt.Errorf("remove MCP media dir %q: %w", mediaDir, err)
 		}
 	}
-	if isNilTransport(p.transport) {
+	if lifecycle.IsNil(p.transport) {
 		return nil
 	}
 	if err := p.transport.Stop(ctx); err != nil {
@@ -427,17 +427,4 @@ func isASCIILetter(char rune) bool {
 
 func isASCIIDigit(char rune) bool {
 	return char >= '0' && char <= '9'
-}
-
-func isNilTransport(transport LifecycleTransport) bool {
-	if transport == nil {
-		return true
-	}
-	value := reflect.ValueOf(transport)
-	switch value.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return value.IsNil()
-	default:
-		return false
-	}
 }

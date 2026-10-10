@@ -3,6 +3,7 @@ package archiegateway
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -57,12 +58,7 @@ func mergeModelRefs(configured map[string]string, catalogs ...[]string) []string
 		}
 	}
 
-	models := make([]string, 0, len(unique))
-	for ref := range unique {
-		models = append(models, ref)
-	}
-	slices.Sort(models)
-	return models
+	return slices.Sorted(maps.Keys(unique))
 }
 
 func newChatModelManager(configured map[string]string, catalogs ...[]string) *chatModelManager {

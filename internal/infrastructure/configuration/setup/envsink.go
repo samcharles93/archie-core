@@ -3,9 +3,10 @@ package setup
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -42,11 +43,7 @@ func (s *EnvFileSink) Commit() error {
 	if len(s.entries) == 0 {
 		return nil
 	}
-	keys := make([]string, 0, len(s.entries))
-	for k := range s.entries {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(s.entries))
 
 	var out []string
 	existing, err := readEnvLines(s.path)

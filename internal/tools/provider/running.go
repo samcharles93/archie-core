@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 )
 
@@ -30,12 +31,7 @@ func (r *Registry) Has(id string) bool {
 func (r *Registry) RegisteredIDs() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	ids := make([]string, 0, len(r.providers))
-	for id := range r.providers {
-		ids = append(ids, id)
-	}
-	slices.Sort(ids)
-	return ids
+	return slices.Sorted(maps.Keys(r.providers))
 }
 
 // RunningIDs returns the manifest IDs of the running providers, in start
