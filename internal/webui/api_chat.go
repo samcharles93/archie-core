@@ -181,7 +181,6 @@ func (s *Server) handleChatSessions(w http.ResponseWriter, r *http.Request) {
 		"voice_available":    snapshot.VoiceAvailable,
 		"active_personas":    active,
 		"commands":           chatCommandSpecs(chat),
-		"restart_available":  snapshot.RestartAvailable,
 	})
 }
 

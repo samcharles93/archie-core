@@ -15,7 +15,6 @@ type ChatSnapshot struct {
 	// frontends display it rather than stamping their own build, so a
 	// partially upgraded deployment cannot report itself as matched.
 	Version               string
-	RestartAvailable      bool
 	CancellationAvailable bool
 	// VoiceAvailable reports that a voice clip is transcribed into the turn.
 	VoiceAvailable    bool

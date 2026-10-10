@@ -158,9 +158,6 @@ type Router struct {
 	Version string
 	// Updates handles the shared /update command. Nil means unavailable.
 	Updates UpdateService
-	// Restart requests a scoped chat-adapter reload. It deliberately does not
-	// restart the daemon; Telegram's /restart has this same boundary.
-	Restart func(context.Context) error
 	// Sessions persists session metadata and conversation history.
 	// When set, session lifecycle commands (/new, /branch, /title,
 	// /undo, /retry, /compress) are available. When nil, those
@@ -386,8 +383,6 @@ func (r *Router) dispatchLocalMisc(ctx context.Context, msg messaging.Message, p
 		return r.handleVersion(), true, nil
 	case "/update":
 		return r.handleUpdateCheck(ctx), true, nil
-	case "/restart":
-		return r.handleRestartAdapter(ctx), true, nil
 	}
 	return r.dispatchSessionCommand(ctx, msg, platform, cmd, rest)
 }
@@ -410,17 +405,6 @@ func (r *Router) handleUpdateCheck(ctx context.Context) string {
 		return fmt.Sprintf("Could not check for updates: %v", err)
 	}
 	return releaseupdate.FormatSnapshot(snapshot)
-}
-
-// handleRestartAdapter reloads the chat adapter.
-func (r *Router) handleRestartAdapter(ctx context.Context) string {
-	if r.Restart == nil {
-		return "Chat adapter restart is not configured."
-	}
-	if err := r.Restart(ctx); err != nil {
-		return fmt.Sprintf("Could not restart the chat adapter: %v", err)
-	}
-	return "Chat adapter reload requested."
 }
 
 // dispatchSessionCommand handles the session-lifecycle command group

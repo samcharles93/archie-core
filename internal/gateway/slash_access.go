@@ -49,7 +49,6 @@ var slashAdminOnly = map[string]bool{
 	"/personality": true,
 	"/settings":    true,
 	"/update":      true,
-	"/restart":     true,
 }
 
 // SlashAccessPolicy decides which slash commands a sender may run. Deny by

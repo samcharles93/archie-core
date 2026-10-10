@@ -10,7 +10,7 @@ var localCommands = []string{
 	"/new", "/reset", "/topic", "/retry", "/undo",
 	"/title", "/branch", "/fork", "/compress", "/compact",
 	"/whoami", "/profile", "/sessions", "/resume", "/delete", "/agents",
-	"/personality", "/help", "/version", "/update", "/restart",
+	"/personality", "/help", "/version", "/update",
 }
 
 // CommandSpec describes a local command for adapter-provided discovery.
@@ -49,7 +49,6 @@ var localCommandSpecs = []CommandSpec{
 	{Command: "/help", Description: "See what Archie can do", Usage: "/help"},
 	{Command: "/version", Description: "Show installed Archie versions", Usage: "/version"},
 	{Command: "/update", Description: "Check for Archie updates", Usage: "/update"},
-	{Command: "/restart", Description: "Reload the chat adapter", Usage: "/restart"},
 }
 
 // LocalCommands returns the command names Route answers from local state.
