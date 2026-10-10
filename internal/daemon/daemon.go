@@ -14,7 +14,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
@@ -229,11 +228,10 @@ type Daemon struct {
 	// to use.
 	running runningTasks
 
-	// lastPollAt is when the most recent poll pass began, in Unix
-	// nanoseconds (zero = no pass has started yet), read by
-	// LastPollAt. Atomic because runIdentities runs one poll goroutine per
-	// identity and they all stamp this one "is the poller alive" reading.
-	lastPollAt atomic.Int64
+	// lastPollAt maps each poll loop (an identity ID, or "" for the root
+	// loop) to when its latest pass began, as Unix nanoseconds. LastPollAt
+	// reports the oldest, so one wedged loop is not hidden by a healthy one.
+	lastPollAt sync.Map
 }
 
 // IdentityRunner bundles identity-specific state for a single agent
@@ -439,10 +437,10 @@ func (d *Daemon) runIdentities(ctx context.Context) error {
 // drains or reconciles  --  those are store-wide and run in the shared
 // maintainAndDrain loop.
 func (d *Daemon) pollForIdentity(ctx context.Context, id *IdentityRunner) {
+	d.markPoll(string(id.ID))
 	if !d.identityActive(ctx, id.ID) {
 		return
 	}
-	d.markPoll()
 	cfg := configForIdentity(d.Cfg.Get(), id.Cfg)
 	for _, repo := range identityRepositories(cfg.Repos, id.Repos) {
 		issues, complete := d.pollIssuesWithConfig(ctx, id.Forge, cfg, repo)
@@ -1250,10 +1248,10 @@ func (d *taskDispatcher) Wait() {
 }
 
 func (d *Daemon) poll(ctx context.Context) {
+	d.markPoll("")
 	if !d.identityActive(ctx, d.RootIdentityID) {
 		return
 	}
-	d.markPoll()
 	for _, repo := range d.Cfg.Get().Repos {
 		issues, complete := d.pollIssues(ctx, repo)
 		if complete {
@@ -2445,19 +2443,26 @@ func (d *Daemon) allowConcurrentForTask(task *workflow.Task) bool {
 	return ok && repo.AllowConcurrent
 }
 
-// LastPollAt reports when the daemon last began a poll pass, or the zero
-// time when no pass has started yet.
+// LastPollAt reports when the least recently polled loop last began a pass,
+// or the zero time when no pass has started yet.
 func (d *Daemon) LastPollAt() time.Time {
-	ns := d.lastPollAt.Load()
-	if ns == 0 {
+	var oldest int64
+	d.lastPollAt.Range(func(_, v any) bool {
+		if ns, ok := v.(int64); ok && (oldest == 0 || ns < oldest) {
+			oldest = ns
+		}
+		return true
+	})
+	if oldest == 0 {
 		return time.Time{}
 	}
-	return time.Unix(0, ns).UTC()
+	return time.Unix(0, oldest).UTC()
 }
 
-// markPoll stamps the start of a poll pass, so a hung pass shows as stale.
-func (d *Daemon) markPoll() {
-	d.lastPollAt.Store(time.Now().UnixNano())
+// markPoll stamps the start of a poll pass for one loop, so a hung pass shows
+// as stale.
+func (d *Daemon) markPoll(loop string) {
+	d.lastPollAt.Store(loop, time.Now().UnixNano())
 }
 
 // errContainerExited is the cancellation cause when a task's agent container
