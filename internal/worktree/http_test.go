@@ -67,12 +67,16 @@ func TestForgeHTTPAuthentication(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend := &cgi.Handler{Path: gitPath, Args: []string{"http-backend"}, Env: []string{"GIT_PROJECT_ROOT=" + root, "GIT_HTTP_EXPORT_ALL=1"}}
-	for _, tc := range []struct {
+	for i, tc := range []struct {
 		name                    string
 		redirect, foreign, dumb bool
 	}{
 		{name: "direct"}, {name: "same origin", redirect: true}, {name: "cross origin", foreign: true}, {name: "dumb HTTP", dumb: true},
 	} {
+		// One issue per transport: subtests share the bare repo, and a shared
+		// branch would make the second push a non-fast-forward (or, when two
+		// commits land in the same second, an identical-hash no-op).
+		issue := i + 1
 		t.Run(tc.name, func(t *testing.T) {
 			target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Header.Get("Authorization") != "" {
@@ -107,7 +111,7 @@ func TestForgeHTTPAuthentication(t *testing.T) {
 			m := *manager
 			m.BaseURL = server.URL
 			m.WorkDir = t.TempDir()
-			dir, branch, err := m.Prepare(t.Context(), "org", "repo", "main", 1, "test", "", "", Fresh)
+			dir, branch, err := m.Prepare(t.Context(), "org", "repo", "main", issue, "test", "", "", Fresh)
 			if tc.foreign || tc.dumb {
 				if err == nil {
 					t.Fatal("unsupported or unauthenticated endpoint succeeded")
@@ -136,7 +140,7 @@ func TestForgeHTTPAuthentication(t *testing.T) {
 			if _, err := bare.Reference(plumbing.NewBranchReferenceName(branch), true); err != nil {
 				t.Fatalf("pushed branch missing: %v", err)
 			}
-			if _, _, err := m.Prepare(t.Context(), "org", "repo", "main", 1, "test", "", "", Target(branch)); err != nil {
+			if _, _, err := m.Prepare(t.Context(), "org", "repo", "main", issue, "test", "", "", Target(branch)); err != nil {
 				t.Fatalf("authenticated fetch: %v", err)
 			}
 		})
