@@ -5,6 +5,31 @@ release's per-component sections are labelled beneath its heading.
 
 ## [Unreleased]
 
+## [1.53.0] - 2026-10-11
+
+### archied
+
+- Every organisation's data is its own. Chats, tasks, events, transitions, steps, tool calls, run statistics, event sources, event types, mappings, bindings and agent memory are read and written in the org that owns them, and a request can no longer write into another org. Rows written before orgs existed move to their owner's org on upgrade.
+- An instance admin decides what each org may reach: the models it can use, and whether it may register providers under its own credentials. Org Settings gains a Models tab and instance Models gains Org access. The system org is never restricted; another org uses nothing until it is granted.
+- Models are addressed by alias. Aliases replace model roles, one resolver serves every purpose (agent steps, implement, PR review, MCP sampling, chat, embedding, transcription), and an unknown alias fails instead of falling back to a default. The step editor and the chat picker offer aliases, and a workflow naming one that does not exist is refused when saved.
+- Chat sessions belong to one org; a chat resolves its models in the caller's org and is billed to it, and a task run from chat posts its outcome back to that chat.
+- Add a member by provider subject, or by email as a placeholder that the first sign-in the provider vouches for claims.
+- The workflow canvas authors parallel branches as lanes, adds a switch step that runs the case matching a reference, and edits a call's interface. A step shows its role, its number and its run trace.
+- The workflows list shows each workflow's running count and latest run result, the canvas reveals its data-edge handles on hover, and restoring a version asks for confirmation.
+- Store packages can auto-update: a package given the policy is moved to the catalogue's newest digest by a State Store ticker. An update asking for more authority than was accepted waits as a pending update with the running version untouched; approving it accepts the new authority, and a rollback restores the previous version with the authority accepted against it.
+- Model provider keys never enter an agent container: the runtime reaches its providers through the egress proxy, which holds the keys. A task's own credential can no longer replace the workflow definition its run is pinned to, and a package workflow's triggers, tools and forge calls are bounded by the authority accepted for the package.
+- The dashboard warns when it is reachable from off-host over plain HTTP, and the wildcard listen address counts as off-host rather than loopback. Instance health, logs, config and identities, the setup checklist and the skill catalogue are system-org only, and API requests are refused until the access chain has loaded.
+- `/approve` reaches Telegram; the router served it but nothing published it.
+- A worktree a killed container left root-owned is taken back by the daemon, and a PR review's benchmark runner works again on configured models and public PRs.
+- An unserved `/api` path returns 404 instead of the dashboard page, and an input group's select no longer loses clicks to its addon.
+
+### archie-agent
+
+- The runtime reaches model providers through the egress proxy, so provider keys stay out of the container.
+- Agent steps resolve model aliases and their own org's models and credentials, failing on an unknown alias instead of falling back.
+- A switch step runs the case matching its reference.
+- A call waiting on another step is reconciled from durable steps, so it resumes after a daemon restart rather than stranding.
+
 ## [1.52.0] - 2026-10-09
 
 ### archied
