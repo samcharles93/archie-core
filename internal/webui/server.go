@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -400,7 +401,7 @@ func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 }
 
 // assets serves the embedded dashboard, falling back to index.html so client
-// routes deep-link correctly. Under the no_ui build tag the assets are absent
+// routes deep-link correctly. An unserved /api path is a 404, never the page. Under the no_ui build tag the assets are absent
 // and a plain explanation is served instead of a confusing 404.
 func (s *Server) assets() http.Handler {
 	if ui.DistDirFS == nil {
@@ -410,6 +411,10 @@ func (s *Server) assets() http.Handler {
 	}
 	files := http.FileServerFS(ui.DistDirFS)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			http.Error(w, "this archied does not serve "+r.URL.Path, http.StatusNotFound)
+			return
+		}
 		if _, err := fs.Stat(ui.DistDirFS, trimLeadingSlash(r.URL.Path)); err != nil {
 			r = r.Clone(r.Context())
 			r.URL.Path = "/"
