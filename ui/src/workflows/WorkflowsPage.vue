@@ -85,6 +85,19 @@ const rows = computed(() =>
     })),
   ),
 );
+// What each workflow is doing now, from the live task list: how many runs are
+// working, and how the newest run ended up.
+const live = computed(() => {
+  const byWorkflow = new Map<string, { running: number; last?: RunTask }>();
+  for (const run of runs.value) {
+    if (!run.workflow) continue;
+    const entry = byWorkflow.get(run.workflow) ?? { running: 0 };
+    if (run.status === "running") entry.running++;
+    if (!entry.last || Number(run.id) > Number(entry.last.id)) entry.last = run;
+    byWorkflow.set(run.workflow, entry);
+  }
+  return byWorkflow;
+});
 const selected = ref("");
 watchEffect(() => {
   if (!selected.value && rows.value.length) selected.value = rows.value[0]!.id;
@@ -174,12 +187,16 @@ const rate = (deliveredRuns = 0, total = 0) => (total ? deliveredRuns / total : 
               <span class="min-w-0 flex-1 truncate font-mono text-[13px]" :class="row.id === selected && 'font-medium'">{{ row.id }}</span>
               <span class="font-mono text-xs text-fg-subtle">{{ row.avg_tokens ? compact(row.avg_tokens) : "–" }}</span>
             </span>
-            <span class="mt-1.5 flex items-center gap-2 text-xs text-fg-subtle">
-              <span class="w-20 shrink-0">{{ row.runs || 0 }} runs</span>
+            <span v-if="row.runs" class="mt-1.5 flex items-center gap-2 text-xs text-fg-subtle">
+              <span v-if="live.get(row.id)?.running" class="flex w-20 shrink-0 items-center gap-1.5 text-info">
+                <span class="size-1.5 animate-pulse rounded-full bg-current" aria-hidden="true" />{{ live.get(row.id)?.running }} running
+              </span>
+              <span v-else-if="live.get(row.id)?.last" class="w-20 shrink-0 truncate" :title="`Latest run: ${statusLabel(live.get(row.id)?.last?.status ?? '')}`">{{ statusLabel(live.get(row.id)?.last?.status ?? "") }}</span>
+              <span v-else class="w-20 shrink-0">{{ row.runs }} runs</span>
               <span class="h-1 flex-1 overflow-hidden rounded-full bg-secondary">
                 <span class="block h-full rounded-full bg-primary" :style="{ width: `${rate(delivered(row), row.runs) * 100}%` }" />
               </span>
-              <span class="w-16 shrink-0 text-right font-mono">{{ delivered(row) }} of {{ row.runs || 0 }}</span>
+              <span class="w-16 shrink-0 text-right font-mono">{{ delivered(row) }} of {{ row.runs }}</span>
             </span>
           </button>
         </li>
