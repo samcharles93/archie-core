@@ -2064,6 +2064,9 @@ func (d *Daemon) pinWorkflowDefinition(ctx context.Context, task *workflow.Task)
 	if !enablement.Enabled(task.Org, task.Workflow) {
 		return pinFailure{taskstate.ParkNeedsHuman, fmt.Errorf("workflow %s is disabled", task.Workflow)}
 	}
+	if err := d.checkPackageTrigger(ctx, task); err != nil {
+		return pinFailure{taskstate.ParkNeedsHuman, err}
+	}
 	return nil
 }
 
