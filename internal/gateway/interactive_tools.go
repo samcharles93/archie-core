@@ -50,12 +50,12 @@ func askUserTool() tools.ToolEntry {
 
 // askUserHandler carries one question through the turn's channel adapter.
 func askUserHandler(ctx context.Context, args map[string]any) (any, error) {
-	question := strings.TrimSpace(stringArg(args["question"]))
+	question := strings.TrimSpace(asString(args["question"]))
 	if question == "" {
 		return nil, fmt.Errorf("ask_user: question is required")
 	}
 	interactive := InteractiveFromContext(ctx)
-	options := stringSliceArg(args["options"])
+	options := asStringSlice(args["options"])
 	if len(options) > 0 {
 		return askUserChoice(ctx, interactive, question, options)
 	}
@@ -104,23 +104,4 @@ func interactiveChoices(options []string) []messaging.InteractiveChoice {
 		choices = append(choices, messaging.InteractiveChoice{ID: option, Label: option})
 	}
 	return choices
-}
-
-func stringArg(value any) string {
-	text, _ := value.(string)
-	return text
-}
-
-func stringSliceArg(value any) []string {
-	items, ok := value.([]any)
-	if !ok {
-		return nil
-	}
-	options := make([]string, 0, len(items))
-	for _, item := range items {
-		if text, ok := item.(string); ok && strings.TrimSpace(text) != "" {
-			options = append(options, text)
-		}
-	}
-	return options
 }
