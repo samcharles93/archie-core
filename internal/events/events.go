@@ -5,6 +5,7 @@
 package events
 
 import (
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -234,12 +235,9 @@ func (b *Bus) Publish(e Event) {
 func (b *Bus) unsubscribe(sub *Sub) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	for i, s := range b.subs {
-		if s == sub {
-			b.subs = append(b.subs[:i], b.subs[i+1:]...)
-			close(s.c)
-			return
-		}
+	if i := slices.Index(b.subs, sub); i >= 0 {
+		b.subs = slices.Delete(b.subs, i, i+1)
+		close(sub.c)
 	}
 }
 

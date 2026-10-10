@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 )
 
 // JSONSchema represents a JSON Schema document describing a tool's input
@@ -169,17 +170,11 @@ func deepCopyAny(v any) any {
 		}
 		return out
 	case []string:
-		out := make([]string, len(val))
-		copy(out, val)
-		return out
+		return slices.Clone(val)
 	case []float64:
-		out := make([]float64, len(val))
-		copy(out, val)
-		return out
+		return slices.Clone(val)
 	case []bool:
-		out := make([]bool, len(val))
-		copy(out, val)
-		return out
+		return slices.Clone(val)
 	default:
 		return v
 	}
