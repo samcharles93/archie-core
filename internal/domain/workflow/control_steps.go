@@ -38,8 +38,8 @@ type handoffSettings struct {
 // newHandoffStage requeues the task under another workflow: the same task,
 // not a child run, so its history stays in one place.
 func newHandoffStage(settings yaml.Node) (Stage, error) {
-	var s handoffSettings
-	if err := decodeSettings(HandoffStepName, settings, &s); err != nil {
+	s, err := decodeSettings[handoffSettings](HandoffStepName, settings)
+	if err != nil {
 		return Stage{}, err
 	}
 	if strings.TrimSpace(s.Workflow) == "" {
@@ -63,8 +63,8 @@ type approveSettings struct {
 // newApproveStage delivers the plan to the decision surfaces and waits: the
 // task parks in waiting_human until an operator approves or rejects it.
 func newApproveStage(settings yaml.Node) (Stage, error) {
-	var s approveSettings
-	if err := decodeSettings(ApproveStepName, settings, &s); err != nil {
+	s, err := decodeSettings[approveSettings](ApproveStepName, settings)
+	if err != nil {
 		return Stage{}, err
 	}
 	if strings.TrimSpace(s.Plan) == "" || strings.TrimSpace(s.Then) == "" {
@@ -95,8 +95,8 @@ type commentSettings struct {
 }
 
 func newCommentStage(settings yaml.Node) (Stage, error) {
-	var s commentSettings
-	if err := decodeSettings(CommentStepName, settings, &s); err != nil {
+	s, err := decodeSettings[commentSettings](CommentStepName, settings)
+	if err != nil {
 		return Stage{}, err
 	}
 	if strings.TrimSpace(s.Body) == "" {
@@ -208,14 +208,14 @@ func controlTarget(step StepRecord) (string, bool, error) {
 	var target string
 	switch step.Type {
 	case HandoffStepName:
-		var s handoffSettings
-		if err := decodeSettings(HandoffStepName, step.Settings, &s); err != nil {
+		s, err := decodeSettings[handoffSettings](HandoffStepName, step.Settings)
+		if err != nil {
 			return "", false, err
 		}
 		target = strings.TrimSpace(s.Workflow)
 	case ApproveStepName:
-		var s approveSettings
-		if err := decodeSettings(ApproveStepName, step.Settings, &s); err != nil {
+		s, err := decodeSettings[approveSettings](ApproveStepName, step.Settings)
+		if err != nil {
 			return "", false, err
 		}
 		target = strings.TrimSpace(s.Then)

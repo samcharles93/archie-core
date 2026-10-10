@@ -69,8 +69,8 @@ type reviewReplySettings struct {
 // thread when it has one, clears the consumed payload so a resumed run cannot
 // address it twice, and returns the task to pr_open.
 func newReviewReplyStage(settings yaml.Node) (Stage, error) {
-	var s reviewReplySettings
-	if err := decodeSettings(ReviewReplyStepName, settings, &s); err != nil {
+	s, err := decodeSettings[reviewReplySettings](ReviewReplyStepName, settings)
+	if err != nil {
 		return Stage{}, err
 	}
 	if strings.TrimSpace(s.Body) == "" {

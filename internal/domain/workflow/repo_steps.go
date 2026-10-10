@@ -38,14 +38,15 @@ func RepoStepTypes() []StepType {
 }
 
 // decodeSettings decodes optional settings strictly.
-func decodeSettings(step string, settings yaml.Node, into any) error {
+func decodeSettings[T any](step string, settings yaml.Node) (T, error) {
+	var s T
 	if settings.Kind == 0 {
-		return nil
+		return s, nil
 	}
-	if err := settings.Decode(into); err != nil {
-		return fmt.Errorf("%s: %w", step, err)
+	if err := settings.Decode(&s); err != nil {
+		return s, fmt.Errorf("%s: %w", step, err)
 	}
-	return nil
+	return s, nil
 }
 
 type repoPrepareSettings struct {
@@ -55,8 +56,8 @@ type repoPrepareSettings struct {
 }
 
 func newRepoPrepareStage(settings yaml.Node) (Stage, error) {
-	var s repoPrepareSettings
-	if err := decodeSettings(RepoPrepareStepName, settings, &s); err != nil {
+	s, err := decodeSettings[repoPrepareSettings](RepoPrepareStepName, settings)
+	if err != nil {
 		return Stage{}, err
 	}
 	var stage Stage
@@ -84,8 +85,8 @@ type repoCommitSettings struct {
 }
 
 func newRepoCommitStage(settings yaml.Node) (Stage, error) {
-	var s repoCommitSettings
-	if err := decodeSettings(RepoCommitStepName, settings, &s); err != nil {
+	s, err := decodeSettings[repoCommitSettings](RepoCommitStepName, settings)
+	if err != nil {
 		return Stage{}, err
 	}
 	if strings.TrimSpace(s.Message) == "" {
@@ -135,8 +136,8 @@ type repoOpenPRSettings struct {
 }
 
 func newRepoOpenPRStage(settings yaml.Node) (Stage, error) {
-	var s repoOpenPRSettings
-	if err := decodeSettings(RepoOpenPRStepName, settings, &s); err != nil {
+	s, err := decodeSettings[repoOpenPRSettings](RepoOpenPRStepName, settings)
+	if err != nil {
 		return Stage{}, err
 	}
 	body := func(tc *TaskContext) string {
@@ -162,8 +163,8 @@ type gateRepositorySettings struct {
 // newGateRepositoryStage runs the repository's gate commands in the worktree.
 // Its summary is the test command's output, so a later step can quote it.
 func newGateRepositoryStage(settings yaml.Node) (Stage, error) {
-	var s gateRepositorySettings
-	if err := decodeSettings(GateRepositoryName, settings, &s); err != nil {
+	s, err := decodeSettings[gateRepositorySettings](GateRepositoryName, settings)
+	if err != nil {
 		return Stage{}, err
 	}
 	switch {
