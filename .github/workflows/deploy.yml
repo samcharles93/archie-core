@@ -103,6 +103,12 @@ jobs:
       - name: Allow unprivileged user namespaces
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
+      # The gate's uncached `go test ./...` runs the Docker-backed tests that
+      # -short skips, and those start a container from alpine:3. A fresh runner
+      # has no such image, so the suite failed on "No such image: alpine:3".
+      - name: Pull test container images
+        run: docker pull alpine:3
+
       - name: Quality gate
         run: |
           # The formatter sequence has one owner: task fmt, which drives go fix
