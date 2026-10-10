@@ -7,22 +7,21 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/samcharles93/archie-core/internal/domain/lifecycle"
 )
 
-// HealthStatus is a curator's point-in-time health.
-type HealthStatus string
+// HealthStatus is a point-in-time health status.
+type HealthStatus = lifecycle.HealthStatus
 
 const (
-	HealthHealthy   HealthStatus = "healthy"
-	HealthDegraded  HealthStatus = "degraded"
-	HealthUnhealthy HealthStatus = "unhealthy"
+	HealthHealthy   = lifecycle.HealthHealthy
+	HealthDegraded  = lifecycle.HealthDegraded
+	HealthUnhealthy = lifecycle.HealthUnhealthy
 )
 
-// Health is a point-in-time curator health report.
-type Health struct {
-	Status  HealthStatus
-	Message string
-}
+// Health is a point-in-time health report.
+type Health = lifecycle.Health
 
 // Manifest is a curator's declared shape: what input wakes it, how often it
 // runs, which tools it may reach, and which memory engine it uses. The

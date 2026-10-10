@@ -8,22 +8,21 @@ import (
 	"fmt"
 	"strconv"
 	"time"
+
+	"github.com/samcharles93/archie-core/internal/domain/lifecycle"
 )
 
-// HealthStatus is an engine's point-in-time health.
-type HealthStatus string
+// HealthStatus is a point-in-time health status.
+type HealthStatus = lifecycle.HealthStatus
 
 const (
-	HealthHealthy   HealthStatus = "healthy"
-	HealthDegraded  HealthStatus = "degraded"
-	HealthUnhealthy HealthStatus = "unhealthy"
+	HealthHealthy   = lifecycle.HealthHealthy
+	HealthDegraded  = lifecycle.HealthDegraded
+	HealthUnhealthy = lifecycle.HealthUnhealthy
 )
 
-// Health is a point-in-time engine health report.
-type Health struct {
-	Status  HealthStatus
-	Message string
-}
+// Health is a point-in-time health report.
+type Health = lifecycle.Health
 
 // Manifest is an engine's declared shape. RequiresNetwork marks an engine
 // that calls an external service, so a caller can size timeouts and
