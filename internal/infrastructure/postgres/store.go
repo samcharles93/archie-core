@@ -160,11 +160,15 @@ func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, w
 		return nil, err
 	}
 	t, err := s.queries().InsertChatTask(ctx, postgresdb.InsertChatTaskParams{
-		Owner: owner, Repo: repo, Title: title, Body: body, Workflow: wf, Identity: identity,
+		ScopeOrg: scopeOrg(ctx),
+		Owner:    owner, Repo: repo, Title: title, Body: body, Workflow: wf, Identity: identity,
 		Inputs:              encoded,
 		Origin:              origin,
 		FallbackIssueNumber: syntheticIssueNumberBase - 1,
 	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("identity %q belongs to another org", identity)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -689,7 +693,7 @@ func (s *Store) OpenPRs(ctx context.Context) ([]workflow.Task, error) {
 
 // ClearTerminalTasks deletes tasks whose status is terminal.
 func (s *Store) ClearTerminalTasks(ctx context.Context) (int64, error) {
-	return s.queries().ClearTerminalTasks(ctx)
+	return s.queries().ClearTerminalTasks(ctx, scopeOrg(ctx))
 }
 
 // Tasks returns the most recently updated tasks.
@@ -745,7 +749,7 @@ func (s *Store) StatusCounts(ctx context.Context) (map[string]int, error) {
 // TaskByIssue returns the task tracking an issue, or nil.
 func (s *Store) TaskByIssue(ctx context.Context, owner, repo string, number int) (*workflow.Task, error) {
 	t, err := s.queries().TaskByIssue(ctx, postgresdb.TaskByIssueParams{
-		Owner: owner, Repo: repo, IssueNumber: int64(number),
+		ScopeOrg: scopeOrg(ctx), Owner: owner, Repo: repo, IssueNumber: int64(number),
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -759,7 +763,7 @@ func (s *Store) TaskByIssue(ctx context.Context, owner, repo string, number int)
 // OpenTaskByPR returns the live task that owns the given pull request, or nil.
 func (s *Store) OpenTaskByPR(ctx context.Context, owner, repo string, number int) (*workflow.Task, error) {
 	t, err := s.queries().TaskByPR(ctx, postgresdb.TaskByPRParams{
-		Owner: owner, Repo: repo, PrNumber: int64(number), Status: workflow.StatusPROpen,
+		ScopeOrg: scopeOrg(ctx), Owner: owner, Repo: repo, PrNumber: int64(number), Status: workflow.StatusPROpen,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil

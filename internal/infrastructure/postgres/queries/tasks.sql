@@ -20,13 +20,15 @@ RETURNING *;
 SELECT * FROM tasks WHERE id = sqlc.arg(id) AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org));
 
 -- name: TaskByIssue :one
-SELECT * FROM tasks WHERE owner = $1 AND repo = $2 AND issue_number = $3;
+SELECT * FROM tasks WHERE owner = sqlc.arg(owner) AND repo = sqlc.arg(repo) AND issue_number = sqlc.arg(issue_number)
+  AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org));
 
 -- name: TaskByPR :one
 -- OpenTaskByPR is the live-task lookup: it only resolves a PR the task is
 -- currently tracking as open, so a merged or rejected task does not read as
 -- the owner of a PR number it no longer holds.
-SELECT * FROM tasks WHERE owner = $1 AND repo = $2 AND pr_number = $3 AND status = $4;
+SELECT * FROM tasks WHERE owner = sqlc.arg(owner) AND repo = sqlc.arg(repo) AND pr_number = sqlc.arg(pr_number) AND status = sqlc.arg(status)
+  AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org));
 
 -- name: ListTaskSummaries :many
 -- The dashboard's list. This projection is deliberately narrow: Plan gates
@@ -61,8 +63,10 @@ SELECT status, count(*)::int AS count FROM tasks WHERE (sqlc.narg(scope_org)::te
 -- inputs is the chat task's own workflow inputs; a binding dispatch passes
 -- its inputs here too, so this insert is the single writer of the column and
 -- StampTaskBinding adds only the provenance.
+-- The task runs in its identity's org; a caller confined to another org
+-- inserts nothing, so it cannot start work under an identity it does not own.
 INSERT INTO tasks (owner, repo, issue_number, title, body, labels, workflow, source, identity, org_id, inputs, origin)
-VALUES (
+SELECT
     sqlc.arg(owner), sqlc.arg(repo),
     COALESCE((
         SELECT MAX(existing.issue_number) FROM tasks existing
@@ -71,15 +75,16 @@ VALUES (
           AND existing.source = 'chat'
     ), sqlc.arg(fallback_issue_number)) + 1,
     sqlc.arg(title), sqlc.arg(body), 'chat', sqlc.arg(workflow), 'chat', sqlc.arg(identity),
-    COALESCE(
+    owner_org.id,
+    sqlc.arg(inputs),
+    sqlc.arg(origin)
+FROM (SELECT COALESCE(
         (SELECT a.org_id FROM org_agents a WHERE a.identity_id = sqlc.arg(identity)),
         (SELECT m.org_id FROM memberships m WHERE m.identity_id = sqlc.arg(identity)
          ORDER BY m.created_at, m.org_id, m.workspace_id NULLS LAST LIMIT 1),
         'org-sys'
-    ),
-    sqlc.arg(inputs),
-    sqlc.arg(origin)
-)
+    ) AS id) AS owner_org
+WHERE sqlc.narg(scope_org)::text IS NULL OR owner_org.id = sqlc.narg(scope_org)
 RETURNING *;
 
 -- name: ActiveTasksByOrigin :many
@@ -135,7 +140,8 @@ WHERE id = $1 AND status = $4;
 
 -- name: ClearTerminalTasks :execrows
 DELETE FROM tasks
-WHERE status IN ('merged', 'rejected', 'dead', 'closed_wont_do', 'completed');
+WHERE status IN ('merged', 'rejected', 'dead', 'closed_wont_do', 'completed')
+  AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org));
 
 -- name: RecoverStaleTasks :execrows
 UPDATE tasks SET status = 'queued', updated_at = now() WHERE status = 'running';

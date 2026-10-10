@@ -63,6 +63,17 @@ func (s *EDA) saveEventType(ctx context.Context, t eventtype.EventType, write fu
 	if err := t.Validate(); err != nil {
 		return err
 	}
+	// A type is saved only on a source of the caller's own org: another org's
+	// rule would otherwise identify that org's captures.
+	if _, scoped := org.Scope(ctx); scoped {
+		src, err := s.GetSource(ctx, t.Source)
+		if err != nil {
+			return err
+		}
+		if src == nil {
+			return storecontract.ErrSourceNotFound
+		}
+	}
 	rule, err := json.Marshal(t.Rule)
 	if err != nil {
 		return fmt.Errorf("edastore: encode event type rule: %w", err)

@@ -331,7 +331,7 @@ func (s *Server) registerConfigAndLogRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/orgs/{id}/members", s.handleOrgMembersList)
 	mux.HandleFunc("PUT /api/orgs/{id}/members/{identity}", s.handleOrgMemberSet)
 	mux.HandleFunc("DELETE /api/orgs/{id}/members/{identity}", s.handleOrgMemberRemove)
-	mux.HandleFunc("PUT /api/orgs/{id}/agents/{identity}", s.handleOrgAgentAssign)
+	mux.HandleFunc("PUT /api/orgs/{id}/agents/{identity}", instanceOnly(s.handleOrgAgentAssign))
 	mux.HandleFunc("GET /api/tokens", s.handlePersonalTokensList)
 	mux.HandleFunc("POST /api/tokens", s.handlePersonalTokenCreate)
 	mux.HandleFunc("DELETE /api/tokens/{id}", s.handlePersonalTokenRevoke)
@@ -351,9 +351,9 @@ func (s *Server) registerChatRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/chat/answer", s.handleChatAnswer)
 	mux.HandleFunc("GET /api/chat/file/{token}", s.handleChatFile)
 	mux.HandleFunc("POST /api/chat/persona", s.handleChatPersona)
-	mux.HandleFunc("GET /api/chat/update", s.handleChatUpdate)
-	mux.HandleFunc("POST /api/chat/update/defer", s.handleChatUpdateDefer)
-	mux.HandleFunc("POST /api/chat/update/install", s.handleChatUpdateInstall)
+	mux.HandleFunc("GET /api/chat/update", instanceOnly(s.handleChatUpdate))
+	mux.HandleFunc("POST /api/chat/update/defer", instanceOnly(s.handleChatUpdateDefer))
+	mux.HandleFunc("POST /api/chat/update/install", instanceOnly(s.handleChatUpdateInstall))
 }
 
 func (s *Server) Handler() http.Handler {

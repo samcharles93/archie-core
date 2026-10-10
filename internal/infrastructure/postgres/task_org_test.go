@@ -11,7 +11,8 @@ import (
 
 // An org's tasks, their events and the stats built from them are invisible to
 // a request scoped to another org. An event a task emits belongs to the
-// task's org whatever org the writer acts in.
+// task's org whatever org the writer acts in, and a caller cannot start work
+// under another org's identity.
 func TestTasksStayInTheirOrg(t *testing.T) {
 	scoped := func(id org.OrgID) context.Context {
 		return org.WithScope(org.WithOrg(t.Context(), id), id)
@@ -74,5 +75,9 @@ func TestTasksStayInTheirOrg(t *testing.T) {
 				}
 			}
 		})
+	}
+	// An identity of the system org starts no work for a caller in acme.
+	if _, err := db.EnqueueChatTask(scoped("acme"), "o", "r", "t", "b", "deploy", "operator", "", nil); err == nil {
+		t.Fatal("acme started a task under a system-org identity")
 	}
 }

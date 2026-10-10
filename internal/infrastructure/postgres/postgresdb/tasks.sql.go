@@ -300,10 +300,11 @@ func (q *Queries) ClaimNextTask(ctx context.Context) (Task, error) {
 const clearTerminalTasks = `-- name: ClearTerminalTasks :execrows
 DELETE FROM tasks
 WHERE status IN ('merged', 'rejected', 'dead', 'closed_wont_do', 'completed')
+  AND ($1::text IS NULL OR org_id = $1)
 `
 
-func (q *Queries) ClearTerminalTasks(ctx context.Context) (int64, error) {
-	result, err := q.db.Exec(ctx, clearTerminalTasks)
+func (q *Queries) ClearTerminalTasks(ctx context.Context, scopeOrg pgtype.Text) (int64, error) {
+	result, err := q.db.Exec(ctx, clearTerminalTasks, scopeOrg)
 	if err != nil {
 		return 0, err
 	}
@@ -386,7 +387,7 @@ func (q *Queries) EnqueueIssue(ctx context.Context, arg EnqueueIssueParams) (int
 
 const insertChatTask = `-- name: InsertChatTask :one
 INSERT INTO tasks (owner, repo, issue_number, title, body, labels, workflow, source, identity, org_id, inputs, origin)
-VALUES (
+SELECT
     $1, $2,
     COALESCE((
         SELECT MAX(existing.issue_number) FROM tasks existing
@@ -395,15 +396,16 @@ VALUES (
           AND existing.source = 'chat'
     ), $3) + 1,
     $4, $5, 'chat', $6, 'chat', $7,
-    COALESCE(
+    owner_org.id,
+    $8,
+    $9
+FROM (SELECT COALESCE(
         (SELECT a.org_id FROM org_agents a WHERE a.identity_id = $7),
         (SELECT m.org_id FROM memberships m WHERE m.identity_id = $7
          ORDER BY m.created_at, m.org_id, m.workspace_id NULLS LAST LIMIT 1),
         'org-sys'
-    ),
-    $8,
-    $9
-)
+    ) AS id) AS owner_org
+WHERE $10::text IS NULL OR owner_org.id = $10
 RETURNING id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth, outputs, review_gate, rereview_rounds, retry_mode, resume_from, resume_results, pending_reviews, origin, call_key
 `
 
@@ -417,6 +419,7 @@ type InsertChatTaskParams struct {
 	Identity            string
 	Inputs              string
 	Origin              string
+	ScopeOrg            pgtype.Text
 }
 
 // The synthetic issue number keeps chat-sourced tasks off the forge's real
@@ -426,6 +429,8 @@ type InsertChatTaskParams struct {
 // inputs is the chat task's own workflow inputs; a binding dispatch passes
 // its inputs here too, so this insert is the single writer of the column and
 // StampTaskBinding adds only the provenance.
+// The task runs in its identity's org; a caller confined to another org
+// inserts nothing, so it cannot start work under an identity it does not own.
 func (q *Queries) InsertChatTask(ctx context.Context, arg InsertChatTaskParams) (Task, error) {
 	row := q.db.QueryRow(ctx, insertChatTask,
 		arg.Owner,
@@ -437,6 +442,7 @@ func (q *Queries) InsertChatTask(ctx context.Context, arg InsertChatTaskParams) 
 		arg.Identity,
 		arg.Inputs,
 		arg.Origin,
+		arg.ScopeOrg,
 	)
 	var i Task
 	err := row.Scan(
@@ -992,16 +998,23 @@ func (q *Queries) TaskByID(ctx context.Context, arg TaskByIDParams) (Task, error
 
 const taskByIssue = `-- name: TaskByIssue :one
 SELECT id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth, outputs, review_gate, rereview_rounds, retry_mode, resume_from, resume_results, pending_reviews, origin, call_key FROM tasks WHERE owner = $1 AND repo = $2 AND issue_number = $3
+  AND ($4::text IS NULL OR org_id = $4)
 `
 
 type TaskByIssueParams struct {
 	Owner       string
 	Repo        string
 	IssueNumber int64
+	ScopeOrg    pgtype.Text
 }
 
 func (q *Queries) TaskByIssue(ctx context.Context, arg TaskByIssueParams) (Task, error) {
-	row := q.db.QueryRow(ctx, taskByIssue, arg.Owner, arg.Repo, arg.IssueNumber)
+	row := q.db.QueryRow(ctx, taskByIssue,
+		arg.Owner,
+		arg.Repo,
+		arg.IssueNumber,
+		arg.ScopeOrg,
+	)
 	var i Task
 	err := row.Scan(
 		&i.ID,
@@ -1056,6 +1069,7 @@ func (q *Queries) TaskByIssue(ctx context.Context, arg TaskByIssueParams) (Task,
 
 const taskByPR = `-- name: TaskByPR :one
 SELECT id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth, outputs, review_gate, rereview_rounds, retry_mode, resume_from, resume_results, pending_reviews, origin, call_key FROM tasks WHERE owner = $1 AND repo = $2 AND pr_number = $3 AND status = $4
+  AND ($5::text IS NULL OR org_id = $5)
 `
 
 type TaskByPRParams struct {
@@ -1063,6 +1077,7 @@ type TaskByPRParams struct {
 	Repo     string
 	PrNumber int64
 	Status   string
+	ScopeOrg pgtype.Text
 }
 
 // OpenTaskByPR is the live-task lookup: it only resolves a PR the task is
@@ -1074,6 +1089,7 @@ func (q *Queries) TaskByPR(ctx context.Context, arg TaskByPRParams) (Task, error
 		arg.Repo,
 		arg.PrNumber,
 		arg.Status,
+		arg.ScopeOrg,
 	)
 	var i Task
 	err := row.Scan(
