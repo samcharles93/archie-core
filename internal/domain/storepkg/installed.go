@@ -62,12 +62,22 @@ type Repository interface {
 	// Accept records the operator's accepted authority against the package's
 	// currently pinned digest.
 	Accept(context.Context, string, string, Authority) error
+	UpdateRecords
+}
+
+// UpdateRecords is the part of Repository the update lifecycle writes.
+type UpdateRecords interface {
 	// SetPending records an update waiting for approval, leaving the live pin.
 	SetPending(ctx context.Context, orgID, name string, pending Pin, declared Authority) error
 	// Replace swaps the live pin, descriptor, layer and accepted authority for
 	// next's, keeping the replaced pin and its accepted authority as Previous
 	// and clearing Pending.
 	Replace(ctx context.Context, next Installed) error
+	// SetUpdatePolicy sets whether a package follows the catalogue on its own.
+	SetUpdatePolicy(ctx context.Context, orgID, name, policy string) error
+	// ListAutoUpdate names every installed package, in any org, whose policy
+	// is auto.
+	ListAutoUpdate(ctx context.Context) ([]OrgPackage, error)
 }
 
 // Registry reads a package by immutable OCI manifest digest.
@@ -92,6 +102,9 @@ type OrgUpdates interface {
 	UpdatePackage(ctx context.Context, orgID, name string) (Installed, error)
 	ApprovePackageUpdate(ctx context.Context, orgID, name string) (Installed, error)
 	RollbackPackage(ctx context.Context, orgID, name string) (Installed, error)
+	SetPackageUpdatePolicy(ctx context.Context, orgID, name, policy string) (Installed, error)
+	// UpdateAuto runs UpdatePackage for every auto package.
+	UpdateAuto(ctx context.Context) error
 }
 
 // Installations is Manager as a remote caller sees it: the State Store acts
@@ -112,6 +125,7 @@ type Updates interface {
 	UpdatePackage(ctx context.Context, name string) (Installed, error)
 	ApprovePackageUpdate(ctx context.Context, name string) (Installed, error)
 	RollbackPackage(ctx context.Context, name string) (Installed, error)
+	SetPackageUpdatePolicy(ctx context.Context, name, policy string) (Installed, error)
 }
 
 // Service validates the registry content before persisting an installation.
@@ -195,7 +209,7 @@ func (s Service) Install(ctx context.Context, orgID, name, reference, digest str
 	}
 	installed := Installed{
 		OrgID: orgID, Name: name, Reference: reference, Digest: digest,
-		Descriptor: descriptor, Layer: layer, UpdatePolicy: "manual",
+		Descriptor: descriptor, Layer: layer, UpdatePolicy: PolicyManual,
 	}
 	contents, err := s.resolveFamilyContents(descriptor, layer)
 	if err != nil {

@@ -30,6 +30,7 @@ const (
 	StateStoreService_UpdatePackage_FullMethodName              = "/state.v1.StateStoreService/UpdatePackage"
 	StateStoreService_ApprovePackageUpdate_FullMethodName       = "/state.v1.StateStoreService/ApprovePackageUpdate"
 	StateStoreService_RollbackPackage_FullMethodName            = "/state.v1.StateStoreService/RollbackPackage"
+	StateStoreService_SetPackageUpdatePolicy_FullMethodName     = "/state.v1.StateStoreService/SetPackageUpdatePolicy"
 	StateStoreService_RegisterTaskGrant_FullMethodName          = "/state.v1.StateStoreService/RegisterTaskGrant"
 	StateStoreService_RevokeTaskGrant_FullMethodName            = "/state.v1.StateStoreService/RevokeTaskGrant"
 	StateStoreService_ResolveTaskGrant_FullMethodName           = "/state.v1.StateStoreService/ResolveTaskGrant"
@@ -187,6 +188,9 @@ type StateStoreServiceClient interface {
 	UpdatePackage(ctx context.Context, in *UpdatePackageRequest, opts ...grpc.CallOption) (*UpdatePackageResponse, error)
 	ApprovePackageUpdate(ctx context.Context, in *ApprovePackageUpdateRequest, opts ...grpc.CallOption) (*ApprovePackageUpdateResponse, error)
 	RollbackPackage(ctx context.Context, in *RollbackPackageRequest, opts ...grpc.CallOption) (*RollbackPackageResponse, error)
+	// SetPackageUpdatePolicy sets "manual" or "auto"; the State Store updates
+	// auto packages on a timer.
+	SetPackageUpdatePolicy(ctx context.Context, in *SetPackageUpdatePolicyRequest, opts ...grpc.CallOption) (*SetPackageUpdatePolicyResponse, error)
 	// Administrative task credential lifecycle. Worker credentials cannot call these.
 	RegisterTaskGrant(ctx context.Context, in *RegisterTaskGrantRequest, opts ...grpc.CallOption) (*RegisterTaskGrantResponse, error)
 	RevokeTaskGrant(ctx context.Context, in *RevokeTaskGrantRequest, opts ...grpc.CallOption) (*RevokeTaskGrantResponse, error)
@@ -523,6 +527,16 @@ func (c *stateStoreServiceClient) RollbackPackage(ctx context.Context, in *Rollb
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RollbackPackageResponse)
 	err := c.cc.Invoke(ctx, StateStoreService_RollbackPackage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) SetPackageUpdatePolicy(ctx context.Context, in *SetPackageUpdatePolicyRequest, opts ...grpc.CallOption) (*SetPackageUpdatePolicyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetPackageUpdatePolicyResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_SetPackageUpdatePolicy_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1809,6 +1823,9 @@ type StateStoreServiceServer interface {
 	UpdatePackage(context.Context, *UpdatePackageRequest) (*UpdatePackageResponse, error)
 	ApprovePackageUpdate(context.Context, *ApprovePackageUpdateRequest) (*ApprovePackageUpdateResponse, error)
 	RollbackPackage(context.Context, *RollbackPackageRequest) (*RollbackPackageResponse, error)
+	// SetPackageUpdatePolicy sets "manual" or "auto"; the State Store updates
+	// auto packages on a timer.
+	SetPackageUpdatePolicy(context.Context, *SetPackageUpdatePolicyRequest) (*SetPackageUpdatePolicyResponse, error)
 	// Administrative task credential lifecycle. Worker credentials cannot call these.
 	RegisterTaskGrant(context.Context, *RegisterTaskGrantRequest) (*RegisterTaskGrantResponse, error)
 	RevokeTaskGrant(context.Context, *RevokeTaskGrantRequest) (*RevokeTaskGrantResponse, error)
@@ -2073,6 +2090,9 @@ func (UnimplementedStateStoreServiceServer) ApprovePackageUpdate(context.Context
 }
 func (UnimplementedStateStoreServiceServer) RollbackPackage(context.Context, *RollbackPackageRequest) (*RollbackPackageResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RollbackPackage not implemented")
+}
+func (UnimplementedStateStoreServiceServer) SetPackageUpdatePolicy(context.Context, *SetPackageUpdatePolicyRequest) (*SetPackageUpdatePolicyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetPackageUpdatePolicy not implemented")
 }
 func (UnimplementedStateStoreServiceServer) RegisterTaskGrant(context.Context, *RegisterTaskGrantRequest) (*RegisterTaskGrantResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RegisterTaskGrant not implemented")
@@ -2655,6 +2675,24 @@ func _StateStoreService_RollbackPackage_Handler(srv interface{}, ctx context.Con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StateStoreServiceServer).RollbackPackage(ctx, req.(*RollbackPackageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_SetPackageUpdatePolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetPackageUpdatePolicyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).SetPackageUpdatePolicy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_SetPackageUpdatePolicy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).SetPackageUpdatePolicy(ctx, req.(*SetPackageUpdatePolicyRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -4884,6 +4922,10 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RollbackPackage",
 			Handler:    _StateStoreService_RollbackPackage_Handler,
+		},
+		{
+			MethodName: "SetPackageUpdatePolicy",
+			Handler:    _StateStoreService_SetPackageUpdatePolicy_Handler,
 		},
 		{
 			MethodName: "RegisterTaskGrant",

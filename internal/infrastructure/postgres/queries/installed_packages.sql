@@ -49,3 +49,9 @@ DELETE FROM installed_package_requirements WHERE org_id = $1 AND package_name = 
 
 -- name: CountInstalledDependents :one
 SELECT count(*) FROM installed_package_requirements WHERE org_id = $1 AND required_name = $2;
+
+-- name: SetInstalledPackageUpdatePolicy :execrows
+UPDATE installed_packages SET update_policy = $3 WHERE org_id = $1 AND name = $2;
+
+-- name: ListAutoUpdateInstalledPackages :many
+SELECT org_id, name FROM installed_packages WHERE update_policy = 'auto' ORDER BY org_id, name;

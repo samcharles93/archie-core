@@ -309,3 +309,22 @@ func (c *Client) RollbackPackage(ctx context.Context, name string) (storepkg.Ins
 	}
 	return packageValue(response.GetPackage())
 }
+
+func (s *server) SetPackageUpdatePolicy(ctx context.Context, request *pb.SetPackageUpdatePolicyRequest) (*pb.SetPackageUpdatePolicyResponse, error) {
+	if s.deps.Packages == nil {
+		return nil, status.Error(codes.Unavailable, "package store unavailable")
+	}
+	p, err := s.deps.Packages.SetPackageUpdatePolicy(ctx, string(org.OrgFromContext(ctx)), request.GetName(), request.GetPolicy())
+	if err != nil {
+		return nil, s.logErr("SetPackageUpdatePolicy", err)
+	}
+	return &pb.SetPackageUpdatePolicyResponse{Package: packageProto(p, true)}, nil
+}
+
+func (c *Client) SetPackageUpdatePolicy(ctx context.Context, name, policy string) (storepkg.Installed, error) {
+	response, err := c.client.SetPackageUpdatePolicy(ctx, &pb.SetPackageUpdatePolicyRequest{Name: name, Policy: policy})
+	if err != nil {
+		return storepkg.Installed{}, unmapError(err)
+	}
+	return packageValue(response.GetPackage())
+}

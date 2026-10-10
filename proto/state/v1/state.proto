@@ -35,6 +35,9 @@ service StateStoreService {
   rpc UpdatePackage(UpdatePackageRequest) returns (UpdatePackageResponse);
   rpc ApprovePackageUpdate(ApprovePackageUpdateRequest) returns (ApprovePackageUpdateResponse);
   rpc RollbackPackage(RollbackPackageRequest) returns (RollbackPackageResponse);
+  // SetPackageUpdatePolicy sets "manual" or "auto"; the State Store updates
+  // auto packages on a timer.
+  rpc SetPackageUpdatePolicy(SetPackageUpdatePolicyRequest) returns (SetPackageUpdatePolicyResponse);
   // Administrative task credential lifecycle. Worker credentials cannot call these.
   rpc RegisterTaskGrant(RegisterTaskGrantRequest) returns (RegisterTaskGrantResponse);
   rpc RevokeTaskGrant(RevokeTaskGrantRequest) returns (RevokeTaskGrantResponse);
@@ -1421,6 +1424,11 @@ message ApprovePackageUpdateRequest { string name = 1; }
 message ApprovePackageUpdateResponse { InstalledPackage package = 1; }
 message RollbackPackageRequest { string name = 1; }
 message RollbackPackageResponse { InstalledPackage package = 1; }
+message SetPackageUpdatePolicyRequest {
+  string name = 1;
+  string policy = 2;
+}
+message SetPackageUpdatePolicyResponse { InstalledPackage package = 1; }
 
 // Task mirrors internal/domain/workflow.Task.
 

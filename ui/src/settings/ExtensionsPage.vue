@@ -91,6 +91,14 @@ const tones = {
               <Button size="sm" class="mt-2" :disabled="!!store.busy" @click="store.approveUpdate(extension.name)">Approve</Button>
             </div>
             <Button variant="ghost" size="sm" :disabled="!!store.busy" @click="store.update(extension.name)">Update</Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              :disabled="!!store.busy"
+              :aria-pressed="extension.update_policy === 'auto'"
+              @click="store.setUpdatePolicy(extension.name, extension.update_policy === 'auto' ? 'manual' : 'auto')"
+              >{{ extension.update_policy === "auto" ? "Auto-update on" : "Auto-update off" }}</Button
+            >
             <Button v-if="extension.can_rollback" variant="ghost" size="sm" :disabled="!!store.busy" @click="store.rollback(extension.name)"
               >Roll back</Button
             >

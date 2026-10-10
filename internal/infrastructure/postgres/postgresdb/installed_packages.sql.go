@@ -195,6 +195,35 @@ func (q *Queries) InsertInstalledRequirement(ctx context.Context, arg InsertInst
 	return err
 }
 
+const listAutoUpdateInstalledPackages = `-- name: ListAutoUpdateInstalledPackages :many
+SELECT org_id, name FROM installed_packages WHERE update_policy = 'auto' ORDER BY org_id, name
+`
+
+type ListAutoUpdateInstalledPackagesRow struct {
+	OrgID string
+	Name  string
+}
+
+func (q *Queries) ListAutoUpdateInstalledPackages(ctx context.Context) ([]ListAutoUpdateInstalledPackagesRow, error) {
+	rows, err := q.db.Query(ctx, listAutoUpdateInstalledPackages)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAutoUpdateInstalledPackagesRow
+	for rows.Next() {
+		var i ListAutoUpdateInstalledPackagesRow
+		if err := rows.Scan(&i.OrgID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listInstalledPackages = `-- name: ListInstalledPackages :many
 SELECT org_id, name, reference, digest, descriptor, layer, update_policy, accepted_authority,
     pending_reference, pending_digest, pending_authority, previous_reference, previous_digest, previous_accepted_authority
@@ -320,6 +349,24 @@ func (q *Queries) SetInstalledPackagePending(ctx context.Context, arg SetInstall
 		arg.PendingDigest,
 		arg.PendingAuthority,
 	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setInstalledPackageUpdatePolicy = `-- name: SetInstalledPackageUpdatePolicy :execrows
+UPDATE installed_packages SET update_policy = $3 WHERE org_id = $1 AND name = $2
+`
+
+type SetInstalledPackageUpdatePolicyParams struct {
+	OrgID        string
+	Name         string
+	UpdatePolicy string
+}
+
+func (q *Queries) SetInstalledPackageUpdatePolicy(ctx context.Context, arg SetInstalledPackageUpdatePolicyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setInstalledPackageUpdatePolicy, arg.OrgID, arg.Name, arg.UpdatePolicy)
 	if err != nil {
 		return 0, err
 	}

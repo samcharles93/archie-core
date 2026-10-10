@@ -24,6 +24,7 @@ export interface Extension {
   /** An update waiting for approval, with only the grants it adds. */
   pending: { digest: string; added: Authority } | null;
   can_rollback: boolean;
+  update_policy: "manual" | "auto";
 }
 
 /** A package the verified catalogue offers. */
@@ -123,6 +124,8 @@ export const useExtensionsStore = defineStore("extensions", () => {
     accept: (name: string) => mutate(name, () => call(`${path(name)}/accept`, { method: "POST" })),
     update: (name: string) => mutate(name, () => call(`${path(name)}/update`, { method: "POST" })),
     approveUpdate: (name: string) => mutate(name, () => call(`${path(name)}/approve-update`, { method: "POST" })),
+    setUpdatePolicy: (name: string, policy: "manual" | "auto") =>
+      mutate(name, () => call(`${path(name)}/update-policy`, { method: "PUT", body: JSON.stringify({ policy }) })),
     rollback: (name: string) => mutate(name, () => call(`${path(name)}/rollback`, { method: "POST" })),
     setEnabled: (name: string, enabled: boolean) =>
       mutate(name, () => call(`${path(name)}/enabled`, { method: "PUT", body: JSON.stringify({ enabled }) })),

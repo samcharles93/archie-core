@@ -6,6 +6,53 @@ import (
 	"fmt"
 )
 
+// Update policies. Manual is the default; an auto package follows the
+// catalogue, with a widening update still waiting for approval.
+const (
+	PolicyManual = "manual"
+	PolicyAuto   = "auto"
+)
+
+// ErrInvalidPolicy: the update policy is neither manual nor auto.
+var ErrInvalidPolicy = errors.New("store package update policy must be manual or auto")
+
+// OrgPackage names one installed package.
+type OrgPackage struct{ OrgID, Name string }
+
+// SetPackageUpdatePolicy sets whether name follows the catalogue on its own.
+func (s Service) SetPackageUpdatePolicy(ctx context.Context, orgID, name, policy string) (Installed, error) {
+	if policy != PolicyManual && policy != PolicyAuto {
+		return Installed{}, ErrInvalidPolicy
+	}
+	if err := s.Store.SetUpdatePolicy(ctx, orgID, name, policy); err != nil {
+		return Installed{}, err
+	}
+	return s.Store.Get(ctx, orgID, name)
+}
+
+// UpdateAuto runs UpdatePackage for every auto package.
+func (s Service) UpdateAuto(ctx context.Context) error {
+	return updateAuto(ctx, s.Store, s)
+}
+
+// updateAuto tries every auto package: one that fails does not stop the rest.
+func updateAuto(ctx context.Context, store interface {
+	ListAutoUpdate(context.Context) ([]OrgPackage, error)
+}, updates OrgUpdates,
+) error {
+	refs, err := store.ListAutoUpdate(ctx)
+	if err != nil {
+		return fmt.Errorf("list auto-update packages: %w", err)
+	}
+	var errs []error
+	for _, ref := range refs {
+		if _, err := updates.UpdatePackage(ctx, ref.OrgID, ref.Name); err != nil {
+			errs = append(errs, fmt.Errorf("update %s/%s: %w", ref.OrgID, ref.Name, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
 var (
 	// ErrNoPendingUpdate: there is no update waiting for approval.
 	ErrNoPendingUpdate = errors.New("store package has no pending update")
@@ -41,7 +88,7 @@ func (s Service) UpdatePackage(ctx context.Context, orgID, name string) (Install
 			continue
 		}
 		pin := Pin{Reference: entry.Reference, Digest: entry.Digest}
-		if pin.Digest == installed.Digest {
+		if pin.Digest == installed.Digest || (installed.Pending != nil && installed.Pending.Digest == pin.Digest) {
 			return installed, nil
 		}
 		next, contents, err := s.prepare(ctx, orgID, name, pin)

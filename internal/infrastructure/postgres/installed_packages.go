@@ -289,3 +289,28 @@ func pgCode(err error) string {
 	}
 	return ""
 }
+
+func (s *InstalledPackages) SetUpdatePolicy(ctx context.Context, orgID, name, policy string) error {
+	rows, err := postgresdb.New(s.pool).SetInstalledPackageUpdatePolicy(ctx, postgresdb.SetInstalledPackageUpdatePolicyParams{
+		OrgID: orgID, Name: name, UpdatePolicy: policy,
+	})
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return storepkg.ErrNotFound
+	}
+	return nil
+}
+
+func (s *InstalledPackages) ListAutoUpdate(ctx context.Context) ([]storepkg.OrgPackage, error) {
+	rows, err := postgresdb.New(s.pool).ListAutoUpdateInstalledPackages(ctx)
+	if err != nil {
+		return nil, err
+	}
+	refs := make([]storepkg.OrgPackage, 0, len(rows))
+	for _, row := range rows {
+		refs = append(refs, storepkg.OrgPackage{OrgID: row.OrgID, Name: row.Name})
+	}
+	return refs, nil
+}

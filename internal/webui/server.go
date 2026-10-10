@@ -320,6 +320,7 @@ func (s *Server) registerConfigAndLogRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/extensions/{name}/update", s.handleExtensionUpdate)
 	mux.HandleFunc("POST /api/extensions/{name}/approve-update", s.handleExtensionApproveUpdate)
 	mux.HandleFunc("POST /api/extensions/{name}/rollback", s.handleExtensionRollback)
+	mux.HandleFunc("PUT /api/extensions/{name}/update-policy", s.handleExtensionUpdatePolicy)
 	mux.HandleFunc("PUT /api/extensions/{name}/enabled", s.handleExtensionEnabled)
 	mux.HandleFunc("DELETE /api/extensions/{name}", s.handleExtensionRemove)
 	mux.HandleFunc("GET /api/control-plane/catalog", s.handleControlPlaneCatalog)

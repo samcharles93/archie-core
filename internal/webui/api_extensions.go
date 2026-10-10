@@ -54,6 +54,8 @@ type ExtensionView struct {
 	// to what the operator accepted.
 	Pending     *pendingView `json:"pending"`
 	CanRollback bool         `json:"can_rollback"`
+	// UpdatePolicy is "manual" or "auto".
+	UpdatePolicy string `json:"update_policy"`
 }
 
 type pendingView struct {
@@ -92,6 +94,7 @@ func extensionView(p storepkg.Installed, enabled bool) ExtensionView {
 		}
 	}
 	view.CanRollback = p.Previous != nil
+	view.UpdatePolicy = p.UpdatePolicy
 	if p.Pending != nil && p.PendingAuthority != nil {
 		view.Pending = &pendingView{Digest: p.Pending.Digest, Added: addedGrants(p.AcceptedAuthority, *p.PendingAuthority)}
 	}
@@ -172,6 +175,8 @@ func writePackageError(w http.ResponseWriter, err error) {
 		http.Error(w, "extension not installed", http.StatusNotFound)
 	case errors.Is(err, storepkg.ErrNoPendingUpdate), errors.Is(err, storepkg.ErrNoPrevious), errors.Is(err, storepkg.ErrRequired):
 		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, storepkg.ErrInvalidPolicy):
+		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, storepkg.ErrInstalled):
 		http.Error(w, "extension already installed", http.StatusConflict)
 	default:
@@ -267,6 +272,28 @@ func (s *Server) handleExtensionApproveUpdate(w http.ResponseWriter, r *http.Req
 // authority.
 func (s *Server) handleExtensionRollback(w http.ResponseWriter, r *http.Request) {
 	s.packageTransition(w, r, s.Packages.RollbackPackage)
+}
+
+type updatePolicyRequest struct {
+	Policy string `json:"policy"`
+}
+
+// handleExtensionUpdatePolicy sets whether the State Store updates a package
+// on its own.
+func (s *Server) handleExtensionUpdatePolicy(w http.ResponseWriter, r *http.Request) {
+	if !s.extensionsReady(w) {
+		return
+	}
+	request, ok := decodeBody[updatePolicyRequest](w, r)
+	if !ok {
+		return
+	}
+	p, err := s.Packages.SetPackageUpdatePolicy(r.Context(), r.PathValue("name"), request.Policy)
+	if err != nil {
+		writePackageError(w, err)
+		return
+	}
+	writeJSON(w, extensionView(p, false))
 }
 
 func (s *Server) packageTransition(w http.ResponseWriter, r *http.Request, do func(context.Context, string) (storepkg.Installed, error)) {

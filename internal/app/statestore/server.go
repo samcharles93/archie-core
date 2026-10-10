@@ -144,6 +144,7 @@ func Run(ctx context.Context, options Options) error { //nolint:cyclop // the co
 
 	deps := b.stateStoreDeps(grants)
 	controlPlaneDeps(&deps, control)
+	go b.autoUpdatePackages(ctx, deps.Packages)
 	return serveStateStore(ctx, listener, deps, opts)
 }
 
