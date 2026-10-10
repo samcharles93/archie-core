@@ -260,6 +260,23 @@ type Message struct {
 	Media     []byte
 }
 
+type ModelUsage struct {
+	ID           int64
+	OrgID        string
+	Source       string
+	TaskID       int64
+	Attempt      int64
+	Workflow     string
+	Step         string
+	Alias        string
+	Provider     string
+	Model        string
+	InputTokens  int64
+	OutputTokens int64
+	CachedTokens int64
+	At           time.Time
+}
+
 type Org struct {
 	ID        string
 	Name      string

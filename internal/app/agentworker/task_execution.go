@@ -233,7 +233,7 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 	if len(req.MCPServers) > 0 {
 		llm = modelloop.NewRuntime(req.Providers, req.Cfg.ModelLimits)
 	}
-	mcpSet, mcpErr := startMCPProviders(ctx, req.MCPServers, taskSamplingHandler(llm, req.Cfg), log)
+	mcpSet, mcpErr := startMCPProviders(ctx, req.MCPServers, taskSamplingHandler(llm, req.Cfg, samplingUsageRecorder(dependencies.store, req.Task, log)), log)
 	if mcpSet != nil {
 		defer mcpSet.cleanup(ctx, log)
 	}

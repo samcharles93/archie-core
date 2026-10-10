@@ -74,6 +74,10 @@ func (b *server) setupChatRuntime(ctx context.Context, cfg config.Config, actor 
 	// later carries both: the recorder is written by sendChatTurn, the source
 	// is read by /status.
 	b.providerOutcomes = newProviderOutcomeRecorder()
+	b.usage = &usageSink{models: b.chatModels, log: b.log}
+	if b.stateStore != nil {
+		b.usage.store = b.stateStore
+	}
 	b.statusHealth = newStatusHealth(b)
 
 	b.setupChatTasks(cfg)
@@ -253,6 +257,7 @@ func (b *server) setupGatewayChat(ctx context.Context, actor gateway.ChatTaskAct
 		// The Gateway executes the web chat's turns, so it is the process
 		// that must record their outcomes for /status.
 		ProviderOutcomes: b.providerOutcomes,
+		Usage:            b.usage,
 	}
 	router.LLM, router.LLMStream = makeChatLLMResponder(ctx, "web", setup, b.chatSessionStore, router)
 	router.Titles = newChatTitleGenerator(setup)

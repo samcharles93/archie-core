@@ -14,6 +14,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
+	"github.com/samcharles93/archie-core/internal/domain/usage"
 	"github.com/samcharles93/archie-core/internal/events"
 	infraMemory "github.com/samcharles93/archie-core/internal/infrastructure/memory"
 	"github.com/samcharles93/archie-core/internal/infrastructure/sessioncurator"
@@ -34,7 +35,7 @@ func (b *server) setupCurators(ctx context.Context) {
 		MemoryEngines: b.memEngines,
 		Skills:        skillcurator.NewStore(skillsRoot),
 		Conversations: sessioncurator.NewAdapter(b.chatSessionStore, b.cfg.BotUser),
-		LLM:           curatorLLMRunner{llm: b.chatLLM, outcomes: b.providerOutcomes},
+		LLM:           curatorLLMRunner{llm: b.chatLLM, outcomes: b.providerOutcomes, usage: b.usage},
 		Model:         b.chatModels.ActiveModel(),
 	})
 
@@ -107,6 +108,7 @@ type curatorLLMRunner struct {
 	// provider is demonstrably reachable -- or worse, keeps showing a much
 	// older chat outcome as current.
 	outcomes *providerOutcomeRecorder
+	usage    *usageSink
 }
 
 func (r curatorLLMRunner) Chat(ctx context.Context, req curator.ChatRequest) (curator.ChatResult, error) {
@@ -136,6 +138,7 @@ func (r curatorLLMRunner) Chat(ctx context.Context, req curator.ChatRequest) (cu
 		MaxSteps: max(req.MaxSteps, 1),
 	})
 	r.outcomes.record(req.Model, err)
+	r.usage.record(ctx, usage.SourceCurator, req.Model, res.TotalUsage)
 	if err != nil {
 		return curator.ChatResult{}, err
 	}

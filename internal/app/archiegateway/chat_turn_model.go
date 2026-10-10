@@ -29,6 +29,7 @@ type chatTurnModel struct {
 	limits func() modelloop.ToolLimits
 	// outcomes records each call's result for /status (see sendChatTurn).
 	outcomes *providerOutcomeRecorder
+	usage    *usageSink
 }
 
 func newChatTurnModel(
@@ -37,6 +38,7 @@ func newChatTurnModel(
 	maxSteps int,
 	limits func() modelloop.ToolLimits,
 	outcomes *providerOutcomeRecorder,
+	usageRecords *usageSink,
 ) gateway.TurnModel {
 	return &chatTurnModel{
 		llm:      llm,
@@ -44,6 +46,7 @@ func newChatTurnModel(
 		maxSteps: maxSteps,
 		limits:   limits,
 		outcomes: outcomes,
+		usage:    usageRecords,
 	}
 }
 
@@ -70,6 +73,7 @@ func (m *chatTurnModel) Prepare(
 		toolInfo:   toolSummaries(options.Tools),
 		toolTokens: gateway.EstimateTokens(string(toolSchema)),
 		outcomes:   m.outcomes,
+		usage:      m.usage,
 		icons:      toolIcons(m.registry),
 	}, nil
 }
@@ -81,6 +85,7 @@ type preparedChatTurnModel struct {
 	toolInfo   []gateway.ToolSummary
 	toolTokens int
 	outcomes   *providerOutcomeRecorder
+	usage      *usageSink
 	// icons maps tool name to the icon that tool registered, for chat
 	// surfaces to render. A nil map yields "" for every lookup, which is
 	// the no-icon rendering.
@@ -202,5 +207,5 @@ func (m *preparedChatTurnModel) Generate(
 	if m.llm == nil {
 		return "", fmt.Errorf("llm chat: no model runtime is configured")
 	}
-	return sendChatTurn(ctx, m.llm, m.model, options, stream, m.outcomes, m.icons)
+	return sendChatTurn(ctx, m.llm, m.model, options, stream, m.outcomes, m.usage, m.icons)
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec/modelloop"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/domain/usage"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/controlplanerpc"
@@ -39,8 +40,10 @@ type chatSetup struct {
 	// or model-aliases update swaps the runtime wholesale (ai-sdk's
 	// Runtime caches the provider instances it built), so the pointer cannot
 	// be captured at construction. nil means no model runtime is configured.
-	LLM                 func() *runtime.Runtime
-	ChatModels          gateway.ModelManager
+	LLM        func() *runtime.Runtime
+	ChatModels gateway.ModelManager
+	// Usage records each model call; nil records nothing.
+	Usage               *usageSink
 	ToolReg             *tools.Registry
 	Soul                gateway.SoulSource
 	ChatTasks           gateway.TaskCreator
@@ -129,7 +132,7 @@ func newChatTurnRunner(
 		Sessions:     sessionStore,
 		Models:       s.ChatModels,
 		Soul:         s.Soul,
-		Model:        newChatTurnModel(s.LLM, s.ToolReg, cfg.Chat.MaxSteps, s.ToolLimits, s.ProviderOutcomes),
+		Model:        newChatTurnModel(s.LLM, s.ToolReg, cfg.Chat.MaxSteps, s.ToolLimits, s.ProviderOutcomes, s.Usage),
 		TaskLister:   s.ChatTaskLister,
 		Tasks:        s.ChatTasks,
 		TaskLogs:     s.ChatTaskLogs,
@@ -191,31 +194,38 @@ func chatRepoEnv(cfg config.Config, identity string) []gateway.RepoEnv {
 // and records at its own adapter (curatorLLMRunner). Anything that reaches the
 // runtime without recording leaves /status reporting a stale last-known
 // outcome, which is a /status that lies about the provider.
-func sendChatTurn(ctx context.Context, llm *runtime.Runtime, chatModel string, options core.GenerateOptions, turn gateway.TurnStream, outcomes *providerOutcomeRecorder, icons map[string]string) (string, error) {
-	text, err := runChatTurn(ctx, llm, chatModel, options, turn, icons)
+func sendChatTurn(ctx context.Context, llm *runtime.Runtime, chatModel string, options core.GenerateOptions, turn gateway.TurnStream, outcomes *providerOutcomeRecorder, usageRecords *usageSink, icons map[string]string) (string, error) {
+	text, used, err := runChatTurn(ctx, llm, chatModel, options, turn, icons)
+	usageRecords.record(ctx, usage.SourceChat, chatModel, used)
 	// record tolerates a nil recorder: a setup built without one (tests, a
 	// deployment whose health surface is unwired) still makes its calls.
 	outcomes.record(chatModel, err)
 	return text, err
 }
 
-func runChatTurn(ctx context.Context, llm *runtime.Runtime, chatModel string, options core.GenerateOptions, turn gateway.TurnStream, icons map[string]string) (string, error) {
+// runChatTurn returns the reply and the tokens the call used, which a
+// failed call may still report.
+func runChatTurn(ctx context.Context, llm *runtime.Runtime, chatModel string, options core.GenerateOptions, turn gateway.TurnStream, icons map[string]string) (string, chat.Usage, error) {
 	if turn == nil {
 		result, err := llm.Chat(ctx, chatModel, options)
 		if err != nil {
-			return "", fmt.Errorf("llm chat: %w", err)
+			return "", result.TotalUsage, fmt.Errorf("llm chat: %w", err)
 		}
-		return result.Text, nil
+		return result.Text, result.TotalUsage, nil
 	}
 	stream, err := llm.ChatStream(ctx, chatModel, options)
 	if err != nil {
-		return "", fmt.Errorf("llm chat stream: %w", err)
+		return "", chat.Usage{}, fmt.Errorf("llm chat stream: %w", err)
 	}
 	text := drainChatStream(stream.FullStream, turn, icons)
-	if _, err := stream.FinishReason(); err != nil {
-		return "", fmt.Errorf("llm chat stream: %w", err)
+	var used chat.Usage
+	if stream.Usage != nil {
+		used, _ = stream.Usage()
 	}
-	return text, nil
+	if _, err := stream.FinishReason(); err != nil {
+		return "", used, fmt.Errorf("llm chat stream: %w", err)
+	}
+	return text, used, nil
 }
 
 // drainChatStream consumes a model stream to close, reporting assistant text
@@ -324,6 +334,7 @@ type chatTitleGenerator struct {
 	log        *slog.Logger
 	llm        func() *runtime.Runtime
 	chatModels gateway.ModelManager
+	usage      *usageSink
 }
 
 // newChatTitleGenerator wires an LLM-backed title generator for a chat
@@ -333,7 +344,7 @@ func newChatTitleGenerator(s chatSetup) gateway.TitleGenerator {
 	if s.LLM == nil || s.ChatModels == nil {
 		return nil
 	}
-	return &chatTitleGenerator{log: s.Log, llm: s.LLM, chatModels: s.ChatModels}
+	return &chatTitleGenerator{log: s.Log, llm: s.LLM, chatModels: s.ChatModels, usage: s.Usage}
 }
 
 func (g *chatTitleGenerator) GenerateTitle(ctx context.Context, sessionID, firstMessage string) (string, error) {
@@ -357,7 +368,7 @@ func (g *chatTitleGenerator) GenerateTitle(ctx context.Context, sessionID, first
 		return "", fmt.Errorf("no model runtime is configured")
 	}
 	text, err := sendChatTurn(ctx, llm, g.chatModels.ActiveModel(),
-		core.GenerateOptions{Messages: messages, MaxSteps: 1}, nil, nil, nil)
+		core.GenerateOptions{Messages: messages, MaxSteps: 1}, nil, nil, g.usage, nil)
 	if err != nil {
 		if g.log != nil {
 			g.log.Error("session title generation failed", "session", sessionID, "err", err)

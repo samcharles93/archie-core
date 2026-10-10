@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/org"
+	"github.com/samcharles93/archie-core/internal/domain/usage"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
@@ -185,6 +186,8 @@ type Store interface {
 	// the stage_finish event in the same transaction, and returns that event
 	// for the caller's post-commit publish.
 	FinishStep(ctx context.Context, s StepFinish) (events.Event, error)
+	// RecordUsage appends one model call's usage record.
+	RecordUsage(ctx context.Context, r usage.Record) error
 }
 
 // Definition is a workflow's id and stage order.

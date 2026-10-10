@@ -17,6 +17,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/source"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/storepkg"
+	"github.com/samcharles93/archie-core/internal/domain/usage"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/logging"
@@ -122,6 +123,12 @@ func (c *Client) ClaimByIssue(ctx context.Context, owner, repo string, number in
 
 func (c *Client) Transition(ctx context.Context, taskID int64, from, to, detail string) error {
 	_, err := c.client.Transition(ctx, &pb.TransitionRequest{TaskId: taskID, From: from, To: to, Detail: detail})
+	return unmapError(err)
+}
+
+// RecordUsage appends one model call's usage record.
+func (c *Client) RecordUsage(ctx context.Context, r usage.Record) error {
+	_, err := c.client.RecordUsage(ctx, &pb.RecordUsageRequest{Record: usageProto(r)})
 	return unmapError(err)
 }
 

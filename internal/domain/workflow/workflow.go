@@ -15,6 +15,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/agentrun"
+	"github.com/samcharles93/archie-core/internal/domain/usage"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/taskstate"
@@ -568,7 +569,7 @@ var goTestOKLine = regexp.MustCompile(`^ok\s+\S+`)
 
 // RunAgentChild records one agent call as a child step of the current stage.
 // A failed write parks the execution. Outside a recorded run it just runs.
-func (tc *TaskContext) RunAgentChild(ctx context.Context, name string, run func() (agentrun.Result, error)) (agentrun.Result, error) {
+func (tc *TaskContext) RunAgentChild(ctx context.Context, name, alias, modelRef string, run func() (agentrun.Result, error)) (agentrun.Result, error) {
 	if tc.workflowBranch != "" {
 		name = tc.workflowBranch + "/" + name
 	}
@@ -577,6 +578,7 @@ func (tc *TaskContext) RunAgentChild(ctx context.Context, name string, run func(
 		return agentrun.Result{}, err
 	}
 	res, runErr := run()
+	tc.recordUsage(ctx, name, alias, modelRef, res.Usage)
 	to, detail := taskstate.StepSucceeded, res.Summary
 	if runErr != nil {
 		to, detail = taskstate.StepFailed, runErr.Error()
@@ -620,4 +622,20 @@ func (tc *TaskContext) finishChildStep(ctx context.Context, stepID int64, to tas
 	}
 	publishEvent(tc, event)
 	return nil
+}
+
+// recordUsage appends the usage record for one agent run. A failed write is
+// logged, never fails the run: the work already happened.
+func (tc *TaskContext) recordUsage(ctx context.Context, step, alias, modelRef string, u agentrun.Usage) {
+	if tc.Store == nil {
+		return
+	}
+	record := usage.Record{
+		Source: usage.SourceTask, TaskID: tc.Task.ID, Attempt: tc.Task.Attempt, Workflow: tc.Task.Workflow,
+		Step: step, Alias: alias, InputTokens: int64(u.PromptTokens), OutputTokens: int64(u.CompletionTokens),
+		CachedTokens: int64(u.CachedTokens), At: time.Now().UTC(),
+	}.WithRef(modelRef)
+	if err := tc.Store.RecordUsage(ctx, record); err != nil && tc.Log != nil {
+		tc.Log.Warn("record model usage failed", "step", step, "model", modelRef, "err", err)
+	}
 }

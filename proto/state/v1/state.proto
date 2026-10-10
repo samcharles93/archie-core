@@ -61,6 +61,9 @@ service StateStoreService {
   // Step executions (docs/prds/execution-tree-state-machine.md). The run
   // credential authorises both on its own execution only.
   rpc StartStep(StartStepRequest) returns (StartStepResponse);
+  // RecordUsage appends one model call's usage record. A run credential may
+  // record usage only for its own task.
+  rpc RecordUsage(RecordUsageRequest) returns (RecordUsageResponse);
   rpc FinishStep(FinishStepRequest) returns (FinishStepResponse);
   // Cancellation. Deliberately administrative (deny-by-default for a
   // task-scoped grant): a cancel is a dashboard, API and dispatch action
@@ -1492,3 +1495,24 @@ message AssignAgentResponse {}
 
 message RecentLogsRequest { logging.v1.LogQuery query = 1; }
 message RecentLogsResponse { logging.v1.LogSnapshot snapshot = 1; }
+
+// UsageRecord mirrors usage.Record. A task's record belongs to the task's
+// org, whatever org_id says.
+message UsageRecord {
+  string org_id = 1;
+  // source is task, chat or curator.
+  string source = 2;
+  int64 task_id = 3;
+  int64 attempt = 4;
+  string workflow = 5;
+  string step = 6;
+  string alias = 7;
+  string provider = 8;
+  string model = 9;
+  int64 input_tokens = 10;
+  int64 output_tokens = 11;
+  int64 cached_tokens = 12;
+  google.protobuf.Timestamp at = 13;
+}
+message RecordUsageRequest { UsageRecord record = 1; }
+message RecordUsageResponse {}

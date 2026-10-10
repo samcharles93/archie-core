@@ -26,6 +26,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/presence"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/storepkg"
+	"github.com/samcharles93/archie-core/internal/domain/usage"
 	infraaccess "github.com/samcharles93/archie-core/internal/infrastructure/access"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres"
 	"github.com/samcharles93/archie-core/internal/infrastructure/readiness"
@@ -374,6 +375,9 @@ func (b *server) executionDeps(deps *staterpc.Deps) {
 	}
 	if ec, ok := b.st.(storecontract.ExecutionCanceller); ok {
 		deps.Canceller = ec
+	}
+	if ur, ok := b.st.(usage.Recorder); ok {
+		deps.Usage = ur
 	}
 	if sr, ok := b.st.(storecontract.StepReader); ok {
 		deps.StepReader = sr

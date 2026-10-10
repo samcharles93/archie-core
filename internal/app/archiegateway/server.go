@@ -92,6 +92,7 @@ type server struct {
 	curatorRegistry  *curator.Registry
 	curatorRuntime   *curator.Runtime
 	providerOutcomes *providerOutcomeRecorder
+	usage            *usageSink
 	statusHealth     gateway.HealthSource
 	updateService    *releaseupdate.Service
 

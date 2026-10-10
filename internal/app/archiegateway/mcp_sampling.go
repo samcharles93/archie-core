@@ -8,6 +8,7 @@ import (
 	"github.com/samcharles93/ai-sdk/core"
 
 	"github.com/samcharles93/archie-core/internal/agentexec/modelloop"
+	"github.com/samcharles93/archie-core/internal/domain/usage"
 	"github.com/samcharles93/archie-core/internal/tools/mcp"
 )
 
@@ -48,6 +49,7 @@ func (b *server) mcpSamplingHandler() mcp.SamplingHandler {
 		// recorded for /status like every other one; a nil recorder records
 		// nothing.
 		b.providerOutcomes.record(model, err)
+		b.usage.record(ctx, usage.SourceChat, model, result.TotalUsage)
 		if err != nil {
 			return mcp.SamplingResult{}, fmt.Errorf("mcp sampling: %w", err)
 		}

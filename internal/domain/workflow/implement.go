@@ -95,7 +95,7 @@ func runBaselineFix(ctx context.Context, tc *TaskContext, argv []string, out []b
 		Protection: agentrun.Protection{Suffixes: append([]string(nil), tc.Repo.Protect...)},
 	}
 
-	res, agentErr := tc.RunAgentChild(ctx, "baseline-fix", func() (agentrun.Result, error) {
+	res, agentErr := tc.RunAgentChild(ctx, "baseline-fix", "", modelRef, func() (agentrun.Result, error) {
 		return tc.Agent.Run(ctx, tc.Dir, req, tc.toolCallReporter("baseline-fix"))
 	})
 	if agentErr != nil && res.Version == 0 {

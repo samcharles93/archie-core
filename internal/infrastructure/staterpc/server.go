@@ -25,6 +25,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/source"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/storepkg"
+	"github.com/samcharles93/archie-core/internal/domain/usage"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/taskstate"
@@ -104,6 +105,9 @@ type Deps struct {
 	// workflow engine's run credential calls. Optional: nil answers both RPCs
 	// with codes.Unavailable.
 	Steps storecontract.StepRecorder
+	// Usage appends model usage records. Optional: nil answers RecordUsage
+	// with codes.Unavailable.
+	Usage usage.Recorder
 	// Canceller is the one cancel path:
 	// an operator action's guarded write over the execution and its steps.
 	// Optional: nil answers the RPC with codes.Unavailable.
@@ -247,6 +251,20 @@ func (s *server) StartStep(ctx context.Context, r *pb.StartStepRequest) (*pb.Sta
 		return nil, s.logErr("StartStep", err)
 	}
 	return &pb.StartStepResponse{StepId: stepID, Event: eventProto(event)}, nil
+}
+
+// RecordUsage appends one model call's usage record.
+func (s *server) RecordUsage(ctx context.Context, r *pb.RecordUsageRequest) (*pb.RecordUsageResponse, error) {
+	if s.deps.Usage == nil {
+		return nil, status.Error(codes.Unavailable, "usage recorder unavailable")
+	}
+	if r.Record == nil {
+		return nil, status.Error(codes.InvalidArgument, "record is required")
+	}
+	if err := s.deps.Usage.RecordUsage(ctx, usageValue(r.Record)); err != nil {
+		return nil, s.logErr("RecordUsage", err)
+	}
+	return &pb.RecordUsageResponse{}, nil
 }
 
 // CancelExecution is the one cancel path:

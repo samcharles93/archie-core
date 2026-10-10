@@ -128,6 +128,13 @@ var taskScopedTargets = map[string]func(any) int64{
 		}
 		return r.ExecutionId
 	},
+	pb.StateStoreService_RecordUsage_FullMethodName: func(req any) int64 {
+		r, ok := req.(*pb.RecordUsageRequest)
+		if !ok || r.Record == nil {
+			return 0
+		}
+		return r.Record.TaskId
+	},
 	pb.StateStoreService_FinishStep_FullMethodName: func(req any) int64 {
 		r, ok := req.(*pb.FinishStepRequest)
 		if !ok {

@@ -9,6 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/samcharles93/archie-core/internal/domain/usage"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/taskstate"
@@ -43,6 +44,8 @@ func (f *fakeStepStore) FinishStep(_ context.Context, s task.StepFinish) (events
 	f.finished = append(f.finished, s)
 	return events.Event{ID: s.StepID}, nil
 }
+
+func (f *fakeStepStore) RecordUsage(context.Context, usage.Record) error { return nil }
 
 // TestRunBranchRecordsChildSteps pins the step contract a branch owes the
 // canvas: every branch step is a stage row parented to the parallel step and

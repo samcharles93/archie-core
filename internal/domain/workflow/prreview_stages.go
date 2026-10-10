@@ -757,7 +757,7 @@ func runPRReviewAgentRecorded(
 		Budget:       agentrun.Budget{MaxSteps: maxSteps, WallClock: tc.Cfg.Budgets.WallClock.Std()},
 		CaptureTools: captureTools,
 	}
-	res, err := tc.RunAgentChild(ctx, name, func() (agentrun.Result, error) {
+	res, err := tc.RunAgentChild(ctx, name, "", modelRef, func() (agentrun.Result, error) {
 		return tc.Agent.Run(ctx, workspace, req, tc.toolCallReporter(name))
 	})
 	tc.prReview.tokensSpent.Add(int64(res.TokensUsed))

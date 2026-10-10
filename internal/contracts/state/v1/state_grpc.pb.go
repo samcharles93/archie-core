@@ -50,6 +50,7 @@ const (
 	StateStoreService_Transition_FullMethodName                 = "/state.v1.StateStoreService/Transition"
 	StateStoreService_Update_FullMethodName                     = "/state.v1.StateStoreService/Update"
 	StateStoreService_StartStep_FullMethodName                  = "/state.v1.StateStoreService/StartStep"
+	StateStoreService_RecordUsage_FullMethodName                = "/state.v1.StateStoreService/RecordUsage"
 	StateStoreService_FinishStep_FullMethodName                 = "/state.v1.StateStoreService/FinishStep"
 	StateStoreService_CancelExecution_FullMethodName            = "/state.v1.StateStoreService/CancelExecution"
 	StateStoreService_ListSteps_FullMethodName                  = "/state.v1.StateStoreService/ListSteps"
@@ -204,6 +205,9 @@ type StateStoreServiceClient interface {
 	// Step executions (docs/prds/execution-tree-state-machine.md). The run
 	// credential authorises both on its own execution only.
 	StartStep(ctx context.Context, in *StartStepRequest, opts ...grpc.CallOption) (*StartStepResponse, error)
+	// RecordUsage appends one model call's usage record. A run credential may
+	// record usage only for its own task.
+	RecordUsage(ctx context.Context, in *RecordUsageRequest, opts ...grpc.CallOption) (*RecordUsageResponse, error)
 	FinishStep(ctx context.Context, in *FinishStepRequest, opts ...grpc.CallOption) (*FinishStepResponse, error)
 	// Cancellation. Deliberately administrative (deny-by-default for a
 	// task-scoped grant): a cancel is a dashboard, API and dispatch action
@@ -692,6 +696,16 @@ func (c *stateStoreServiceClient) StartStep(ctx context.Context, in *StartStepRe
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(StartStepResponse)
 	err := c.cc.Invoke(ctx, StateStoreService_StartStep_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) RecordUsage(ctx context.Context, in *RecordUsageRequest, opts ...grpc.CallOption) (*RecordUsageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RecordUsageResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_RecordUsage_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1714,6 +1728,9 @@ type StateStoreServiceServer interface {
 	// Step executions (docs/prds/execution-tree-state-machine.md). The run
 	// credential authorises both on its own execution only.
 	StartStep(context.Context, *StartStepRequest) (*StartStepResponse, error)
+	// RecordUsage appends one model call's usage record. A run credential may
+	// record usage only for its own task.
+	RecordUsage(context.Context, *RecordUsageRequest) (*RecordUsageResponse, error)
 	FinishStep(context.Context, *FinishStepRequest) (*FinishStepResponse, error)
 	// Cancellation. Deliberately administrative (deny-by-default for a
 	// task-scoped grant): a cancel is a dashboard, API and dispatch action
@@ -1990,6 +2007,9 @@ func (UnimplementedStateStoreServiceServer) Update(context.Context, *UpdateReque
 }
 func (UnimplementedStateStoreServiceServer) StartStep(context.Context, *StartStepRequest) (*StartStepResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method StartStep not implemented")
+}
+func (UnimplementedStateStoreServiceServer) RecordUsage(context.Context, *RecordUsageRequest) (*RecordUsageResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RecordUsage not implemented")
 }
 func (UnimplementedStateStoreServiceServer) FinishStep(context.Context, *FinishStepRequest) (*FinishStepResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method FinishStep not implemented")
@@ -2845,6 +2865,24 @@ func _StateStoreService_StartStep_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StateStoreServiceServer).StartStep(ctx, req.(*StartStepRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_RecordUsage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecordUsageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).RecordUsage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_RecordUsage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).RecordUsage(ctx, req.(*RecordUsageRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -4632,6 +4670,10 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "StartStep",
 			Handler:    _StateStoreService_StartStep_Handler,
+		},
+		{
+			MethodName: "RecordUsage",
+			Handler:    _StateStoreService_RecordUsage_Handler,
 		},
 		{
 			MethodName: "FinishStep",

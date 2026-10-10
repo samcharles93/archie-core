@@ -68,7 +68,7 @@ func (a AgentStage) Stage() Stage {
 		}
 		// The agent call is a child of the stage's recorded step: the store
 		// says what the stage's runtime did, not just what the stage did.
-		res, runErr := tc.RunAgentChild(ctx, a.Name, func() (agentrun.Result, error) {
+		res, runErr := tc.RunAgentChild(ctx, a.Name, a.Model, modelRef, func() (agentrun.Result, error) {
 			return tc.Agent.Run(ctx, tc.Dir, req, tc.toolCallReporter(a.Name))
 		})
 		return a.handleResult(ctx, tc, req, res, runErr, modelRef)
