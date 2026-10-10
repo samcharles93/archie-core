@@ -176,7 +176,7 @@ func (o Options) validate() error {
 	}
 	if !webui.IsLoopback(o.Listen) && o.Token == "" {
 		return fmt.Errorf(
-			"ui listen address %q is non-loopback; a reachable dashboard requires a token (-token) or a token file to mint one (-token-file) (docs/prds/ui-service-boundary.md, listen and authentication)",
+			"ui listen address %q is non-loopback; a reachable dashboard requires a token (-token) or a token file to mint one (-token-file) (deployments/README.md, running the dashboard)",
 			o.Listen,
 		)
 	}

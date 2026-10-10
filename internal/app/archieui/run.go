@@ -54,6 +54,7 @@ func Run(ctx context.Context, options Options) error {
 	if err != nil {
 		return err
 	}
+	warnPlainHTTP(log, opts)
 	var cleanups []func()
 	defer func() {
 		for _, cleanup := range slices.Backward(cleanups) {
@@ -130,6 +131,19 @@ func Run(ctx context.Context, options Options) error {
 	}
 	log.Info("archie-ui running", attrs...)
 	return serve(ctx, listener, srv.Handler(), opts)
+}
+
+// warnPlainHTTP names the exposure of a dashboard published off-host. The
+// process serves plain HTTP, so the session cookie and the provider token
+// cross the network in clear unless a TLS-terminating proxy sits in front of
+// it -- which [web].trust_forwarded_headers declares. A loopback bind is
+// reached over a tunnel or on the host, so it needs no warning.
+func warnPlainHTTP(log *slog.Logger, opts Options) {
+	if webui.IsLoopback(opts.Listen) || opts.trustForwardedHeaders() {
+		return
+	}
+	log.Warn("dashboard is reachable off-host over plain HTTP; session and provider tokens travel in clear unless TLS terminates in front of it (set [web].trust_forwarded_headers behind a TLS proxy)",
+		"listen", opts.Listen)
 }
 
 // wireHarness attaches the setup terminal to the daemon's session contract

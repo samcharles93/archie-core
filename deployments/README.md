@@ -76,6 +76,14 @@ A non-loopback `[web].listen` requires a dashboard token (`-token`, or
 binding-dispatch loop in `archied` consumes what arrives from the shared
 State Store.
 
+The dashboard speaks plain HTTP. A non-loopback bind therefore carries the
+session cookie and the provider token in clear over the network, and
+archie-ui warns about exactly that at startup. Terminate TLS in front of it
+(a reverse proxy or the tunnel itself) and set
+`[web].trust_forwarded_headers = true` to declare the proxy and silence the
+warning; leaving it off while exposing the port directly is the case the
+warning names.
+
 Auth note: unlike `archied`, archie-ui has no secret registry --
 `GATEWAY_TOKEN`/`STATE_STORE_TOKEN` resolve from its process environment
 only (or from `[services.*].target_token` in `config.toml`), so whatever
