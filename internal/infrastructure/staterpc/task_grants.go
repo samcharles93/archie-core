@@ -183,8 +183,23 @@ func (g *TaskGrants) UnaryInterceptor(adminToken string) grpc.UnaryServerInterce
 		// A container's metadata is its own claim: drop it so no later
 		// interceptor attributes the call to a service or principal.
 		ctx = metadata.NewIncomingContext(ctx, metadata.MD{})
+		dropDefinitionPin(req)
 		return handler(access.WithActor(ctx, fmt.Sprintf("task/%d", taskID)), req)
 	}
+}
+
+// dropDefinitionPin removes the workflow definition from a task-scoped
+// Update, so the store keeps the stored pin. The pin is what the run's
+// package authority is read from; only the daemon pins, from the active
+// definitions.
+func dropDefinitionPin(req any) {
+	r, ok := req.(*pb.UpdateRequest)
+	if !ok || r.Task == nil {
+		return
+	}
+	r.Task.WorkflowDefinitionVersion = 0
+	r.Task.WorkflowDefinitionDigest = ""
+	r.Task.WorkflowDefinitionYaml = ""
 }
 
 // StreamInterceptor admits only administrators to store read streams.

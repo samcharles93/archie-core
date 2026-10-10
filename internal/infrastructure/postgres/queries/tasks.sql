@@ -97,14 +97,18 @@ ORDER BY id;
 UPDATE tasks SET binding_id = $2, binding_version = $3 WHERE id = $1;
 
 -- name: UpdateTask :exec
-UPDATE tasks SET workflow = $2, branch = $3, plan = $4, notes = $5,
-    pr_number = $6, tokens_used = $7, iterations = $8, park_reason = $9,
-    watch_comment_id = $10, retry_count = $11, remediation_rounds = $12,
-    review_payload = $13, workflow_definition_version = $14,
-    workflow_definition_digest = $15, workflow_definition_yaml = $16,
-    outputs = $17, review_gate = $18, rereview_rounds = $19,
-    retry_mode = $20, updated_at = now()
-WHERE id = $1;
+-- An update without a definition keeps the stored pin: a task's own
+-- credential sends none, so it cannot replace the definition it runs.
+UPDATE tasks SET workflow = @workflow, branch = @branch, plan = @plan, notes = @notes,
+    pr_number = @pr_number, tokens_used = @tokens_used, iterations = @iterations, park_reason = @park_reason,
+    watch_comment_id = @watch_comment_id, retry_count = @retry_count, remediation_rounds = @remediation_rounds,
+    review_payload = @review_payload,
+    workflow_definition_version = CASE WHEN @workflow_definition_yaml::text = '' THEN workflow_definition_version ELSE @workflow_definition_version END,
+    workflow_definition_digest = CASE WHEN @workflow_definition_yaml::text = '' THEN workflow_definition_digest ELSE @workflow_definition_digest END,
+    workflow_definition_yaml = CASE WHEN @workflow_definition_yaml::text = '' THEN workflow_definition_yaml ELSE @workflow_definition_yaml::text END,
+    outputs = @outputs, review_gate = @review_gate, rereview_rounds = @rereview_rounds,
+    retry_mode = @retry_mode, updated_at = now()
+WHERE id = @id;
 
 -- name: RereviewRounds :one
 -- Read under the lock LockTaskStatus takes in the same transaction, so the

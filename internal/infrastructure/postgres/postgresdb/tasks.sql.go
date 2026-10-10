@@ -1177,18 +1177,19 @@ func (q *Queries) TransitionTask(ctx context.Context, arg TransitionTaskParams) 
 }
 
 const updateTask = `-- name: UpdateTask :exec
-UPDATE tasks SET workflow = $2, branch = $3, plan = $4, notes = $5,
-    pr_number = $6, tokens_used = $7, iterations = $8, park_reason = $9,
-    watch_comment_id = $10, retry_count = $11, remediation_rounds = $12,
-    review_payload = $13, workflow_definition_version = $14,
-    workflow_definition_digest = $15, workflow_definition_yaml = $16,
-    outputs = $17, review_gate = $18, rereview_rounds = $19,
-    retry_mode = $20, updated_at = now()
-WHERE id = $1
+UPDATE tasks SET workflow = $1, branch = $2, plan = $3, notes = $4,
+    pr_number = $5, tokens_used = $6, iterations = $7, park_reason = $8,
+    watch_comment_id = $9, retry_count = $10, remediation_rounds = $11,
+    review_payload = $12,
+    workflow_definition_version = CASE WHEN $13::text = '' THEN workflow_definition_version ELSE $14 END,
+    workflow_definition_digest = CASE WHEN $13::text = '' THEN workflow_definition_digest ELSE $15 END,
+    workflow_definition_yaml = CASE WHEN $13::text = '' THEN workflow_definition_yaml ELSE $13::text END,
+    outputs = $16, review_gate = $17, rereview_rounds = $18,
+    retry_mode = $19, updated_at = now()
+WHERE id = $20
 `
 
 type UpdateTaskParams struct {
-	ID                        int64
 	Workflow                  string
 	Branch                    string
 	Plan                      string
@@ -1201,18 +1202,20 @@ type UpdateTaskParams struct {
 	RetryCount                int64
 	RemediationRounds         int64
 	ReviewPayload             string
+	WorkflowDefinitionYaml    string
 	WorkflowDefinitionVersion int64
 	WorkflowDefinitionDigest  string
-	WorkflowDefinitionYaml    string
 	Outputs                   string
 	ReviewGate                string
 	RereviewRounds            int64
 	RetryMode                 string
+	ID                        int64
 }
 
+// An update without a definition keeps the stored pin: a task's own
+// credential sends none, so it cannot replace the definition it runs.
 func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) error {
 	_, err := q.db.Exec(ctx, updateTask,
-		arg.ID,
 		arg.Workflow,
 		arg.Branch,
 		arg.Plan,
@@ -1225,13 +1228,14 @@ func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) error {
 		arg.RetryCount,
 		arg.RemediationRounds,
 		arg.ReviewPayload,
+		arg.WorkflowDefinitionYaml,
 		arg.WorkflowDefinitionVersion,
 		arg.WorkflowDefinitionDigest,
-		arg.WorkflowDefinitionYaml,
 		arg.Outputs,
 		arg.ReviewGate,
 		arg.RereviewRounds,
 		arg.RetryMode,
+		arg.ID,
 	)
 	return err
 }
