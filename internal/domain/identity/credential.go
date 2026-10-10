@@ -17,6 +17,12 @@ type Subject struct {
 	Subject string `json:"subject"`
 }
 
+// EmailSubject is the placeholder binding of a person added by email: the
+// issuer's verified address stands in until their first sign-in claims it.
+func EmailSubject(issuer, email string) Subject {
+	return Subject{Issuer: issuer, Subject: "email:" + strings.ToLower(strings.TrimSpace(email))}
+}
+
 func (s Subject) Validate() error {
 	if strings.TrimSpace(s.Issuer) == "" || strings.TrimSpace(s.Subject) == "" {
 		return fmt.Errorf("%w: issuer and subject are required", ErrInvalid)
@@ -28,6 +34,9 @@ func (s Subject) Validate() error {
 // verification, never an assertion from the caller.
 type Credential struct {
 	Subject Subject
+	// Email is the address the provider vouched for (email_verified), empty
+	// otherwise. It resolves a person added by email before any subject is known.
+	Email   string
 	Scopes  []string
 	Expires time.Time
 }
@@ -69,6 +78,9 @@ type SubjectResolver interface {
 	// configured with resolves to an identity, and a subject a provider asserts
 	// resolves to the same identity.
 	ResolveSubject(context.Context, Subject) (Identity, error)
+	// ClaimSubject moves a placeholder binding onto subject and returns its
+	// identity; a placeholder that is gone (already claimed) is ErrNotFound.
+	ClaimSubject(ctx context.Context, placeholder, subject Subject) (Identity, error)
 }
 
 // ProviderSession is what a completed authorization flow yields: the credential
@@ -126,6 +138,11 @@ func Resolve(ctx context.Context, subjects SubjectResolver, credential Credentia
 		return Identity{}, fmt.Errorf("%w: %w", ErrCredentialRejected, err)
 	}
 	value, err := subjects.ResolveSubject(ctx, credential.Subject)
+	if errors.Is(err, ErrNotFound) && credential.Email != "" {
+		// The first sign-in binds the provider's subject in place of the
+		// address, so later sign-ins rest on the subject alone.
+		value, err = subjects.ClaimSubject(ctx, EmailSubject(credential.Subject.Issuer, credential.Email), credential.Subject)
+	}
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return Identity{}, fmt.Errorf("%w: %s", ErrSubjectUnbound, credential.Subject.Subject)

@@ -42,6 +42,7 @@ const (
 	StateStoreService_RetireIdentity_FullMethodName             = "/state.v1.StateStoreService/RetireIdentity"
 	StateStoreService_ResolveIdentitySubject_FullMethodName     = "/state.v1.StateStoreService/ResolveIdentitySubject"
 	StateStoreService_BindIdentitySubject_FullMethodName        = "/state.v1.StateStoreService/BindIdentitySubject"
+	StateStoreService_ClaimIdentitySubject_FullMethodName       = "/state.v1.StateStoreService/ClaimIdentitySubject"
 	StateStoreService_AddPersonalToken_FullMethodName           = "/state.v1.StateStoreService/AddPersonalToken"
 	StateStoreService_ListPersonalTokens_FullMethodName         = "/state.v1.StateStoreService/ListPersonalTokens"
 	StateStoreService_RevokePersonalToken_FullMethodName        = "/state.v1.StateStoreService/RevokePersonalToken"
@@ -201,6 +202,7 @@ type StateStoreServiceClient interface {
 	// identity store.
 	ResolveIdentitySubject(ctx context.Context, in *ResolveIdentitySubjectRequest, opts ...grpc.CallOption) (*ResolveIdentitySubjectResponse, error)
 	BindIdentitySubject(ctx context.Context, in *BindIdentitySubjectRequest, opts ...grpc.CallOption) (*BindIdentitySubjectResponse, error)
+	ClaimIdentitySubject(ctx context.Context, in *ClaimIdentitySubjectRequest, opts ...grpc.CallOption) (*ClaimIdentitySubjectResponse, error)
 	// Personal API tokens act on the caller's own principal: the State Store
 	// refuses a call that carries none.
 	AddPersonalToken(ctx context.Context, in *AddPersonalTokenRequest, opts ...grpc.CallOption) (*AddPersonalTokenResponse, error)
@@ -635,6 +637,16 @@ func (c *stateStoreServiceClient) BindIdentitySubject(ctx context.Context, in *B
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(BindIdentitySubjectResponse)
 	err := c.cc.Invoke(ctx, StateStoreService_BindIdentitySubject_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ClaimIdentitySubject(ctx context.Context, in *ClaimIdentitySubjectRequest, opts ...grpc.CallOption) (*ClaimIdentitySubjectResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ClaimIdentitySubjectResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ClaimIdentitySubject_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1788,6 +1800,7 @@ type StateStoreServiceServer interface {
 	// identity store.
 	ResolveIdentitySubject(context.Context, *ResolveIdentitySubjectRequest) (*ResolveIdentitySubjectResponse, error)
 	BindIdentitySubject(context.Context, *BindIdentitySubjectRequest) (*BindIdentitySubjectResponse, error)
+	ClaimIdentitySubject(context.Context, *ClaimIdentitySubjectRequest) (*ClaimIdentitySubjectResponse, error)
 	// Personal API tokens act on the caller's own principal: the State Store
 	// refuses a call that carries none.
 	AddPersonalToken(context.Context, *AddPersonalTokenRequest) (*AddPersonalTokenResponse, error)
@@ -2066,6 +2079,9 @@ func (UnimplementedStateStoreServiceServer) ResolveIdentitySubject(context.Conte
 }
 func (UnimplementedStateStoreServiceServer) BindIdentitySubject(context.Context, *BindIdentitySubjectRequest) (*BindIdentitySubjectResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method BindIdentitySubject not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ClaimIdentitySubject(context.Context, *ClaimIdentitySubjectRequest) (*ClaimIdentitySubjectResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ClaimIdentitySubject not implemented")
 }
 func (UnimplementedStateStoreServiceServer) AddPersonalToken(context.Context, *AddPersonalTokenRequest) (*AddPersonalTokenResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AddPersonalToken not implemented")
@@ -2819,6 +2835,24 @@ func _StateStoreService_BindIdentitySubject_Handler(srv interface{}, ctx context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StateStoreServiceServer).BindIdentitySubject(ctx, req.(*BindIdentitySubjectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ClaimIdentitySubject_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClaimIdentitySubjectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ClaimIdentitySubject(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ClaimIdentitySubject_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ClaimIdentitySubject(ctx, req.(*ClaimIdentitySubjectRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -4826,6 +4860,10 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "BindIdentitySubject",
 			Handler:    _StateStoreService_BindIdentitySubject_Handler,
+		},
+		{
+			MethodName: "ClaimIdentitySubject",
+			Handler:    _StateStoreService_ClaimIdentitySubject_Handler,
 		},
 		{
 			MethodName: "AddPersonalToken",

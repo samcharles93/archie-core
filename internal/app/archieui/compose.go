@@ -3,6 +3,7 @@ package archieui
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/app/servicekit"
@@ -62,6 +63,10 @@ func compose(ctx context.Context, d deps) *webui.Server {
 		Health:                d.Health,
 		ControlPlane:          d.ControlPlane,
 		Identities:            d.Identities,
+		Issuer:                strings.TrimSpace(d.Options.OidcIssuer),
+	}
+	if subjects, ok := d.Identities.(identity.SubjectBinding); ok {
+		srv.Subjects = subjects
 	}
 	if snapshots, ok := d.Store.(storecontract.ConfigSnapshotStore); ok {
 		srv.ConfigSource = webui.RemoteConfigView(snapshots)

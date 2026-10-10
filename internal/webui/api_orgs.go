@@ -1,9 +1,11 @@
 package webui
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
@@ -204,6 +206,112 @@ func (s *Server) handleOrgMemberSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"membership": membership})
+}
+
+// handleOrgMemberAdd adds a person by the subject their provider asserts or by
+// their email, creating the identity and binding it so that person's next
+// sign-in resolves to it with this role. An already-bound subject keeps its
+// identity and only gains the membership.
+func (s *Server) handleOrgMemberAdd(w http.ResponseWriter, r *http.Request) {
+	if !s.orgReady(w) {
+		return
+	}
+	id, ok := s.orgInPath(w, r)
+	if !ok {
+		return
+	}
+	if s.Subjects == nil || s.Identities == nil || s.Issuer == "" {
+		http.Error(w, "adding a person needs a configured identity provider", http.StatusServiceUnavailable)
+		return
+	}
+	request, bound, name, ok := s.decodeMemberAdd(w, r)
+	if !ok {
+		return
+	}
+	existing, err := s.Subjects.ResolveSubject(r.Context(), bound)
+	if err != nil && !errors.Is(err, identity.ErrNotFound) {
+		writeIdentityError(w, err)
+		return
+	}
+	unbound := err != nil
+	membership := org.Membership{
+		IdentityID: existing.ID, OrgID: id,
+		WorkspaceID: org.WorkspaceID(request.Workspace), Role: org.Role(request.Role),
+	}
+	if unbound {
+		if membership.IdentityID, err = randomIdentityID(); err != nil {
+			http.Error(w, "cannot create identity ID", http.StatusInternalServerError)
+			return
+		}
+	}
+	if !s.mayChangeMembership(w, r, membership, membership.Role) {
+		return
+	}
+	if unbound && !s.createBoundIdentity(w, r, membership.IdentityID, name, bound) {
+		return
+	}
+	if err := s.Orgs.EnsureMembership(r.Context(), membership); err != nil {
+		writeOrgError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+	writeJSON(w, map[string]any{"membership": membership})
+}
+
+type memberAddRequest struct {
+	Subject     string `json:"subject"`
+	Email       string `json:"email"`
+	DisplayName string `json:"display_name"`
+	Role        string `json:"role"`
+	Workspace   string `json:"workspace"`
+}
+
+// decodeMemberAdd reads and validates an add-member body, returning the
+// provider subject it names and the display name to give a new identity. It
+// has written the error when ok is false.
+func (s *Server) decodeMemberAdd(w http.ResponseWriter, r *http.Request) (request memberAddRequest, bound identity.Subject, name string, ok bool) {
+	request, ok = decodeBody[memberAddRequest](w, r)
+	if !ok {
+		return
+	}
+	name = strings.TrimSpace(request.DisplayName)
+	subject, email := strings.TrimSpace(request.Subject), strings.TrimSpace(request.Email)
+	switch {
+	case (subject == "") == (email == ""):
+		http.Error(w, "give either a subject or an email", http.StatusBadRequest)
+		return request, bound, name, false
+	case subject != "":
+		bound, name = identity.Subject{Issuer: s.Issuer, Subject: subject}, cmp.Or(name, subject)
+	default:
+		bound, name = identity.EmailSubject(s.Issuer, email), cmp.Or(name, email)
+	}
+	if err := org.Role(request.Role).Validate(); err != nil {
+		writeOrgError(w, err)
+		return request, bound, name, false
+	}
+	return request, bound, name, true
+}
+
+// createBoundIdentity makes a user identity and binds subject to it, having
+// written the error and returned false when either step fails.
+func (s *Server) createBoundIdentity(w http.ResponseWriter, r *http.Request, id identity.IdentityID, name string, subject identity.Subject) bool {
+	audit, err := webAudit(r.Context())
+	if err != nil {
+		http.Error(w, "cannot create request ID", http.StatusInternalServerError)
+		return false
+	}
+	value, err := identity.New(id, identity.KindUser, name)
+	if err == nil {
+		_, err = s.Identities.Create(r.Context(), value, audit)
+	}
+	if err == nil {
+		err = s.Subjects.BindSubject(r.Context(), id, subject, audit)
+	}
+	if err != nil {
+		writeIdentityError(w, err)
+		return false
+	}
+	return true
 }
 
 func (s *Server) handleOrgMemberRemove(w http.ResponseWriter, r *http.Request) {

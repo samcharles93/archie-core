@@ -2,6 +2,7 @@ package webui
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -111,6 +112,7 @@ func orgRoutes(s *Server) http.Handler {
 	mux.HandleFunc("GET /api/orgs/{id}/workspaces", s.handleOrgWorkspacesList)
 	mux.HandleFunc("POST /api/orgs/{id}/workspaces", s.handleOrgWorkspaceCreate)
 	mux.HandleFunc("GET /api/orgs/{id}/members", s.handleOrgMembersList)
+	mux.HandleFunc("POST /api/orgs/{id}/members", s.handleOrgMemberAdd)
 	mux.HandleFunc("PUT /api/orgs/{id}/members/{identity}", s.handleOrgMemberSet)
 	mux.HandleFunc("DELETE /api/orgs/{id}/members/{identity}", s.handleOrgMemberRemove)
 	mux.HandleFunc("PUT /api/orgs/{id}/agents/{identity}", s.handleOrgAgentAssign)
@@ -277,6 +279,147 @@ func TestInstanceAdminOrgs(t *testing.T) {
 			}
 			if tt.caller == "admin" && tt.path == "/api/orgs" && strings.Contains(rec.Body.String(), "acme") {
 				t.Fatalf("a non-admin saw another org: %s", rec.Body.String())
+			}
+		})
+	}
+}
+
+// fakeSubjects is an in-memory identity store with subject bindings.
+type fakeSubjects struct {
+	identity.Repository
+	byID     map[identity.IdentityID]identity.Identity
+	bindings map[identity.Subject]identity.IdentityID
+}
+
+func (f *fakeSubjects) Create(_ context.Context, v identity.Identity, _ identity.Audit) (identity.Identity, error) {
+	f.byID[v.ID] = v
+	return v, nil
+}
+
+func (f *fakeSubjects) ResolveSubject(_ context.Context, s identity.Subject) (identity.Identity, error) {
+	if id, ok := f.bindings[s]; ok {
+		return f.byID[id], nil
+	}
+	return identity.Identity{}, identity.ErrNotFound
+}
+
+func (f *fakeSubjects) ClaimSubject(_ context.Context, placeholder, s identity.Subject) (identity.Identity, error) {
+	id, ok := f.bindings[placeholder]
+	if !ok {
+		return identity.Identity{}, identity.ErrNotFound
+	}
+	delete(f.bindings, placeholder)
+	f.bindings[s] = id
+	return f.byID[id], nil
+}
+
+func (f *fakeSubjects) BindSubject(_ context.Context, id identity.IdentityID, s identity.Subject, _ identity.Audit) error {
+	f.bindings[s] = id
+	return nil
+}
+
+// TestOrgMemberAdd holds adding a person by provider subject or email: it
+// needs the admin grant, owner needs an owner, one identifier is required, and
+// the person who was added signs in as the identity the membership names, by
+// subject or by the provider's verified email.
+func TestOrgMemberAdd(t *testing.T) {
+	const issuer = "https://idp.example"
+	engine := infraaccess.New(access.ShippedOrgPolicies(org.DefaultOrgID))
+	members := "/api/orgs/" + string(org.DefaultOrgID) + "/members"
+	tests := []struct {
+		name       string
+		caller     string
+		body       string
+		wantStatus int
+		signIn     identity.Credential
+		wantRole   org.Role
+		// later is a second account showing the same verified email after
+		// the first sign-in claimed it; it must not sign in.
+		later identity.Credential
+	}{
+		{
+			"an admin adds by subject", "admin", `{"subject":"sub-1","role":"developer"}`, http.StatusCreated,
+			identity.Credential{Subject: identity.Subject{Issuer: issuer, Subject: "sub-1"}},
+			org.RoleDeveloper,
+			identity.Credential{},
+		},
+		{
+			"an admin adds by email and the verified email signs in", "admin", `{"email":"Ann@Example.com","role":"viewer"}`, http.StatusCreated,
+			identity.Credential{Subject: identity.Subject{Issuer: issuer, Subject: "unseen"}, Email: "ann@example.com"},
+			org.RoleViewer,
+			identity.Credential{Subject: identity.Subject{Issuer: issuer, Subject: "impostor"}, Email: "ann@example.com"},
+		},
+		{
+			"an unverified email does not sign in", "admin", `{"email":"ann@example.com","role":"viewer"}`, http.StatusCreated,
+			identity.Credential{Subject: identity.Subject{Issuer: issuer, Subject: "unseen"}},
+			"",
+			identity.Credential{},
+		},
+		{"an admin cannot add an owner", "admin", `{"subject":"sub-1","role":"owner"}`, http.StatusForbidden, identity.Credential{}, "", identity.Credential{}},
+		{
+			"an owner adds an owner", "owner", `{"subject":"sub-1","role":"owner"}`, http.StatusCreated,
+			identity.Credential{Subject: identity.Subject{Issuer: issuer, Subject: "sub-1"}},
+			org.RoleOwner,
+			identity.Credential{},
+		},
+		{"a developer cannot add", "developer", `{"subject":"sub-1","role":"viewer"}`, http.StatusForbidden, identity.Credential{}, "", identity.Credential{}},
+		{"both identifiers are refused", "admin", `{"subject":"a","email":"a@b.c","role":"viewer"}`, http.StatusBadRequest, identity.Credential{}, "", identity.Credential{}},
+		{"neither identifier is refused", "admin", `{"role":"viewer"}`, http.StatusBadRequest, identity.Credential{}, "", identity.Credential{}},
+		{"an unknown role is refused", "admin", `{"subject":"sub-1","role":"superuser"}`, http.StatusBadRequest, identity.Credential{}, "", identity.Credential{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			orgs := newFakeOrgs()
+			store := &fakeSubjects{byID: map[identity.IdentityID]identity.Identity{}, bindings: map[identity.Subject]identity.IdentityID{}}
+			s := &Server{
+				Access: engine, Principals: rolePrincipals{}, Orgs: orgs,
+				Identities: store, Subjects: store, Issuer: issuer,
+				Authenticate: func(_ context.Context, token string) (identity.Identity, error) {
+					return identity.Identity{ID: identity.IdentityID(token), Kind: identity.KindUser}, nil
+				},
+			}
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, members, strings.NewReader(tt.body))
+			req.Header.Set("Authorization", "Bearer "+tt.caller)
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			orgRoutes(s).ServeHTTP(rec, req)
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d, body %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if tt.wantStatus != http.StatusCreated {
+				if len(store.byID) != 0 {
+					t.Fatalf("a refused request created %d identities", len(store.byID))
+				}
+				return
+			}
+			got, err := identity.Resolve(t.Context(), store, tt.signIn)
+			if tt.wantRole == "" {
+				if !errors.Is(err, identity.ErrSubjectUnbound) {
+					t.Fatalf("Resolve = %v, want ErrSubjectUnbound", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+			var role org.Role
+			for _, m := range orgs.members[org.DefaultOrgID] {
+				if m.IdentityID == got.ID {
+					role = m.Role
+				}
+			}
+			if role != tt.wantRole {
+				t.Fatalf("signed-in role = %q, want %q", role, tt.wantRole)
+			}
+			if tt.later.Subject.Subject == "" {
+				return
+			}
+			if _, err := identity.Resolve(t.Context(), store, tt.later); !errors.Is(err, identity.ErrSubjectUnbound) {
+				t.Fatalf("second account with the same email: Resolve = %v, want ErrSubjectUnbound", err)
+			}
+			again, err := identity.Resolve(t.Context(), store, identity.Credential{Subject: tt.signIn.Subject})
+			if err != nil || again.ID != got.ID {
+				t.Fatalf("first account by subject alone = %v, %v, want %s", again.ID, err, got.ID)
 			}
 		})
 	}

@@ -134,6 +134,12 @@ type Server struct {
 	Principals access.PrincipalSource
 	Denials    access.DenialRecorder
 
+	// Subjects binds a provider subject to an identity, and Issuer is the
+	// provider those subjects are asserted under. Nil or empty answers the
+	// add-member route Unavailable.
+	Subjects identity.SubjectBinding
+	Issuer   string
+
 	// Orgs serves the org pages: the caller's org, its workspaces, members and
 	// agent assignments. Nil answers the org routes Unavailable.
 	Orgs org.API
@@ -333,6 +339,7 @@ func (s *Server) registerConfigAndLogRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/orgs/{id}/workspaces", s.handleOrgWorkspacesList)
 	mux.HandleFunc("POST /api/orgs/{id}/workspaces", s.handleOrgWorkspaceCreate)
 	mux.HandleFunc("GET /api/orgs/{id}/members", s.handleOrgMembersList)
+	mux.HandleFunc("POST /api/orgs/{id}/members", s.handleOrgMemberAdd)
 	mux.HandleFunc("PUT /api/orgs/{id}/members/{identity}", s.handleOrgMemberSet)
 	mux.HandleFunc("DELETE /api/orgs/{id}/members/{identity}", s.handleOrgMemberRemove)
 	mux.HandleFunc("PUT /api/orgs/{id}/agents/{identity}", instanceOnly(s.handleOrgAgentAssign))

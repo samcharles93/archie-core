@@ -80,6 +80,19 @@ func (s *server) ResolveIdentitySubject(ctx context.Context, request *pb.Resolve
 	return &pb.ResolveIdentitySubjectResponse{Identity: identityProto(value)}, nil
 }
 
+func (s *server) ClaimIdentitySubject(ctx context.Context, request *pb.ClaimIdentitySubjectRequest) (*pb.ClaimIdentitySubjectResponse, error) {
+	if s.deps.SubjectBindings == nil {
+		return nil, status.Error(codes.Unavailable, "identity subject bindings unavailable")
+	}
+	value, err := s.deps.SubjectBindings.ClaimSubject(ctx,
+		identity.Subject{Issuer: request.Issuer, Subject: request.Placeholder},
+		identity.Subject{Issuer: request.Issuer, Subject: request.Subject})
+	if err != nil {
+		return nil, identityStatus(err)
+	}
+	return &pb.ClaimIdentitySubjectResponse{Identity: identityProto(value)}, nil
+}
+
 func (s *server) BindIdentitySubject(ctx context.Context, request *pb.BindIdentitySubjectRequest) (*pb.BindIdentitySubjectResponse, error) {
 	if s.deps.SubjectBindings == nil {
 		return nil, status.Error(codes.Unavailable, "identity subject bindings unavailable")
@@ -97,6 +110,14 @@ func (s *server) BindIdentitySubject(ctx context.Context, request *pb.BindIdenti
 
 func (c *Client) ResolveSubject(ctx context.Context, subject identity.Subject) (identity.Identity, error) {
 	response, err := c.client.ResolveIdentitySubject(ctx, &pb.ResolveIdentitySubjectRequest{Issuer: subject.Issuer, Subject: subject.Subject})
+	if err != nil {
+		return identity.Identity{}, identityClientError(err)
+	}
+	return identityValue(response.Identity), nil
+}
+
+func (c *Client) ClaimSubject(ctx context.Context, placeholder, subject identity.Subject) (identity.Identity, error) {
+	response, err := c.client.ClaimIdentitySubject(ctx, &pb.ClaimIdentitySubjectRequest{Issuer: subject.Issuer, Placeholder: placeholder.Subject, Subject: subject.Subject})
 	if err != nil {
 		return identity.Identity{}, identityClientError(err)
 	}

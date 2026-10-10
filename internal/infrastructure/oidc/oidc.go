@@ -103,14 +103,21 @@ func (v *Verifier) Verify(ctx context.Context, rawToken string) (identity.Creden
 		ClientID string   `json:"client_id"`
 		Scope    string   `json:"scope"`
 		Scopes   []string `json:"scp"`
+		Email    string   `json:"email"`
+		Verified bool     `json:"email_verified"`
 	}
 	_ = token.Claims(&claims)
 	subject, err := subjectFor(token.Issuer, claims.Subject, claims.ClientID)
 	if err != nil {
 		return identity.Credential{}, err
 	}
+	email := ""
+	if claims.Verified {
+		email = strings.TrimSpace(claims.Email)
+	}
 	return identity.Credential{
 		Subject: subject,
+		Email:   email,
 		Scopes:  scopesFor(claims.Scope, claims.Scopes),
 		Expires: token.Expiry,
 	}, nil

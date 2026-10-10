@@ -163,6 +163,14 @@ export const api = {
     }),
   orgMembers: <T = unknown>(id: string) =>
     request<T>(`/api/orgs/${encodeURIComponent(id)}/members`),
+  addOrgMember: <T = unknown>(
+    id: string,
+    member: { subject?: string; email?: string; role: string },
+  ) =>
+    request<T>(`/api/orgs/${encodeURIComponent(id)}/members`, {
+      method: "POST",
+      body: member,
+    }),
   setOrgMember: <T = unknown>(
     id: string,
     identity: string,

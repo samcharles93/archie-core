@@ -52,6 +52,7 @@ service StateStoreService {
   // identity store.
   rpc ResolveIdentitySubject(ResolveIdentitySubjectRequest) returns (ResolveIdentitySubjectResponse);
   rpc BindIdentitySubject(BindIdentitySubjectRequest) returns (BindIdentitySubjectResponse);
+  rpc ClaimIdentitySubject(ClaimIdentitySubjectRequest) returns (ClaimIdentitySubjectResponse);
   // Personal API tokens act on the caller's own principal: the State Store
   // refuses a call that carries none.
   rpc AddPersonalToken(AddPersonalTokenRequest) returns (AddPersonalTokenResponse);
@@ -337,6 +338,12 @@ message BindIdentitySubjectRequest {
   IdentityAudit audit = 4;
 }
 message BindIdentitySubjectResponse { Identity identity = 1; }
+message ClaimIdentitySubjectRequest {
+  string issuer = 1;
+  string placeholder = 2;
+  string subject = 3;
+}
+message ClaimIdentitySubjectResponse { Identity identity = 1; }
 
 // PersonalToken identifies a token by the SHA-256 it binds as; the token
 // itself never reaches the State Store.

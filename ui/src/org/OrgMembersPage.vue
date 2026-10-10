@@ -4,6 +4,7 @@ import { Plus } from "@lucide/vue";
 
 import PageHeader from "@/base/PageHeader.vue";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import {
   Select,
@@ -36,6 +37,10 @@ const identities = useIdentitiesStore();
 
 const picked = ref("");
 const pickedRole = ref<Role>("viewer");
+// A person who has not signed in yet, named by email or by the provider's
+// subject. They sign in as this role once the provider vouches for them.
+const person = ref("");
+const personRole = ref<Role>("viewer");
 
 async function load(): Promise<void> {
   if (!org.value) return;
@@ -88,6 +93,18 @@ const add = () =>
     if (!org.value || !picked.value) return;
     await api.setOrgMember(org.value.id, picked.value, { role: pickedRole.value });
     picked.value = "";
+    await load();
+  });
+
+const addPerson = () =>
+  run("person", async () => {
+    const value = person.value.trim();
+    if (!org.value || !value) return;
+    await api.addOrgMember(org.value.id, {
+      ...(value.includes("@") ? { email: value } : { subject: value }),
+      role: personRole.value,
+    });
+    person.value = "";
     await load();
   });
 
@@ -184,6 +201,26 @@ const remove = (member: Member) =>
       </Select>
       <Button type="submit" size="sm" :disabled="!picked || busy !== ''">
         <Plus data-icon="inline-start" /> Add member
+      </Button>
+    </form>
+
+    <form class="mt-4 flex flex-wrap items-end gap-2" @submit.prevent="addPerson">
+      <Input
+        v-model="person"
+        class="w-64"
+        aria-label="Email or provider subject"
+        placeholder="Email or provider subject"
+      />
+      <Select v-model="personRole">
+        <SelectTrigger class="w-36" aria-label="Role for the new person">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem v-for="role in ROLES" :key="role" :value="role">{{ role }}</SelectItem>
+        </SelectContent>
+      </Select>
+      <Button type="submit" size="sm" :disabled="!person.trim() || busy !== ''">
+        <Plus data-icon="inline-start" /> Invite person
       </Button>
     </form>
   </div>

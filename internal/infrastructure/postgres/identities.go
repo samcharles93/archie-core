@@ -187,6 +187,38 @@ func (s *Store) ResolveSubject(ctx context.Context, subject identity.Subject) (i
 	return identityFromRow(i), nil
 }
 
+// ClaimSubject moves a placeholder binding (a person added by email) onto
+// the subject the provider asserts. The placeholder is gone afterwards, so a
+// second account showing the same address finds nothing to claim.
+func (s *Store) ClaimSubject(ctx context.Context, placeholder, subject identity.Subject) (identity.Identity, error) {
+	if err := subject.Validate(); err != nil {
+		return identity.Identity{}, err
+	}
+	now := time.Now().UTC()
+	var claimed identity.Identity
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		q := postgresdb.New(tx)
+		id, err := q.ClaimIdentitySubject(ctx, postgresdb.ClaimIdentitySubjectParams{
+			Issuer: placeholder.Issuer, Placeholder: placeholder.Subject, Subject: subject.Subject, BoundAt: now,
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return identity.ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		row, err := q.GetIdentity(ctx, id)
+		if err != nil {
+			return err
+		}
+		claimed = identityFromRow(row)
+		return insertIdentityEvent(ctx, q, claimed.ID, identity.Event{
+			IdentityID: claimed.ID, Type: "claim_subject", From: claimed.Lifecycle, To: claimed.Lifecycle, DisplayName: subject.Subject,
+		}, identity.Audit{ActorID: claimed.ID, Source: "sign-in", RequestID: placeholder.Subject}, now)
+	})
+	return claimed, err
+}
+
 // BindSubject binds an identity to the provider subject that asserts it,
 // moving any prior binding for that subject.
 func (s *Store) BindSubject(ctx context.Context, id identity.IdentityID, subject identity.Subject, audit identity.Audit) error {

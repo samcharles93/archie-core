@@ -10,6 +10,33 @@ import (
 	"time"
 )
 
+const claimIdentitySubject = `-- name: ClaimIdentitySubject :one
+UPDATE identity_subjects SET subject = $1, bound_at = $2
+WHERE issuer = $3 AND subject = $4
+RETURNING identity_id
+`
+
+type ClaimIdentitySubjectParams struct {
+	Subject     string
+	BoundAt     time.Time
+	Issuer      string
+	Placeholder string
+}
+
+// Moves a placeholder binding onto the subject the provider asserts, in one
+// statement, so only the first claimant gets it.
+func (q *Queries) ClaimIdentitySubject(ctx context.Context, arg ClaimIdentitySubjectParams) (string, error) {
+	row := q.db.QueryRow(ctx, claimIdentitySubject,
+		arg.Subject,
+		arg.BoundAt,
+		arg.Issuer,
+		arg.Placeholder,
+	)
+	var identity_id string
+	err := row.Scan(&identity_id)
+	return identity_id, err
+}
+
 const deleteIdentitySubject = `-- name: DeleteIdentitySubject :execrows
 DELETE FROM identity_subjects WHERE identity_id = $1 AND issuer = $2 AND subject = $3
 `

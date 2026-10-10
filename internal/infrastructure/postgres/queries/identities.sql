@@ -39,6 +39,13 @@ SELECT i.id, i.kind, i.display_name, i.lifecycle, i.version, i.created_at, i.upd
 FROM identities i JOIN identity_subjects b ON b.identity_id = i.id
 WHERE b.issuer = $1 AND b.subject = $2;
 
+-- name: ClaimIdentitySubject :one
+-- Moves a placeholder binding onto the subject the provider asserts, in one
+-- statement, so only the first claimant gets it.
+UPDATE identity_subjects SET subject = @subject, bound_at = @bound_at
+WHERE issuer = @issuer AND subject = @placeholder
+RETURNING identity_id;
+
 -- name: UpsertIdentitySubject :exec
 INSERT INTO identity_subjects (issuer, subject, identity_id, bound_at)
 VALUES ($1, $2, $3, $4)
