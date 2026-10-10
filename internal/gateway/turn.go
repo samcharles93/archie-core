@@ -297,7 +297,7 @@ type preparedTurn struct {
 // runs the session-level compression trigger, since that needs the same
 // model-derived budget the view is built against.
 func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, in Inbound, history []messaging.Message) (preparedTurn, error) {
-	subject := r.resolveSubject(in)
+	subject := r.resolveSubject(ctx, in)
 	extraTools := append(
 		TaskTools(r.TaskLister, r.Tasks, r.TaskLogs, r.TaskActor, r.TaskIdentity),
 		SessionTools(r.Sessions, r.Router.SessionTracker(), r.Router.sessionPlatform(in), in.Message)...,

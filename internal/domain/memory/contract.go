@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/lifecycle"
+	"github.com/samcharles93/archie-core/internal/domain/org"
 )
 
 // HealthStatus is a point-in-time health status.
@@ -77,6 +78,9 @@ type Scope struct {
 	Kind  ScopeKind
 	Agent AgentID
 	User  IdentityID
+	// Org owns the region. Every kind, global included, is per org: one
+	// org's facts never reach another org's turns. Empty is the system org.
+	Org org.OrgID
 }
 
 // Validate rejects an unknown kind, a missing component, and — just as
@@ -115,6 +119,14 @@ func (s Scope) Validate() error {
 // Key returns the scope's length-prefixed storage key, or "" for an invalid
 // scope.
 func (s Scope) Key() string {
+	key := s.kindKey()
+	if key == "" || s.Org == "" || s.Org == org.DefaultOrgID {
+		return key
+	}
+	return "org:" + lengthPrefixed(string(s.Org)) + ":" + key
+}
+
+func (s Scope) kindKey() string {
 	switch s.Kind {
 	case ScopeGlobal:
 		return "global"
@@ -150,12 +162,15 @@ type Subject struct {
 	// carries no per-person identity (the dashboard, a webhook) — which
 	// means "show none of it", never "fall back to a wider scope".
 	UserID IdentityID
+	// Org is the org the turn runs in; every scope it reads or writes
+	// belongs to that org.
+	Org org.OrgID
 }
 
 // Scopes returns the subject's readable scopes, narrowest first: agent-user,
 // agent, user, global.
 func (s Subject) Scopes() []Scope {
-	return append(s.WritableScopes(), Scope{Kind: ScopeGlobal})
+	return append(s.WritableScopes(), Scope{Kind: ScopeGlobal, Org: s.Org})
 }
 
 // WritableScopes returns the scopes a write for this subject may name —
@@ -164,13 +179,13 @@ func (s Subject) Scopes() []Scope {
 func (s Subject) WritableScopes() []Scope {
 	var scopes []Scope
 	if s.AgentID != "" && s.UserID != "" {
-		scopes = append(scopes, Scope{Kind: ScopeAgentUser, Agent: s.AgentID, User: s.UserID})
+		scopes = append(scopes, Scope{Kind: ScopeAgentUser, Agent: s.AgentID, User: s.UserID, Org: s.Org})
 	}
 	if s.AgentID != "" {
-		scopes = append(scopes, Scope{Kind: ScopeAgent, Agent: s.AgentID})
+		scopes = append(scopes, Scope{Kind: ScopeAgent, Agent: s.AgentID, Org: s.Org})
 	}
 	if s.UserID != "" {
-		scopes = append(scopes, Scope{Kind: ScopeUser, User: s.UserID})
+		scopes = append(scopes, Scope{Kind: ScopeUser, User: s.UserID, Org: s.Org})
 	}
 	return scopes
 }

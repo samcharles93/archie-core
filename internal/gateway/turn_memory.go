@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	domainmemory "github.com/samcharles93/archie-core/internal/domain/memory"
+	"github.com/samcharles93/archie-core/internal/domain/org"
 )
 
 // memoryRecordsPerScope bounds how many records of each scope the read path
@@ -85,10 +86,10 @@ func renderMemoryRecords(records []domainmemory.Record, log *slog.Logger) string
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// resolveSubject builds the turn's memory Subject from BotUser and the
-// UserIdentity resolver.
-func (r *TurnRunner) resolveSubject(in Inbound) domainmemory.Subject {
-	subject := domainmemory.Subject{AgentID: domainmemory.AgentID(r.BotUser)}
+// resolveSubject builds the turn's memory Subject from BotUser, the
+// UserIdentity resolver and the org the turn runs in.
+func (r *TurnRunner) resolveSubject(ctx context.Context, in Inbound) domainmemory.Subject {
+	subject := domainmemory.Subject{AgentID: domainmemory.AgentID(r.BotUser), Org: org.OrgFromContext(ctx)}
 	if r.UserIdentity == nil {
 		return subject
 	}
