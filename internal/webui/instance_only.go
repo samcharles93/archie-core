@@ -8,7 +8,8 @@ import (
 )
 
 // instanceViewer reports whether r may see instance-wide detail: process
-// health, service logs, the loaded config and every identity on the instance.
+// health, service logs, the loaded config, the setup checklist read from it,
+// the skill catalogue and every identity on the instance.
 // Only the system org operates the instance; a request with no principal is
 // an install without the access chain, whose single operator is that org.
 func instanceViewer(r *http.Request) bool {

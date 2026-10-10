@@ -242,11 +242,11 @@ func (s *Server) Broadcast(e events.Event) {
 
 func (s *Server) registerCoreRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/summary", s.handleSummary)
-	mux.HandleFunc("GET /api/setup", s.handleSetup)
+	mux.HandleFunc("GET /api/setup", instanceOnly(s.handleSetup))
 	mux.HandleFunc("GET /api/workflows", s.handleWorkflows)
 	mux.HandleFunc("PUT /api/workflows/{id}/enabled", s.handleWorkflowEnabled)
 	mux.HandleFunc("POST /api/work-requests", s.handleWorkRequest)
-	mux.HandleFunc("GET /api/skills", s.handleSkills)
+	mux.HandleFunc("GET /api/skills", instanceOnly(s.handleSkills))
 	mux.HandleFunc("GET /api/curators", instanceOnly(s.handleCurators))
 	mux.HandleFunc("GET /api/captures", s.handleCaptures)
 	mux.HandleFunc("GET /api/channels", instanceOnly(s.handleChannels))
