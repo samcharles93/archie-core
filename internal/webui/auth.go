@@ -48,8 +48,9 @@ func IsLoopback(listen string) bool {
 	if err != nil {
 		host = strings.TrimSpace(listen)
 	}
-	switch host {
-	case "", "localhost":
+	// An empty host is the wildcard, not loopback: ":8484" binds every
+	// interface, so it must not pass the loopback exemption.
+	if host == "localhost" {
 		return true
 	}
 	ip := net.ParseIP(host)
