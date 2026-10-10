@@ -140,6 +140,16 @@ func (c *Client) TaskModels(ctx context.Context, taskID int64) (config.OrgModels
 	return config.OrgModels{Org: r.OrgId, Aliases: r.Aliases, Providers: providers}, nil
 }
 
+// CallerModels returns the calling principal's org and the aliases it may
+// use.
+func (c *Client) CallerModels(ctx context.Context) (string, map[string]string, error) {
+	r, err := c.client.CallerModels(ctx, &pb.CallerModelsRequest{})
+	if err != nil {
+		return "", nil, unmapError(err)
+	}
+	return r.OrgId, r.Aliases, nil
+}
+
 // RecordUsage appends one model call's usage record.
 func (c *Client) RecordUsage(ctx context.Context, r usage.Record) error {
 	_, err := c.client.RecordUsage(ctx, &pb.RecordUsageRequest{Record: usageProto(r)})

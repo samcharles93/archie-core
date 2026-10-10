@@ -7,15 +7,14 @@ import (
 
 	"github.com/samcharles93/ai-sdk/chat"
 
-	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/usage"
 	"github.com/samcharles93/archie-core/internal/gateway"
 )
 
 const usageWriteTimeout = 5 * time.Second
 
-// usageSink records the gateway's model calls. Chat has no org of its own
-// yet, so its records belong to the system org. A nil sink records nothing.
+// usageSink records the gateway's model calls. The State Store bills each to
+// the org of the principal the call was made for. A nil sink records nothing.
 type usageSink struct {
 	store  usage.Recorder
 	models gateway.ModelManager
@@ -33,7 +32,7 @@ func (u *usageSink) record(ctx context.Context, source usage.Source, ref string,
 		alias = u.models.ActiveAlias()
 	}
 	record := usage.Record{
-		Org: storecontract.DefaultOrgID, Source: source, Alias: alias,
+		Source: source, Alias: alias,
 		InputTokens: int64(used.PromptTokens), OutputTokens: int64(used.CompletionTokens),
 		CachedTokens: int64(used.CachedTokens), At: time.Now().UTC(),
 	}.WithRef(ref)

@@ -310,6 +310,12 @@ func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, in Inbou
 	// adapter can carry a clarify/picker interaction (see WithInteractive).
 	extraTools = append(extraTools, InteractiveTools(ctx)...)
 	modelName := r.Models.ActiveModel()
+	if manager, ok := r.Models.(OrgModelManager); ok {
+		var err error
+		if modelName, err = manager.ModelFor(ctx); err != nil {
+			return preparedTurn{}, err
+		}
+	}
 	modelDetails := ModelDetails{}
 	if detailed, ok := r.Models.(DetailedModelManager); ok {
 		modelDetails, _ = detailed.ModelDetails(modelName)

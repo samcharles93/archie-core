@@ -52,6 +52,7 @@ const (
 	StateStoreService_StartStep_FullMethodName                  = "/state.v1.StateStoreService/StartStep"
 	StateStoreService_RecordUsage_FullMethodName                = "/state.v1.StateStoreService/RecordUsage"
 	StateStoreService_TaskModels_FullMethodName                 = "/state.v1.StateStoreService/TaskModels"
+	StateStoreService_CallerModels_FullMethodName               = "/state.v1.StateStoreService/CallerModels"
 	StateStoreService_FinishStep_FullMethodName                 = "/state.v1.StateStoreService/FinishStep"
 	StateStoreService_CancelExecution_FullMethodName            = "/state.v1.StateStoreService/CancelExecution"
 	StateStoreService_ListSteps_FullMethodName                  = "/state.v1.StateStoreService/ListSteps"
@@ -213,6 +214,9 @@ type StateStoreServiceClient interface {
 	// org may use and the org's own providers. The org is the task's, never
 	// the caller's.
 	TaskModels(ctx context.Context, in *TaskModelsRequest, opts ...grpc.CallOption) (*TaskModelsResponse, error)
+	// CallerModels answers the model aliases the caller's org may use. The org
+	// is the calling principal's; a call with none is the system org's.
+	CallerModels(ctx context.Context, in *CallerModelsRequest, opts ...grpc.CallOption) (*CallerModelsResponse, error)
 	FinishStep(ctx context.Context, in *FinishStepRequest, opts ...grpc.CallOption) (*FinishStepResponse, error)
 	// Cancellation. Deliberately administrative (deny-by-default for a
 	// task-scoped grant): a cancel is a dashboard, API and dispatch action
@@ -721,6 +725,16 @@ func (c *stateStoreServiceClient) TaskModels(ctx context.Context, in *TaskModels
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(TaskModelsResponse)
 	err := c.cc.Invoke(ctx, StateStoreService_TaskModels_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) CallerModels(ctx context.Context, in *CallerModelsRequest, opts ...grpc.CallOption) (*CallerModelsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CallerModelsResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_CallerModels_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1750,6 +1764,9 @@ type StateStoreServiceServer interface {
 	// org may use and the org's own providers. The org is the task's, never
 	// the caller's.
 	TaskModels(context.Context, *TaskModelsRequest) (*TaskModelsResponse, error)
+	// CallerModels answers the model aliases the caller's org may use. The org
+	// is the calling principal's; a call with none is the system org's.
+	CallerModels(context.Context, *CallerModelsRequest) (*CallerModelsResponse, error)
 	FinishStep(context.Context, *FinishStepRequest) (*FinishStepResponse, error)
 	// Cancellation. Deliberately administrative (deny-by-default for a
 	// task-scoped grant): a cancel is a dashboard, API and dispatch action
@@ -2032,6 +2049,9 @@ func (UnimplementedStateStoreServiceServer) RecordUsage(context.Context, *Record
 }
 func (UnimplementedStateStoreServiceServer) TaskModels(context.Context, *TaskModelsRequest) (*TaskModelsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method TaskModels not implemented")
+}
+func (UnimplementedStateStoreServiceServer) CallerModels(context.Context, *CallerModelsRequest) (*CallerModelsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CallerModels not implemented")
 }
 func (UnimplementedStateStoreServiceServer) FinishStep(context.Context, *FinishStepRequest) (*FinishStepResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method FinishStep not implemented")
@@ -2923,6 +2943,24 @@ func _StateStoreService_TaskModels_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StateStoreServiceServer).TaskModels(ctx, req.(*TaskModelsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_CallerModels_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CallerModelsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).CallerModels(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_CallerModels_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).CallerModels(ctx, req.(*CallerModelsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -4718,6 +4756,10 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TaskModels",
 			Handler:    _StateStoreService_TaskModels_Handler,
+		},
+		{
+			MethodName: "CallerModels",
+			Handler:    _StateStoreService_CallerModels_Handler,
 		},
 		{
 			MethodName: "FinishStep",

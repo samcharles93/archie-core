@@ -68,6 +68,9 @@ service StateStoreService {
   // org may use and the org's own providers. The org is the task's, never
   // the caller's.
   rpc TaskModels(TaskModelsRequest) returns (TaskModelsResponse);
+  // CallerModels answers the model aliases the caller's org may use. The org
+  // is the calling principal's; a call with none is the system org's.
+  rpc CallerModels(CallerModelsRequest) returns (CallerModelsResponse);
   rpc FinishStep(FinishStepRequest) returns (FinishStepResponse);
   // Cancellation. Deliberately administrative (deny-by-default for a
   // task-scoped grant): a cancel is a dashboard, API and dispatch action
@@ -1501,9 +1504,10 @@ message RecentLogsRequest { logging.v1.LogQuery query = 1; }
 message RecentLogsResponse { logging.v1.LogSnapshot snapshot = 1; }
 
 // UsageRecord mirrors usage.Record. A task's record belongs to the task's
-// org, whatever org_id says.
+// org; any other belongs to the calling principal's org.
 message UsageRecord {
-  string org_id = 1;
+  reserved 1;
+  reserved "org_id";
   // source is task, chat or curator.
   string source = 2;
   int64 task_id = 3;
@@ -1532,4 +1536,9 @@ message ModelProvider {
   string class = 1;
   string base_url = 2;
   string api_key_env = 3;
+}
+message CallerModelsRequest {}
+message CallerModelsResponse {
+  string org_id = 1;
+  map<string, string> aliases = 2;
 }

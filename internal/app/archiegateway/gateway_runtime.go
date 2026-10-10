@@ -77,6 +77,10 @@ func (b *server) setupChatRuntime(ctx context.Context, cfg config.Config, actor 
 	b.usage = &usageSink{models: b.chatModels, log: b.log}
 	if b.stateStore != nil {
 		b.usage.store = b.stateStore
+		b.chatModels.orgAliases = func(ctx context.Context) (map[string]string, error) {
+			_, aliases, err := b.stateStore.CallerModels(ctx)
+			return aliases, err
+		}
 	}
 	b.statusHealth = newStatusHealth(b)
 

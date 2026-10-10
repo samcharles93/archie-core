@@ -265,7 +265,11 @@ func (s *server) RecordUsage(ctx context.Context, r *pb.RecordUsageRequest) (*pb
 	if r.Record == nil {
 		return nil, status.Error(codes.InvalidArgument, "record is required")
 	}
-	if err := s.deps.Usage.RecordUsage(ctx, usageValue(r.Record)); err != nil {
+	record := usageValue(r.Record)
+	// The caller never names the org: a task's is its row's, which the store
+	// applies; anything else is the calling principal's.
+	record.Org = string(org.OrgFromContext(ctx))
+	if err := s.deps.Usage.RecordUsage(ctx, record); err != nil {
 		return nil, s.logErr("RecordUsage", err)
 	}
 	return &pb.RecordUsageResponse{}, nil
@@ -293,6 +297,19 @@ func (s *server) TaskModels(ctx context.Context, r *pb.TaskModelsRequest) (*pb.T
 		out[name] = &pb.ModelProvider{Class: p.Class, BaseUrl: p.BaseURL, ApiKeyEnv: p.APIKeyEnv}
 	}
 	return &pb.TaskModelsResponse{OrgId: orgID, Aliases: aliases, Providers: out}, nil
+}
+
+// CallerModels answers the aliases the calling principal's org may use.
+func (s *server) CallerModels(ctx context.Context, _ *pb.CallerModelsRequest) (*pb.CallerModelsResponse, error) {
+	if s.deps.OrgModels == nil {
+		return nil, status.Error(codes.Unavailable, "model aliases unavailable")
+	}
+	orgID := string(org.OrgFromContext(ctx))
+	aliases, _, err := s.deps.OrgModels(ctx, orgID)
+	if err != nil {
+		return nil, s.logErr("CallerModels", err)
+	}
+	return &pb.CallerModelsResponse{OrgId: orgID, Aliases: aliases}, nil
 }
 
 // CancelExecution is the one cancel path:

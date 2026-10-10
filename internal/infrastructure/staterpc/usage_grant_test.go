@@ -16,7 +16,7 @@ func TestRecordUsageAuthority(t *testing.T) {
 	}{
 		{"own task", &pb.UsageRecord{TaskId: 7}, true},
 		{"another task", &pb.UsageRecord{TaskId: 8}, false},
-		{"no task", &pb.UsageRecord{OrgId: "org-sys"}, false},
+		{"no task", &pb.UsageRecord{Source: "chat"}, false},
 		{"no record", nil, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

@@ -67,6 +67,14 @@ type ModelManager interface {
 	SetActiveModel(ctx context.Context, alias string) error
 }
 
+// OrgModelManager is the optional org-aware extension: the aliases and the
+// active model for the org of the principal ctx carries.
+type OrgModelManager interface {
+	ModelManager
+	ModelsFor(ctx context.Context) ([]string, error)
+	ModelFor(ctx context.Context) (string, error)
+}
+
 // ModelDetails is the catalog metadata rendered after an interactive model
 // selection. Limits are zero when the upstream catalog does not publish them.
 type ModelDetails = messaging.ModelDetails
@@ -497,7 +505,10 @@ func (r *Router) handleModel(ctx context.Context, arg string) (string, error) {
 		return "Model switching is not configured.", nil
 	}
 	if arg == "" {
-		models := r.Models.Models()
+		models, err := r.chatModels(ctx)
+		if err != nil {
+			return fmt.Sprintf("Cannot list models: %v", err), nil
+		}
 		if len(models) == 0 {
 			return "No model aliases configured.\nUsage: /model <alias>", nil
 		}
@@ -517,6 +528,14 @@ func (r *Router) handleModel(ctx context.Context, arg string) (string, error) {
 		return fmt.Sprintf("Cannot switch: %v", err), nil
 	}
 	return fmt.Sprintf("Active model set to %s.", arg), nil
+}
+
+// chatModels lists the aliases the caller's org may switch between.
+func (r *Router) chatModels(ctx context.Context) ([]string, error) {
+	if manager, ok := r.Models.(OrgModelManager); ok {
+		return manager.ModelsFor(ctx)
+	}
+	return r.Models.Models(), nil
 }
 
 // restAfter returns the text after the command token, stripping the

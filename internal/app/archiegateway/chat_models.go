@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
 )
@@ -20,6 +21,9 @@ type chatModelManager struct {
 	active        string
 	details       map[string]gateway.ModelDetails
 	providerNames map[string]string
+	// orgAliases answers the aliases the principal ctx carries may use. Nil
+	// serves every caller the instance aliases.
+	orgAliases func(ctx context.Context) (map[string]string, error)
 }
 
 func newChatModelManager(aliases map[string]string) *chatModelManager {
@@ -107,4 +111,34 @@ func (m *chatModelManager) SetActiveModel(ctx context.Context, alias string) err
 	}
 	m.active = alias
 	return nil
+}
+
+// aliasesFor is the alias table ctx's org resolves against: the instance's
+// for the system org, the org's own answer otherwise.
+func (m *chatModelManager) aliasesFor(ctx context.Context) (map[string]string, error) {
+	if m.orgAliases == nil || org.OrgFromContext(ctx) == org.DefaultOrgID {
+		m.mu.RLock()
+		defer m.mu.RUnlock()
+		return m.aliases, nil
+	}
+	return m.orgAliases(ctx)
+}
+
+// ModelsFor returns the aliases ctx's org may switch between.
+func (m *chatModelManager) ModelsFor(ctx context.Context) ([]string, error) {
+	aliases, err := m.aliasesFor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return config.ChatAliases(aliases), nil
+}
+
+// ModelFor resolves the active alias in ctx's org. An org that cannot use it
+// gets an error, never another model.
+func (m *chatModelManager) ModelFor(ctx context.Context) (string, error) {
+	aliases, err := m.aliasesFor(ctx)
+	if err != nil {
+		return "", err
+	}
+	return config.ResolveModel(aliases, m.ActiveAlias(), config.PurposeChat)
 }
