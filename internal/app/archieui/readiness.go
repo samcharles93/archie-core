@@ -35,10 +35,11 @@ func newReadinessRegistry(o Options, tasks storecontract.TaskStore, chat messagi
 	return health.NewRegistry(probes...)
 }
 
-// problemSource keeps a missing chain a nil source, which the probe reports
-// as not wired.
+// problemSource reports the chain's invalid policies; a chain that has not
+// loaded yet is reported as not wired, so readiness is degraded while requests
+// are refused.
 func problemSource(chain *infraaccess.Live) readiness.PolicyProblems {
-	if chain == nil {
+	if chain == nil || !chain.Ready() {
 		return nil
 	}
 	return chain

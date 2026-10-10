@@ -181,4 +181,8 @@ var (
 	// ErrPolicyLockout is returned when a change would leave an org with no
 	// owner who may manage its policies.
 	ErrPolicyLockout = errors.New("access: change leaves no owner able to manage policies")
+	// ErrChainUnavailable reports that no policy engine has loaded yet: the
+	// request was refused without evaluating any policy, so it is an
+	// availability failure, not a denial.
+	ErrChainUnavailable = errors.New("access: policy chain not loaded")
 )

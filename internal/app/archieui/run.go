@@ -27,16 +27,17 @@ import (
 	"github.com/samcharles93/archie-core/internal/webui"
 )
 
-// buildAccessChain builds the live access engine over the stored policies.
-// An unreachable State Store returns nil and logs a warning.
+// buildAccessChain builds the live access engine over the stored policies. A
+// State Store that is not up yet yields a chain with no engine: it refuses
+// every request until the first load succeeds and keeps retrying, so a slow
+// database or a bad start order closes the dashboard rather than opening it.
 func buildAccessChain(ctx context.Context, store *staterpc.Client, log *slog.Logger) (*infraaccess.Live, error) {
-	live, err := infraaccess.NewLive(ctx, store.ListPolicies, log)
-	if status.Code(err) == codes.Unavailable {
-		log.Warn("access chain unavailable; the credential check is the gate", "err", err)
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
+	live := infraaccess.NewPending(store.ListPolicies, log)
+	if err := live.Reload(ctx); err != nil {
+		if status.Code(err) != codes.Unavailable {
+			return nil, err
+		}
+		log.Warn("access policies unavailable; the dashboard refuses API requests until they load", "err", err)
 	}
 	go live.Run(ctx, applystatus.RestampInterval)
 	return live, nil

@@ -28,6 +28,16 @@ func NewLive(ctx context.Context, load func(context.Context) ([]access.Policy, e
 	return l, nil
 }
 
+// NewPending returns a chain with no engine: Run loads it, retrying until the
+// store answers. A chain that is not ready refuses every request, so a process
+// that starts before its State Store is closed rather than opened.
+func NewPending(load func(context.Context) ([]access.Policy, error), log *slog.Logger) *Live {
+	return &Live{load: load, log: log}
+}
+
+// Ready reports whether an engine has loaded.
+func (l *Live) Ready() bool { return l.engine.Load() != nil }
+
 // Reload rebuilds the engine from the store now.
 func (l *Live) Reload(ctx context.Context) error {
 	stored, err := l.load(ctx)
@@ -46,29 +56,62 @@ func (l *Live) Reload(ctx context.Context) error {
 	return nil
 }
 
-// Run reloads on every interval until ctx ends.
+// Run reloads on every interval until ctx ends. A chain with no engine yet
+// tries at once and keeps trying, so the first load does not wait an interval
+// after the State Store returns.
 func (l *Live) Run(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
+		l.reload(ctx)
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := l.Reload(ctx); err != nil && ctx.Err() == nil {
-				l.log.Warn("access policies not reloaded; keeping the last chain", "err", err)
-			}
 		}
 	}
 }
 
+func (l *Live) reload(ctx context.Context) {
+	err := l.Reload(ctx)
+	if err == nil || ctx.Err() != nil {
+		return
+	}
+	if l.Ready() {
+		l.log.Warn("access policies not reloaded; keeping the last chain", "err", err)
+		return
+	}
+	l.log.Warn("access policies not loaded; requests are refused until they load", "err", err)
+}
+
 func (l *Live) Authorize(p access.Principal, a access.Action, r access.Resource, c access.Context) access.Decision {
-	return l.engine.Load().Authorize(p, a, r, c)
+	engine := l.engine.Load()
+	if engine == nil {
+		return notLoaded()
+	}
+	return engine.Authorize(p, a, r, c)
 }
 
 func (l *Live) AuthorizeDelivery(orgID org.OrgID, sourcePath, addr string) access.Decision {
-	return l.engine.Load().AuthorizeDelivery(orgID, sourcePath, addr)
+	engine := l.engine.Load()
+	if engine == nil {
+		return notLoaded()
+	}
+	return engine.AuthorizeDelivery(orgID, sourcePath, addr)
+}
+
+// notLoaded is the refusal of a chain with no engine: nothing was evaluated.
+func notLoaded() access.Decision {
+	decision := access.DeniedAt(access.LevelInstance, nil)
+	decision.Err = access.ErrChainUnavailable
+	return decision
 }
 
 // Problems reports the current engine's invalid policies.
-func (l *Live) Problems() []Problem { return l.engine.Load().Problems() }
+func (l *Live) Problems() []Problem {
+	engine := l.engine.Load()
+	if engine == nil {
+		return nil
+	}
+	return engine.Problems()
+}

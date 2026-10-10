@@ -2,6 +2,7 @@ package webui
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -10,13 +11,14 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/org"
 )
 
-// authorize wraps h with the policy chain. Optional: a server with no
-// Authorizer keeps the credential check as the whole gate, which is the
-// documented behaviour of an install that has not built the chain.
+// authorize wraps h with the policy chain. A chain that is absent or has not
+// loaded refuses the request: the credential check alone is never the gate
+// while orgs exist, so a State Store outage closes the dashboard rather than
+// letting every request through as the system org.
 func (s *Server) authorize(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.Access == nil {
-			h.ServeHTTP(w, r)
+			s.refuseUngated(w, r)
 			return
 		}
 		principal, err := s.requestPrincipal(r.Context())
@@ -36,6 +38,12 @@ func (s *Server) authorize(h http.Handler) http.Handler {
 		resource := access.Resource{Kind: kind, ID: id, Org: principal.Org}
 		decision := s.Access.Authorize(principal, action, resource, access.Context{})
 		if !decision.Allowed {
+			if errors.Is(decision.Err, access.ErrChainUnavailable) {
+				// Nothing was evaluated: the chain has not loaded. This is an
+				// availability failure, not a denial, so none is recorded.
+				s.refuseUngated(w, r)
+				return
+			}
 			s.recordDenial(r.Context(), principal, action, resource, decision)
 			if wantsDocument(r) {
 				s.authPage(w, "You do not have permission to do that.")
@@ -50,6 +58,19 @@ func (s *Server) authorize(h http.Handler) http.Handler {
 		// derives the org it acts in from it.
 		h.ServeHTTP(w, r.WithContext(org.WithOrg(access.WithPrincipal(r.Context(), principal), principal.Org)))
 	})
+}
+
+// refuseUngated answers a request the dashboard cannot authorize because no
+// policy chain is available. It serves nothing ungated: without a chain the
+// credential check would be the whole gate and every call would act as the
+// system org.
+func (s *Server) refuseUngated(w http.ResponseWriter, r *http.Request) {
+	if wantsDocument(r) {
+		s.authPage(w, "The access policy chain is not available yet.")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	http.Error(w, "access policies are not available", http.StatusServiceUnavailable)
 }
 
 // requestPrincipal assembles the principal a request acts as. With no acting
