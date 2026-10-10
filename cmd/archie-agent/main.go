@@ -15,6 +15,7 @@ import (
 	"syscall"
 
 	"github.com/samcharles93/archie-core/internal/app/agentworker"
+	"github.com/samcharles93/archie-core/internal/infrastructure/egress"
 )
 
 type workerRunner func(context.Context, agentworker.Settings, *slog.Logger) error
@@ -90,6 +91,9 @@ func runCommand(args []string, getenv func(string) string, stderr io.Writer, run
 		NATSToken:        natsToken,
 		StateStoreTarget: stateStoreURL,
 		StateStoreToken:  stateStoreToken,
+		ModelProxy:       getenv(egress.ModelProxyEnv),
+		ModelProxyHosts:  egress.ParseHosts(getenv(egress.ModelProxyHostsEnv)),
+		ModelProxyCA:     getenv(egress.ModelProxyCAEnv),
 	}, log); err != nil {
 		return 1
 	}

@@ -161,6 +161,9 @@ type boot struct {
 	// kitLauncher starts Kit profile tasks; nil when the egress path cannot
 	// be built on this host.
 	kitLauncher *kitrun.Launcher
+	// modelEgress gives native tasks model access through the egress proxy;
+	// nil when the proxy cannot start.
+	modelEgress daemon.ModelEgress
 	// sessionGrants records live setup sessions' granted credential services
 	// for the egress proxy's resolver.
 	sessionGrants *sessionGrants
@@ -574,6 +577,7 @@ func (b *boot) buildDaemon() {
 		RunCredentials:      b.stateStoreGrants,
 		ContainerPool:       b.containerPool,
 		KitLauncher:         b.kitLauncher,
+		ModelEgress:         b.modelEgress,
 		Identities:          b.identityRunners,
 		RootIdentityID:      identity.StableID(servicekit.IdentityNames(b.cfg)[0]),
 		TaskLogs:            b.taskLogs,

@@ -152,6 +152,9 @@ type Daemon struct {
 	RunCredentials RunCredentialIssuer
 	// KitLauncher starts tasks whose agent profile is a Kit. Nil parks them.
 	KitLauncher KitLauncher
+	// ModelEgress gives native task containers model access without provider
+	// keys. Nil parks a task whose providers need a key.
+	ModelEgress ModelEgress
 	// TaskRunReadyTimeout bounds how long runViaAgent retries a taskrun request
 	// while the new container has not subscribed yet. Zero uses
 	// defaultTaskRunReadyTimeout.
@@ -1646,14 +1649,17 @@ func (d *Daemon) process(ctx context.Context, task *workflow.Task, hold *taskHol
 // teardownStorage runs after the workflow completes. The Docker backend is
 // a no-op; future backends (temp volumes, NFS leases) use this hook.
 func (d *Daemon) teardownStorage(ctx context.Context, task *workflow.Task, repo config.Repo, workDir string) {
-	if d.Storage != nil {
-		_ = d.Storage.Teardown(ctx, storage.TaskRef{
-			WorktreeDir:       workDir,
-			Ecosystem:         repo.Ecosystem,
-			PersistentStorage: repo.PersistentStorage,
-			Owner:             task.Owner,
-			Repo:              task.Repo,
-		})
+	if d.Storage == nil {
+		return
+	}
+	if err := d.Storage.Teardown(ctx, storage.TaskRef{
+		WorktreeDir:       workDir,
+		Ecosystem:         repo.Ecosystem,
+		PersistentStorage: repo.PersistentStorage,
+		Owner:             task.Owner,
+		Repo:              task.Repo,
+	}); err != nil {
+		d.Log.Warn("storage teardown failed", "task", task.ID, "err", err)
 	}
 }
 
@@ -1828,35 +1834,29 @@ func (d *Daemon) acquireTaskContainer(
 
 	credential, revokeCredential, err := d.runCredential(task)
 	if err != nil {
-		if terr := d.Storage.Teardown(ctx, storage.TaskRef{
-			WorktreeDir:       workDir,
-			Ecosystem:         repo.Ecosystem,
-			PersistentStorage: repo.PersistentStorage,
-			Owner:             task.Owner,
-			Repo:              task.Repo,
-		}); terr != nil {
-			d.Log.Warn("storage teardown after run credential failure failed", "err", terr)
-		}
+		d.teardownStorage(ctx, task, repo, workDir)
 		park("run credential failed", err)
 		return nil, "", nil, false
 	}
 
-	ctr, err := d.ContainerPool.Acquire(ctx, image, mounts, d.containerEnv(task, credential))
+	model, closeModel, err := d.openModelEgress(task, credential)
+	if err != nil {
+		revokeCredential()
+		d.teardownStorage(ctx, task, repo, workDir)
+		park("model egress failed", err)
+		return nil, "", nil, false
+	}
+	revokeRun := revokeCredential
+	revokeCredential = func() { closeModel(); revokeRun() }
+
+	ctr, err := d.ContainerPool.Acquire(ctx, image, append(mounts, model.Mounts...), append(d.containerEnv(task, credential), model.Env...))
 	if err != nil {
 		revokeCredential()
 		// Roll back the storage we just set up: the mounts were created
 		// for this task but no container will use them. Leaking them until
 		// a later TTL sweep is not acceptable on a backend that allocates
 		// real resources (volumes, NFS leases).
-		if terr := d.Storage.Teardown(ctx, storage.TaskRef{
-			WorktreeDir:       workDir,
-			Ecosystem:         repo.Ecosystem,
-			PersistentStorage: repo.PersistentStorage,
-			Owner:             task.Owner,
-			Repo:              task.Repo,
-		}); terr != nil {
-			d.Log.Warn("storage teardown after acquire failure failed", "err", terr)
-		}
+		d.teardownStorage(ctx, task, repo, workDir)
 		park("container acquire failed", err)
 		return nil, "", nil, false
 	}
@@ -2270,13 +2270,6 @@ func (d *Daemon) containerEnv(task *workflow.Task, stateStoreToken string) []str
 	// back before the daemon reads it to push.
 	env = append(env, fmt.Sprintf("WORKTREE_UID=%d", os.Getuid()))
 	env = append(env, fmt.Sprintf("WORKTREE_GID=%d", os.Getgid()))
-	for _, p := range d.configFor(task).Providers {
-		if p.APIKeyEnv != "" {
-			if v := os.Getenv(p.APIKeyEnv); v != "" {
-				env = append(env, p.APIKeyEnv+"="+v)
-			}
-		}
-	}
 	return env
 }
 

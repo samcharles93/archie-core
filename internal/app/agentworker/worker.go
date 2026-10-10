@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/agentboot"
 	"github.com/samcharles93/archie-core/internal/infrastructure/agentgit"
 	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
+	"github.com/samcharles93/archie-core/internal/infrastructure/egress"
 	"github.com/samcharles93/archie-core/internal/infrastructure/readiness"
 	"github.com/samcharles93/archie-core/internal/infrastructure/workflowsteps"
 	"github.com/samcharles93/archie-core/internal/installtype"
@@ -48,6 +50,13 @@ type Settings struct {
 	// NATS storerpc path is deleted.
 	StateStoreTarget string
 	StateStoreToken  string
+
+	// ModelProxy, ModelProxyHosts and ModelProxyCA route model provider
+	// requests through the daemon's egress proxy, which holds the keys.
+	// Empty ModelProxy sends them directly.
+	ModelProxy      string
+	ModelProxyHosts []string
+	ModelProxyCA    string
 }
 
 type workerTransport interface {
@@ -115,6 +124,15 @@ func run(ctx context.Context, settings Settings, log *slog.Logger, dependencies 
 		workDir = storage.WorktreeMountDir
 	}
 
+	if settings.ModelProxy != "" {
+		transport, err := egress.ModelTransport(settings.ModelProxy, settings.ModelProxyHosts, settings.ModelProxyCA)
+		if err != nil {
+			return &StartupError{Operation: "model proxy", Err: err}
+		}
+		// The model SDK builds its clients on the default transport and takes
+		// no client of its own, so the process-wide default is the seam.
+		http.DefaultTransport = transport
+	}
 	dependencies.markSafe(ctx, workDir, log)
 
 	// The task is known before connecting: without a broker token the

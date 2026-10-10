@@ -29,17 +29,21 @@ func TestEgressResolvesOnlyGrantedCredentials(t *testing.T) {
 	own := []string{"anthropic"}
 	cfg := config.Config{
 		GrantedCredentials: []string{"github"},
+		Providers:          map[string]config.Provider{"openai": {Class: "openai"}, "deepseek": {Class: "deepseek"}},
 		Identities:         []config.IdentityConfig{{Name: "acme-bot", Org: "acme", GrantedCredentials: &own}},
 		Containers: config.ContainerConfig{Credentials: []config.CredentialBinding{
 			{Service: "github", Secret: config.SecretRef{Engine: "env", Key: "GH"}},
 			{Service: "anthropic", Secret: config.SecretRef{Engine: "env", Key: "ROOT_AI"}},
 			{Service: "anthropic", Org: "acme", Secret: config.SecretRef{Engine: "env", Key: "ACME_AI"}},
+			{Service: "openai", Secret: config.SecretRef{Engine: "env", Key: "ROOT_OPENAI"}},
+			{Service: "openai", Org: "acme", Secret: config.SecretRef{Engine: "env", Key: "ACME_OPENAI"}},
+			{Service: "deepseek", Secret: config.SecretRef{Engine: "env", Key: "ROOT_DEEPSEEK"}},
 		}},
 	}
 	r := runCredentialResolver{
 		runs:    runsByToken{"root-run": {ID: 1}, "acme-run": {ID: 2, Identity: "acme-bot"}},
 		config:  config.NewHolder(cfg),
-		secrets: secretValues{"GH": "gh-secret", "ROOT_AI": "root-ai", "ACME_AI": "acme-ai"},
+		secrets: secretValues{"GH": "gh-secret", "ROOT_AI": "root-ai", "ACME_AI": "acme-ai", "ROOT_OPENAI": "root-openai", "ACME_OPENAI": "acme-openai", "ROOT_DEEPSEEK": "root-deepseek"},
 	}
 	tests := []struct {
 		name, credential, service, want string
@@ -49,6 +53,9 @@ func TestEgressResolvesOnlyGrantedCredentials(t *testing.T) {
 		{"identity run gets its own org's binding", "acme-run", "anthropic", "acme-ai"},
 		{"identity grants replace the root's", "acme-run", "github", ""},
 		{"unknown credential", "gone", "github", ""},
+		{"a model provider key needs no grant", "root-run", "openai", "root-openai"},
+		{"a model provider key is the run's own org's", "acme-run", "openai", "acme-openai"},
+		{"another org's model provider key is unbound", "acme-run", "deepseek", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

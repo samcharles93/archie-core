@@ -11,6 +11,7 @@ import (
 	workflowtask "github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/infrastructure/kit"
 	"github.com/samcharles93/archie-core/internal/infrastructure/kitrun"
+	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
@@ -111,4 +112,41 @@ func (d *Daemon) removeEndedKitVolumes(ctx context.Context, taskID int64, volume
 	if err := d.KitLauncher.RemoveVolumes(lookupCtx, volumes); err != nil {
 		d.Log.Warn("kit volume removal failed", "task", taskID, "err", err)
 	}
+}
+
+// ModelEgress opens a native task's model proxy session. The container holds
+// a sentinel under each provider's key variable and reaches the providers
+// through the egress proxy, which swaps in the org's bound key.
+type ModelEgress interface {
+	Open(token, org string, providers map[string]config.Provider) (ModelSession, error)
+	Close(token string)
+}
+
+// ModelSession is what a native container needs for its model proxy session.
+type ModelSession struct {
+	Env    []string
+	Mounts []storage.Mount
+}
+
+// openModelEgress opens task's model session, or refuses: provider keys
+// never reach a container, so without the proxy no model call can run.
+func (d *Daemon) openModelEgress(task *workflow.Task, credential string) (ModelSession, func(), error) {
+	cfg := d.configFor(task)
+	if d.ModelEgress == nil {
+		for _, p := range cfg.Providers {
+			if p.APIKeyEnv != "" {
+				return ModelSession{}, nil, fmt.Errorf("model egress proxy is unavailable on this daemon, and provider keys never enter a container")
+			}
+		}
+		return ModelSession{}, func() {}, nil
+	}
+	if credential == "" {
+		return ModelSession{}, nil, fmt.Errorf("model egress needs a run credential, and no State Store issues one")
+	}
+	org, _ := cfg.CredentialAccess(task.Identity)
+	session, err := d.ModelEgress.Open(credential, org, cfg.Providers)
+	if err != nil {
+		return ModelSession{}, nil, err
+	}
+	return session, func() { d.ModelEgress.Close(credential) }, nil
 }

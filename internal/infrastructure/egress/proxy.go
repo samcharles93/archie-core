@@ -34,13 +34,14 @@ var cgnat = &net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
 // its Kit's network policy. It starts in the install phase; the runner moves
 // it to runtime before the workload's entrypoint starts.
 type Session struct {
-	token      string
-	org        string
-	install    rules
-	runtime    rules
-	injections []injection
-	oauth      []oauthRule
-	atRun      atomic.Bool
+	token         string
+	org           string
+	install       rules
+	runtime       rules
+	injections    []injection
+	substitutions []substitution
+	oauth         []oauthRule
+	atRun         atomic.Bool
 }
 
 // Token is the secret the container presents as its proxy password: its run
@@ -93,6 +94,9 @@ type SessionOptions struct {
 	// kind.
 	Credentials []spec.CredentialCapability
 	Bound       map[string]CredentialKind
+	// Substitutions swap a service's sentinel for its key on requests to the
+	// service's host.
+	Substitutions []Substitution
 }
 
 // Proxy is the egress proxy sandbox containers reach through their relay.
@@ -132,6 +136,7 @@ func (p *Proxy) Register(opts SessionOptions) (*Session, error) {
 	s := &Session{
 		token: opts.Token, org: opts.Org,
 		injections: compileInjections(opts.Credentials, opts.Bound), oauth: compileOAuthRules(opts.Credentials, opts.Bound),
+		substitutions: compileSubstitutions(opts.Substitutions),
 	}
 	for _, rule := range s.oauth {
 		if rule.required && p.oauth == nil {
@@ -286,6 +291,9 @@ func (p *Proxy) forward(ctx context.Context, w http.ResponseWriter, r *http.Requ
 	err := p.inject(ctx, s, r, host, port)
 	if err == nil {
 		err = p.injectOAuth(ctx, s, r, host, port)
+	}
+	if err == nil {
+		err = p.substitute(ctx, s, r, host, port)
 	}
 	if err != nil {
 		http.Error(w, "egress to "+target+": "+err.Error(), http.StatusBadGateway)

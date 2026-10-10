@@ -42,11 +42,6 @@ func (b *boot) setupKitLauncher(ctx context.Context) {
 		log.Warn("kit harness runs disabled: egress CA", "err", err)
 		return
 	}
-	fetcher, err := fetch.New(fetch.WithDockerCredentials())
-	if err != nil {
-		log.Warn("kit harness runs disabled: kit registry client", "err", err)
-		return
-	}
 	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", net.JoinHostPort(pool.HostGateway(), "0"))
 	if err != nil {
 		log.Warn("kit harness runs disabled: egress proxy listener", "err", err)
@@ -74,6 +69,15 @@ func (b *boot) setupKitLauncher(ctx context.Context) {
 			log.Error("egress proxy stopped", "err", err)
 		}
 	}()
+	// Native tasks need only the proxy for model access, so it serves them
+	// even when a Kit-only piece below fails.
+	b.modelEgress = modelEgress{proxy: proxy, addr: ln.Addr().String(), caFile: egress.CACertPath(caDir), config: b.cfgHolder}
+	fetcher, err := fetch.New(fetch.WithDockerCredentials())
+	if err != nil {
+		b.addCleanup(func() { _ = srv.Close() })
+		log.Warn("kit harness runs disabled: kit registry client", "err", err)
+		return
+	}
 	networks := egress.NewNetworks(pool.Client(), egress.RelaySpec{
 		Name: relayName, Image: b.cfg.Containers.Image,
 		Entrypoint: []string{"archie-agent"}, Cmd: cmd, Network: pool.NetworkName(),

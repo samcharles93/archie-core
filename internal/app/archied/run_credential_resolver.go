@@ -2,6 +2,7 @@ package archied
 
 import (
 	"context"
+	"slices"
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
@@ -42,6 +43,11 @@ func (r runCredentialResolver) Resolve(ctx context.Context, credential, service 
 	}
 	cfg := r.config.Get()
 	org, granted := cfg.CredentialAccess(task.Identity)
+	// A configured model provider's key is granted to every run of the org:
+	// any agent stage needs model access.
+	if _, ok := cfg.Providers[service]; ok {
+		granted = append(slices.Clone(granted), service)
+	}
 	return r.resolveBinding(org, granted, service)
 }
 
