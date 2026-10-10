@@ -170,6 +170,11 @@ tasks:
     cmds:
       - bash tools/webhook-send.sh {{.CLI_ARGS}}
 
+  bench:prreview:
+    desc: Run the PR review benchmark on the configured models and write docs/benchmarks/pr-review-*.md (-- -model ALIAS -judge-model REF; --help for flags)
+    cmds:
+      - go run ./cmd/archied prbench {{.CLI_ARGS}}
+
   dev:
     desc: Run development services and Vite at http://localhost:5173
     deps: [dev:daemon, dev:gateway, dev:messaging, dev:state-store, dev:dashboard, dev:ui]
