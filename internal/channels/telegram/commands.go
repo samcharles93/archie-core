@@ -27,6 +27,7 @@ var gatewayCommandSpecs = []commandSpec{
 	{Command: "personality", Description: "Choose a communication style", Usage: "/personality [name]"},
 	{Command: "spawn", Description: "Create a tracked task", Usage: "/spawn [identity=name] [repo=owner/name] [workflow=name] <title>"},
 	{Command: "settings", Description: "Inspect or change runtime settings", Usage: "/settings [list|get <kind>|set <kind> <field>=<value> ...]"},
+	{Command: "approve", Description: "Approve a waiting task", Usage: "/approve [identity=name] <task-id>"},
 	{Command: "cancel", Description: "Cancel a queued or waiting task", Usage: "/cancel [identity=name] <task-id>"},
 	{Command: "start", Description: "Confirm that Archie is running", Usage: "/start"},
 	{Command: "new", Description: "Start a fresh session, clearing conversation history", Usage: "/new [title]"},
