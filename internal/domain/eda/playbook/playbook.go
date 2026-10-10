@@ -6,10 +6,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -235,7 +236,7 @@ func Load(dir string, modules Modules) (*Store, error) {
 // Compile validates and compiles playbook documents in id order. Any invalid
 // playbook fails the whole set: a partially valid set never runs.
 func Compile(docs []Document, modules Modules) (*Store, error) {
-	sort.Slice(docs, func(i, j int) bool { return docs[i].ID < docs[j].ID })
+	slices.SortFunc(docs, func(a, b Document) int { return strings.Compare(a.ID, b.ID) })
 	store := &Store{modules: modules}
 	for _, doc := range docs {
 		pb, err := compileOne(doc, modules)
@@ -481,11 +482,7 @@ func compileArgs(path string, lines map[string]int, label, kind string, raw map[
 			return nil, err
 		}
 	}
-	keys := make([]string, 0, len(raw))
-	for key := range raw {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(raw))
 	args := make(map[string]*expr.Program, len(raw))
 	for _, key := range keys {
 		prg, err := compileExpr(at(path, lines[key]), argsLabel(label, key), raw[key], env)
@@ -512,11 +509,7 @@ func validateArgsKeys(path string, lines map[string]int, label, kind string, arg
 	for field := range t.Fields() {
 		fields[strings.ToLower(field.Name)] = struct{}{}
 	}
-	keys := make([]string, 0, len(raw))
-	for key := range raw {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(raw))
 	loc := kind + " kind"
 	if label != "" {
 		loc = label + " " + loc
@@ -671,11 +664,7 @@ func (a Action) whenHolds(ctx expr.Context) bool {
 // the first evaluation error.
 func (a Action) evalArgs(ctx expr.Context) (map[string]any, error) {
 	out := make(map[string]any, len(a.Args))
-	keys := make([]string, 0, len(a.Args))
-	for key := range a.Args {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(a.Args))
 	for _, key := range keys {
 		if a.Args[key] == nil {
 			continue

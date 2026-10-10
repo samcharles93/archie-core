@@ -3,7 +3,9 @@
 package expr
 
 import (
+	"maps"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 
@@ -252,11 +254,7 @@ func actionReferences(ast *cel.Ast) ([]string, bool) {
 		}
 	})
 	celast.PreOrderVisit(checked.Expr(), visitor)
-	ids := make([]string, 0, len(seen))
-	for id := range seen {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
+	ids := slices.Sorted(maps.Keys(seen))
 	return ids, identCount == staticCount
 }
 

@@ -8,8 +8,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/domain/eda/module/log"
@@ -164,11 +165,7 @@ func decodeResultStruct(kind string, t reflect.Type, raw map[string]any) (any, e
 		byName[name] = out.Field(i)
 	}
 
-	keys := make([]string, 0, len(raw))
-	for key := range raw {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(raw))
 	for _, key := range keys {
 		if _, ok := byName[key]; !ok {
 			return nil, fmt.Errorf("module %s: unknown result field %q", kind, key)
