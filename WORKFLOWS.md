@@ -21,7 +21,6 @@ steps:
   - id: plan
     type: agent.run
     settings:
-      role: planner
       read_only: true
       mission: |
         Plan this change: {{ task.prompt }}
@@ -135,7 +134,7 @@ _runs without a repository._
 | `protect_tests` | bool | Write-block the repository test files. |
 | `read_only` | bool | Restrict the agent to read-only tools. |
 | `result` | mapping | A JSON Schema object the agent must return; later steps read it as steps.<id>.result. |
-| `role` | text | Which configured model role runs the agent, e.g. builder or planner. Empty means builder. |
+| `model` | text | The model alias that runs the agent, e.g. default or fast. Empty means default. |
 
 ### `command.run`
 

@@ -40,6 +40,12 @@ import {
 
 const store = useControlPlaneStore();
 const state = computed(() => store.stateFor("workflow-definitions"));
+// Chat and agent aliases: embedding and transcription have their own purposes.
+const modelAliases = computed(() =>
+  Object.keys((store.stateFor("model-aliases").resource?.value ?? {}) as Record<string, string>)
+    .filter((alias) => alias !== "embedding" && alias !== "transcription")
+    .sort(),
+);
 const collection = computed(
   () =>
     (state.value.resource?.value as
@@ -301,6 +307,7 @@ function syncScroll(event: Event): void {
                 v-model:yaml="yaml"
                 :path="selectedStep"
                 :vocabulary="vocabulary"
+                :model-aliases="modelAliases"
                 @close="selectedStep = null"
                 @remove="removeAt(selectedStep)"
               />

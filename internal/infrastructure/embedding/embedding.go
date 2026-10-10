@@ -23,11 +23,6 @@ import (
 	domainembedding "github.com/samcharles93/archie-core/internal/domain/embedding"
 )
 
-// Role is the [models] key embedding consumers use, matching the
-// "builder"/"planner"/"triage" role convention chat models already use
-// (internal/domain/workflow/agent.go).
-const Role = "embedding"
-
 // DefaultTimeout bounds one embedding request when Options.Timeout is
 // unset.
 const DefaultTimeout = 30 * time.Second
@@ -41,7 +36,7 @@ type Options struct {
 	Timeout time.Duration
 }
 
-// New builds an embedding client from cfg.Models[Role] and its provider. It
+// New builds an embedding client from the embedding model alias and its provider. It
 // returns (nil, false) when unavailable. Provider secrets must already be
 // resolved.
 func New(cfg config.Config, opts Options) (domainembedding.Client, bool) {
@@ -54,7 +49,11 @@ func New(cfg config.Config, opts Options) (domainembedding.Client, bool) {
 		timeout = DefaultTimeout
 	}
 
-	providerID, modelID, ok := parseModelRef(cfg.Models[Role])
+	ref, err := config.ResolveModel(cfg.Models, "", config.PurposeEmbedding)
+	if err != nil {
+		return nil, false
+	}
+	providerID, modelID, ok := parseModelRef(ref)
 	if !ok {
 		return nil, false
 	}

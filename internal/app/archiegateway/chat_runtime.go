@@ -57,9 +57,9 @@ func (b *server) setupTranscriber(cfg config.Config, log *slog.Logger) {
 	})
 	if ok {
 		b.transcriber = client
-		log.Info("voice transcription enabled", "role", transcription.Role)
-	} else if cfg.Models[transcription.Role] != "" {
-		log.Warn("voice transcription configured but unavailable; capability disabled", "role", transcription.Role)
+		log.Info("voice transcription enabled")
+	} else if _, err := config.ResolveModel(cfg.Models, "", config.PurposeTranscription); err == nil {
+		log.Warn("voice transcription configured but unavailable; capability disabled")
 	}
 }
 
@@ -84,18 +84,18 @@ func (b *server) startRateLimiter(ctx context.Context, cfg config.RateLimitConfi
 }
 
 // rebuildChatModelRuntime re-derives the gateway chat runtime's provider set
-// after a live change to provider-settings or model-role-assignments. The
+// after a live change to provider-settings or model-aliases. The
 // turn runner reads the runtime through server.chatLLM, so the swap reaches its
 // next turn without rebuilding the runner, and the model manager re-derives
-// the references it offers from the new role assignments and the catalog.
+// the aliases it offers.
 func (b *server) rebuildChatModelRuntime(cfg config.Config) {
 	if b.chatModels == nil {
 		return // this process serves no chat turns
 	}
 	b.setLLM(modelloop.NewRuntime(executionProviders(cfg), cfg.ModelLimits))
 	b.chatModels.SetConfigured(cfg.Models)
-	catalog, models := b.catalogState()
-	b.chatModels.SetModelCatalog(catalog, models)
+	catalog := b.catalogState()
+	b.chatModels.SetModelCatalog(catalog)
 	b.log.Info("chat model runtime rebuilt", "providers", len(cfg.Providers), "models", len(cfg.Models))
 }
 

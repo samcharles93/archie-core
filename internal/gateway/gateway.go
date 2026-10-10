@@ -55,24 +55,16 @@ type LLMStreamResponder func(ctx context.Context, in Inbound, stream TurnStream)
 // runtime provider catalog. When nil on a Router, /model returns a
 // "not configured" message.
 type ModelManager interface {
-	// Models returns all available model references in "provider/model" format.
+	// Models returns the model aliases chat may switch between.
 	Models() []string
-	// ActiveModel returns the currently active model reference.
-	// Returns empty string when no model is active.
+	// ActiveAlias returns the active model alias.
+	ActiveAlias() string
+	// ActiveModel returns the active alias's "provider/model" ref, or ""
+	// when the alias is not configured.
 	ActiveModel() string
-	// SetActiveModel switches the active model. Returns an error if the
-	// reference is unknown.
-	SetActiveModel(ctx context.Context, ref string) error
-}
-
-// ProviderModelManager is the optional provider-aware extension used by
-// gateways that offer a provider selector before model selection.
-type ProviderModelManager interface {
-	ModelManager
-	Providers() []string
-	ActiveProvider() string
-	ModelsForProvider(provider string) []string
-	SetActiveProvider(ctx context.Context, provider string) error
+	// SetActiveModel switches the active alias. Returns an error if the
+	// alias is unknown.
+	SetActiveModel(ctx context.Context, alias string) error
 }
 
 // ModelDetails is the catalog metadata rendered after an interactive model
@@ -506,15 +498,12 @@ func (r *Router) handleModel(ctx context.Context, arg string) (string, error) {
 	}
 	if arg == "" {
 		models := r.Models.Models()
-		if manager, ok := r.Models.(ProviderModelManager); ok {
-			models = manager.ModelsForProvider(manager.ActiveProvider())
-		}
 		if len(models) == 0 {
-			return "No models configured.\nUsage: /model <provider/model>", nil
+			return "No model aliases configured.\nUsage: /model <alias>", nil
 		}
 		var b strings.Builder
-		b.WriteString("Usage: /model <provider/model>\nAvailable models:\n")
-		active := r.Models.ActiveModel()
+		b.WriteString("Usage: /model <alias>\nAvailable models:\n")
+		active := r.Models.ActiveAlias()
 		for _, m := range models {
 			if m == active {
 				fmt.Fprintf(&b, "  %s (active)\n", m)
@@ -828,10 +817,7 @@ func extractRuntimeInfo(models ModelManager) (provider, model string) {
 		return "", ""
 	}
 	model = strings.TrimSpace(models.ActiveModel())
-	if pmm, ok := models.(ProviderModelManager); ok {
-		provider = strings.TrimSpace(pmm.ActiveProvider())
-	}
-	if provider == "" && model != "" {
+	if model != "" {
 		if p, _, ok := strings.Cut(model, "/"); ok {
 			provider = p
 		}

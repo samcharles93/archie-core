@@ -4,7 +4,6 @@ steps:
   - id: assess
     type: agent.run
     settings:
-      role: planner
       read_only: true
       mission: |
         Assess whether this feature request fits the project {{ task.repository }}.
@@ -35,7 +34,6 @@ steps:
   - id: prd
     type: agent.run
     settings:
-      role: planner
       read_only: true
       mission: |
         Write a PRD for this accepted feature request on {{ task.repository }}.

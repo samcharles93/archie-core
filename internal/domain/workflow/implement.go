@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 	"github.com/samcharles93/archie-core/internal/events"
 )
@@ -73,7 +74,10 @@ func runBaselineFix(ctx context.Context, tc *TaskContext, argv []string, out []b
 		clip(extractFailingGateOutput(string(out)), baselineMissionBytes),
 	)
 
-	modelRef := tc.Cfg.Models["builder"]
+	modelRef, err := config.ResolveModel(tc.Cfg.Models, "", config.PurposeAgent)
+	if err != nil {
+		return err
+	}
 	req := agentrun.Request{
 		Version:       agentrun.ProtocolVersion,
 		TaskID:        tc.Task.ID,

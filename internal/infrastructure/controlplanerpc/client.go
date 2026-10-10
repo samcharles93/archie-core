@@ -82,7 +82,6 @@ func RuntimeChatConfigFrom(ctx context.Context, reader ResourceReader, base conf
 		}
 		out = config.ChatConfig{
 			Operator: settings.Operator, ShowToolCalls: settings.ShowToolCalls, MaxSteps: settings.MaxSteps,
-			Models:                 settings.Models,
 			Telegram:               config.TelegramConfig{AllowedUserIDs: settings.Telegram.AllowedUserIDs, Token: settings.Telegram.Token},
 			RateLimit:              config.RateLimitConfig{Window: time.Duration(settings.RateLimit.Window), MaxRequests: settings.RateLimit.MaxRequests},
 			UnrestrictedFilesystem: settings.UnrestrictedFilesystem, Workspace: settings.Workspace,

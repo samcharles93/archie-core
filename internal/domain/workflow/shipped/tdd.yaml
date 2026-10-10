@@ -7,7 +7,6 @@ steps:
   - id: analyse
     type: agent.run
     settings:
-      role: planner
       read_only: true
       mission: |
         Analyse this {{ task.kind }} for the repository {{ task.repository }} and determine the problem surface.

@@ -94,7 +94,7 @@ func runPrecisionGate(ctx context.Context, tc *TaskContext, findings []prreview.
 			"finish with status \"passed\".",
 		listing.String(),
 	)
-	res, err := runPRReviewAgentRecorded(ctx, tc, tc.prReview.snapshotDir, "precision-gate", "classification", mission, 15, []agentrun.CaptureTool{{
+	res, err := runPRReviewAgentRecorded(ctx, tc, tc.prReview.snapshotDir, "precision-gate", mission, 15, []agentrun.CaptureTool{{
 		Name: "precision_gate", Description: "Record each finding's keep/drop verdict. Call exactly once, before finish.",
 		Parameters: precisionGateSchema, RequiredFields: []string{"verdicts"}, MaxCalls: 1,
 	}})
@@ -240,7 +240,7 @@ func runEvidenceVerifier(ctx context.Context, tc *TaskContext, findings []prrevi
 			"call finish with status \"passed\".",
 		evidenceListing(tc, candidates),
 	)
-	res, err := runPRReviewAgentRecorded(ctx, tc, tc.prReview.snapshotDir, "evidence-verifier", "review", mission, 15, []agentrun.CaptureTool{{
+	res, err := runPRReviewAgentRecorded(ctx, tc, tc.prReview.snapshotDir, "evidence-verifier", mission, 15, []agentrun.CaptureTool{{
 		Name: "verify_findings", Description: "Record each finding's evidence verdict. Call exactly once, before finish.",
 		Parameters: verifyFindingsSchema, RequiredFields: []string{"verdicts"}, MaxCalls: 1,
 	}})
@@ -366,7 +366,7 @@ func runAdversary(ctx context.Context, tc *TaskContext, findings []prreview.Find
 			"nothing new). Then call finish with status \"passed\".",
 		adversarySkepticism(tc.prReview.aiGenerated), findingsListing(findings),
 	)
-	res, err := runPRReviewAgentRecorded(ctx, tc, tc.prReview.snapshotDir, "adversary", "review", mission, 25, []agentrun.CaptureTool{
+	res, err := runPRReviewAgentRecorded(ctx, tc, tc.prReview.snapshotDir, "adversary", mission, 25, []agentrun.CaptureTool{
 		{
 			Name: "adversary_verdicts", Description: "Record each finding's adversary verdict. Call exactly once, before finish.",
 			Parameters: adversaryVerdictsSchema, RequiredFields: []string{"verdicts"}, MaxCalls: 1,
@@ -450,7 +450,7 @@ func runCompoundClusterCheck(ctx context.Context, tc *TaskContext, clusterID str
 			"once with the indices of the findings that compound (an empty array if none "+
 			"do). Then call finish with status \"passed\".\n\n%s", listing.String(),
 	)
-	res, err := runPRReviewAgentRecorded(ctx, tc, tc.prReview.snapshotDir, "compound-"+clusterID, "review", mission, 15, []agentrun.CaptureTool{{
+	res, err := runPRReviewAgentRecorded(ctx, tc, tc.prReview.snapshotDir, "compound-"+clusterID, mission, 15, []agentrun.CaptureTool{{
 		Name: "compound_findings", Description: "Record which findings compound. Call exactly once, before finish.",
 		Parameters: params, RequiredFields: []string{"indices"}, MaxCalls: 1,
 	}})
@@ -555,7 +555,7 @@ func runConsistencyVerification(ctx context.Context, tc *TaskContext) error {
 			"held), then call finish with status \"passed\".",
 		clip(tc.prReview.diff, 60000),
 	)
-	res, err := runPRReviewAgentRecorded(ctx, tc, tc.prReview.snapshotDir, "consistency", "review", mission, 25, []agentrun.CaptureTool{reportFindingsTool})
+	res, err := runPRReviewAgentRecorded(ctx, tc, tc.prReview.snapshotDir, "consistency", mission, 25, []agentrun.CaptureTool{reportFindingsTool})
 	if err != nil || res.Status != agentrun.StatusPassed {
 		return nil //nolint:nilerr // a consistency call that could not run reports no broken obligations rather than failing the stage
 	}
@@ -613,7 +613,7 @@ func runMergeGateCall(ctx context.Context, tc *TaskContext, f prreview.ScoredFin
 			"Call classify_blocking exactly once, then call finish with status \"passed\".",
 		f.Severity, f.Title, f.File, f.LineStart, f.Body,
 	)
-	res, err := runPRReviewAgentRecorded(ctx, tc, tc.prReview.snapshotDir, "merge-gate", "classification", mission, 6, []agentrun.CaptureTool{{
+	res, err := runPRReviewAgentRecorded(ctx, tc, tc.prReview.snapshotDir, "merge-gate", mission, 6, []agentrun.CaptureTool{{
 		Name: "classify_blocking", Description: "Record the blocking verdict. Call exactly once, before finish.",
 		Parameters: mergeGateSchema, RequiredFields: []string{"blocking"}, MaxCalls: 1,
 	}})

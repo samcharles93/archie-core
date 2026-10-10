@@ -1,40 +1,68 @@
 {
   "description": "Shared accept/reject fixtures for the control-plane validators the dashboard hand-mirrors in ui/src/settings/validation.ts. The control plane is the authority: every case's `valid` is what internal/app/controlplane accepts or refuses. The Go test in this package runs the real server validators over these cases; the node test ui/test/control-plane-validator-parity.test.ts runs the real dashboard validators over the same cases. A one-sided change to either rule makes one of the two tests fail, which is the tie that stops the two implementations drifting apart (archie-core-ui-dashboard-3). Add a case here, never only to one side.",
   "cases": {
-    "model-role-assignments": [
+    "model-aliases": [
       {
         "why": "a plain provider/model value",
-        "value": { "builder": "openai/gpt-4o" },
+        "value": {
+          "default": "openai/gpt-4o"
+        },
         "valid": true
       },
       {
-        "why": "a trailing space: the server only asks for a slash, so the dashboard must not refuse it",
-        "value": { "builder": "openai/gpt-4o " },
-        "valid": true
-      },
-      {
-        "why": "a leading space: the server only asks for a slash, so the dashboard must not refuse it",
-        "value": { "builder": " openai/gpt-4o" },
+        "why": "a trailing space: the server only splits on the slash, so the dashboard must not refuse it",
+        "value": {
+          "default": "openai/gpt-4o "
+        },
         "valid": true
       },
       {
         "why": "a model id with a colon (a real ollama tag), which a stricter shape would wrongly refuse",
-        "value": { "planner": "ollama/qwen2.5-coder:7b" },
+        "value": {
+          "default": "openai/gpt-4o",
+          "fast": "ollama/qwen2.5-coder:7b"
+        },
+        "valid": true
+      },
+      {
+        "why": "an empty table: nothing configured yet",
+        "value": {},
         "valid": true
       },
       {
         "why": "no slash at all",
-        "value": { "builder": "gpt-4o" },
+        "value": {
+          "default": "gpt-4o"
+        },
+        "valid": false
+      },
+      {
+        "why": "an empty model half",
+        "value": {
+          "default": "openai/"
+        },
         "valid": false
       },
       {
         "why": "an empty model: the server refuses it, so the dashboard must too (SystemModelsPage deletes the key rather than storing one)",
-        "value": { "builder": "" },
+        "value": {
+          "default": ""
+        },
         "valid": false
       },
       {
-        "why": "a blank role key",
-        "value": { "": "openai/gpt-4o" },
+        "why": "aliases without the default alias",
+        "value": {
+          "fast": "openai/gpt-4o"
+        },
+        "valid": false
+      },
+      {
+        "why": "an alias name with capitals or spaces",
+        "value": {
+          "default": "openai/gpt-4o",
+          "Fast model": "openai/gpt-4o"
+        },
         "valid": false
       }
     ],
@@ -45,7 +73,9 @@
           "poll_interval": "1m0s",
           "max_retries": 0,
           "label": "archie",
-          "dispatch": { "trigger": "assignee" }
+          "dispatch": {
+            "trigger": "assignee"
+          }
         },
         "valid": true
       },
@@ -54,7 +84,9 @@
         "value": {
           "poll_interval": "30s",
           "max_retries": 3,
-          "dispatch": { "trigger": "assignee" }
+          "dispatch": {
+            "trigger": "assignee"
+          }
         },
         "valid": true
       },
@@ -63,7 +95,9 @@
         "value": {
           "poll_interval": "1h30m",
           "label": "archie",
-          "dispatch": { "trigger": "either" }
+          "dispatch": {
+            "trigger": "either"
+          }
         },
         "valid": true
       },
@@ -71,7 +105,9 @@
         "why": "a fractional duration the server's parser accepts",
         "value": {
           "poll_interval": "1.5h",
-          "dispatch": { "trigger": "assignee" }
+          "dispatch": {
+            "trigger": "assignee"
+          }
         },
         "valid": true
       },
@@ -80,7 +116,9 @@
         "value": {
           "poll_interval": "0s",
           "label": "archie",
-          "dispatch": { "trigger": "assignee" }
+          "dispatch": {
+            "trigger": "assignee"
+          }
         },
         "valid": false
       },
@@ -89,7 +127,9 @@
         "value": {
           "poll_interval": "nonsense",
           "label": "archie",
-          "dispatch": { "trigger": "assignee" }
+          "dispatch": {
+            "trigger": "assignee"
+          }
         },
         "valid": false
       },
@@ -98,7 +138,9 @@
         "value": {
           "poll_interval": "30s",
           "max_retries": 3,
-          "dispatch": { "trigger": "label" }
+          "dispatch": {
+            "trigger": "label"
+          }
         },
         "valid": false
       },
@@ -108,7 +150,9 @@
           "poll_interval": "30s",
           "max_retries": 0,
           "label": "",
-          "dispatch": { "trigger": "either" }
+          "dispatch": {
+            "trigger": "either"
+          }
         },
         "valid": false
       }
@@ -120,7 +164,10 @@
           {
             "id": "daily",
             "kind": "workflow",
-            "schedule": { "kind": "interval", "interval": "24h0m0s" }
+            "schedule": {
+              "kind": "interval",
+              "interval": "24h0m0s"
+            }
           }
         ],
         "valid": true
@@ -132,7 +179,10 @@
             "id": "nightly",
             "kind": "workflow",
             "pool": "parallel",
-            "schedule": { "kind": "cron", "cron": "0 3 * * *" }
+            "schedule": {
+              "kind": "cron",
+              "cron": "0 3 * * *"
+            }
           }
         ],
         "valid": true
@@ -143,7 +193,10 @@
           {
             "id": "",
             "kind": "workflow",
-            "schedule": { "kind": "interval", "interval": "24h0m0s" }
+            "schedule": {
+              "kind": "interval",
+              "interval": "24h0m0s"
+            }
           }
         ],
         "valid": false
@@ -154,12 +207,18 @@
           {
             "id": "daily",
             "kind": "workflow",
-            "schedule": { "kind": "interval", "interval": "24h0m0s" }
+            "schedule": {
+              "kind": "interval",
+              "interval": "24h0m0s"
+            }
           },
           {
             "id": "daily",
             "kind": "workflow",
-            "schedule": { "kind": "interval", "interval": "1h0m0s" }
+            "schedule": {
+              "kind": "interval",
+              "interval": "1h0m0s"
+            }
           }
         ],
         "valid": false

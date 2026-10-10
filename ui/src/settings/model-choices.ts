@@ -1,8 +1,8 @@
 import type { CatalogProvider } from "./types.ts";
 
-/** roleModelOptions lists "provider/model" for every model of a configured
- * provider: a role can only run on a provider Archie is set up to call. */
-export function roleModelOptions(catalog: CatalogProvider[], configured: string[]): string[] {
+/** aliasModelOptions lists "provider/model" for every model of a configured
+ * provider: an alias can only point at a provider Archie is set up to call. */
+export function aliasModelOptions(catalog: CatalogProvider[], configured: string[]): string[] {
   return catalog
     .filter((p) => configured.includes(p.id))
     .flatMap((p) => p.models.map((m) => `${p.id}/${m}`));

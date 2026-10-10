@@ -80,9 +80,9 @@ func runtimeConfigFrom(ctx context.Context, reader controlplanerpc.ResourceReade
 	}); err != nil {
 		return config.Config{}, nil, err
 	}
-	// Stored role assignments replace cfg.Models outright.
-	if err := layerResource(ctx, reader, versions, ModelRoleAssignmentsKind, func(roles map[string]string) error {
-		out.Models = roles
+	// Stored aliases replace cfg.Models outright.
+	if err := layerResource(ctx, reader, versions, ModelAliasesKind, func(aliases map[string]string) error {
+		out.Models = aliases
 		return nil
 	}); err != nil {
 		return config.Config{}, nil, err

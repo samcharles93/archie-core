@@ -30,15 +30,15 @@ func (b *server) setupChatRuntime(ctx context.Context, cfg config.Config, actor 
 	// non-command message processing.
 	providers := executionProviders(cfg)
 	b.setLLM(modelloop.NewRuntime(providers, cfg.ModelLimits))
-	// Transcription is a model-role capability, like the chat models it sits
+	// Transcription is a model-alias capability, like the chat models it sits
 	// beside: it is built here, on the model-owning side, from this process's
 	// own [models]/[providers]. The Messaging Service carries a voice note's
 	// bytes to the Gateway and never holds the credential.
 	b.setupTranscriber(cfg, b.log)
 	b.toolReg = tools.NewRegistry()
-	chatModels := newChatModelManager(cfg.Models, cfg.Chat.Models)
-	catalog, catalogModels := b.catalogState()
-	chatModels.SetModelCatalog(catalog, catalogModels)
+	chatModels := newChatModelManager(cfg.Models)
+	catalog := b.catalogState()
+	chatModels.SetModelCatalog(catalog)
 	b.chatModels = chatModels
 
 	// ── Persona registry ─────────────────────────────────────────────

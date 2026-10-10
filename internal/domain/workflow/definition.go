@@ -232,3 +232,46 @@ func (step StepRecord) branches() map[string][]StepRecord {
 	}
 	return step.Parallel
 }
+
+// CheckModelAliases reports the first agent.run step in collection that names
+// a model alias aliases does not define. An empty alias means the default and
+// is resolved at dispatch.
+func CheckModelAliases(collection WorkflowDefinitionCollection, registry StepRegistry, aliases map[string]string) error {
+	for _, entry := range collection.Definitions {
+		definition, err := ParseDefinition(entry.YAML, registry)
+		if err != nil {
+			return err
+		}
+		if err := checkStepAliases(entry.ID, definition.Steps, aliases); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func checkStepAliases(workflowID string, steps []StepRecord, aliases map[string]string) error {
+	for _, step := range steps {
+		if step.Type == AgentRunStepName {
+			var s agentRunSettings
+			if err := step.Settings.Decode(&s); err != nil {
+				return fmt.Errorf("workflow %q step %q: %w", workflowID, step.ID, err)
+			}
+			if s.Model != "" && aliases[s.Model] == "" {
+				return fmt.Errorf("workflow %q step %q: model alias %q is not configured", workflowID, step.ID, s.Model)
+			}
+		}
+		for _, branch := range step.Parallel {
+			if err := checkStepAliases(workflowID, branch, aliases); err != nil {
+				return err
+			}
+		}
+		if step.Switch != nil {
+			for _, branch := range step.Switch.Cases {
+				if err := checkStepAliases(workflowID, branch, aliases); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}

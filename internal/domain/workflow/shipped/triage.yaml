@@ -4,7 +4,6 @@ steps:
   - id: classify
     type: agent.run
     settings:
-      role: planner
       read_only: true
       mission: |
         Triage this {{ task.kind }} on the repository {{ task.repository }}: decide whether it needs a code change at all, and if so which workflow suits it best.

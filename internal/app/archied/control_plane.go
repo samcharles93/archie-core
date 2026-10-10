@@ -52,7 +52,7 @@ func (b *boot) reloadConfig(ctx context.Context, doc *configuration.Document) er
 	// drop them from the running config even though the file is
 	// unchanged. Re-apply the same merge (idempotent: a catalog that
 	// failed to load merges to identity).
-	catalog, _ := b.catalogState()
+	catalog := b.catalogState()
 	modelcatalog.Apply(&doc.Config, catalog)
 	// Bounded: this runs on the signal loop, which handles nothing else
 	// while it waits, and a State Store that has stopped answering must
@@ -264,7 +264,7 @@ func (b *boot) startLiveSettings(ctx context.Context) error {
 var runtimeResourceKinds = []string{
 	controlplane.TaskPolicyKind,
 	controlplane.ProviderSettingsKind,
-	controlplane.ModelRoleAssignmentsKind,
+	controlplane.ModelAliasesKind,
 	controlplane.RepositoryPoliciesKind,
 	controlplane.SchedulingPolicyKind,
 	controlplane.ToolSettingsKind,
@@ -370,7 +370,7 @@ func (b *boot) applyRuntimeResourceUpdate(ctx context.Context, kind string, upda
 	// this read returns can lack the catalog's model limits and discovered
 	// providers. The merge is idempotent, and reloadConfig re-applies it
 	// before layering for the same reason.
-	catalog, _ := b.catalogState()
+	catalog := b.catalogState()
 	modelcatalog.Apply(&base, catalog)
 	cfg, _, err := b.runtimeConfig(ctx, base)
 	if err != nil {

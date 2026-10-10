@@ -3,7 +3,9 @@ package controlplane
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -50,6 +52,7 @@ type Server struct {
 	store       ResourceStore
 	definitions map[string]Definition
 	ordered     []Definition
+	steps       workflow.StepRegistry
 }
 
 // NewServer builds the control plane server the State Store serves. steps is
@@ -66,7 +69,7 @@ func NewServer(resources ResourceStore, steps *workflow.Manager) (*Server, error
 	for _, definition := range definitions {
 		byKind[definition.Kind] = definition
 	}
-	return &Server{store: resources, definitions: byKind, ordered: definitions}, nil
+	return &Server{store: resources, definitions: byKind, ordered: definitions, steps: registry}, nil
 }
 
 func (s *Server) Catalog(context.Context, *pb.CatalogRequest) (*pb.CatalogResponse, error) {
@@ -169,6 +172,11 @@ func (s *Server) Command(ctx context.Context, request *pb.CommandRequest) (*pb.C
 	if err != nil {
 		return nil, mapError(err)
 	}
+	if request.Kind == WorkflowDefinitionsKind {
+		if err := s.checkModelAliases(ctx, value); err != nil {
+			return nil, mapError(err)
+		}
+	}
 	resource, err := s.store.PutResource(ctx, storecontract.ResourceWrite{OrgID: requestOrg(ctx), Kind: request.Kind, Value: value, Actor: request.Actor, Source: request.Source, RequestID: request.RequestId, ExpectedVersion: request.ExpectedVersion, At: time.Now().UTC()})
 	if err != nil {
 		return nil, mapError(err)
@@ -246,4 +254,27 @@ func mapError(err error) error {
 	default:
 		return status.Error(codes.Unavailable, err.Error())
 	}
+}
+
+// checkModelAliases refuses workflow definitions whose agent steps name a
+// model alias the instance does not define.
+func (s *Server) checkModelAliases(ctx context.Context, value []byte) error {
+	aliases := map[string]string{}
+	resource, err := s.store.Resource(ctx, storecontract.DefaultOrgID, ModelAliasesKind)
+	switch {
+	case err == nil:
+		if err := json.Unmarshal(resource.Value, &aliases); err != nil {
+			return fmt.Errorf("read model aliases: %w", err)
+		}
+	case !errors.Is(err, storecontract.ErrResourceNotFound):
+		return err
+	}
+	var collection workflow.WorkflowDefinitionCollection
+	if err := json.Unmarshal(value, &collection); err != nil {
+		return err
+	}
+	if err := workflow.CheckModelAliases(collection, s.steps, aliases); err != nil {
+		return fmt.Errorf("%w: %w", ErrValidation, err)
+	}
+	return nil
 }

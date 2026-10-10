@@ -260,7 +260,7 @@ func (b *server) waitForNATSEndpoint(ctx context.Context) (servicekit.NATSEndpoi
 	}
 }
 
-func (b *server) catalogState() (modelcatalog.Snapshot, []string) { return b.catalog.State() }
+func (b *server) catalogState() modelcatalog.Snapshot { return b.catalog.State() }
 
 // loadCatalog layers the model catalog under the running config. A catalog
 // that cannot be read leaves the configured providers and models in effect.
@@ -270,9 +270,9 @@ func (b *server) loadCatalog(ctx context.Context) {
 		b.log.Warn("model catalog unavailable; using configured providers and models", "err", err)
 		return
 	}
-	models := modelcatalog.Apply(&b.cfg, snapshot)
+	modelcatalog.Apply(&b.cfg, snapshot)
 	b.cfgHolder.Set(b.cfg.Clone())
-	b.catalog.Set(snapshot, models)
+	b.catalog.Set(snapshot)
 }
 
 func (b *server) startModelCatalogRefresh(ctx context.Context) {
@@ -283,8 +283,8 @@ func (b *server) startModelCatalogRefresh(ctx context.Context) {
 			return
 		}
 		base := b.cfgHolder.Get().Clone()
-		models := modelcatalog.Apply(&base, snapshot)
-		b.catalog.Set(snapshot, models)
+		modelcatalog.Apply(&base, snapshot)
+		b.catalog.Set(snapshot)
 		if err := b.relayer(ctx, base, ""); err != nil {
 			b.log.Warn("model catalog refresh rejected with the settings; the running settings stay", "err", err)
 		}
@@ -295,7 +295,7 @@ func (b *server) startModelCatalogRefresh(ctx context.Context) {
 // chat runtime and tool providers are built from.
 var gatewayRuntimeKinds = []string{
 	controlplane.ProviderSettingsKind,
-	controlplane.ModelRoleAssignmentsKind,
+	controlplane.ModelAliasesKind,
 	controlplane.ToolSettingsKind,
 }
 
@@ -304,7 +304,7 @@ func (b *server) startRuntimeWatches(ctx context.Context) error {
 	// the providers resolve again.
 	b.engines.OnChange(func() {
 		base := b.cfgHolder.Get()
-		catalog, _ := b.catalogState()
+		catalog := b.catalogState()
 		modelcatalog.Apply(&base, catalog)
 		_ = b.relayer(ctx, base, controlplane.ProviderSettingsKind)
 	})
@@ -342,7 +342,7 @@ func (b *server) startRuntimeWatches(ctx context.Context) error {
 					return
 				}
 				base := b.cfgHolder.Get()
-				catalog, _ := b.catalogState()
+				catalog := b.catalogState()
 				modelcatalog.Apply(&base, catalog)
 				lastApplyErr = b.relayer(ctx, base, kind)
 			},

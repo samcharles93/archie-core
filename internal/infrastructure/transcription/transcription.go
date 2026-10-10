@@ -1,7 +1,7 @@
 // Package transcription implements the internal/domain/messaging.Transcriber
 // contract over the ai-sdk provider SDKs already vendored for chat, so voice
-// notes are transcribed through the same providers table and model-role
-// convention chat models and the embedding capability already use.
+// notes are transcribed through the same providers table and model aliases
+// chat and embedding use.
 package transcription
 
 import (
@@ -20,11 +20,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
-// Role is the [models] key transcription consumers use, matching the
-// "builder"/"planner"/"triage" role convention chat models and the
-// embedding capability already use.
-const Role = "transcription"
-
 // DefaultTimeout bounds one transcription request when Options.Timeout is
 // unset. It is generous relative to a chat request because transcription
 // uploads the whole audio file before the provider answers.
@@ -42,7 +37,7 @@ type Options struct {
 	Timeout time.Duration
 }
 
-// New builds a transcription client from models[Role] and its provider, or
+// New builds a transcription client from the transcription model alias and its provider, or
 // returns (nil, false) when unavailable.
 func New(models map[string]string, providers map[string]config.Provider, opts Options) (messaging.Transcriber, bool) {
 	getenv := opts.Getenv
@@ -54,7 +49,11 @@ func New(models map[string]string, providers map[string]config.Provider, opts Op
 		timeout = DefaultTimeout
 	}
 
-	providerID, modelID, ok := parseModelRef(models[Role])
+	ref, err := config.ResolveModel(models, "", config.PurposeTranscription)
+	if err != nil {
+		return nil, false
+	}
+	providerID, modelID, ok := parseModelRef(ref)
 	if !ok {
 		return nil, false
 	}

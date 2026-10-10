@@ -125,9 +125,7 @@ func RunParams(ctx context.Context, p Prompter, discovery ModelDiscovery, secret
 		return nil, err
 	}
 	add(providerEdits)
-	for _, role := range []string{"triage", "planner", "builder"} {
-		add(tableEdits{"models": {role: tomlwrite.String(model)}})
-	}
+	add(tableEdits{"models": {config.DefaultModelAlias: tomlwrite.String(model)}})
 
 	forgeEdits, err := stepForge(ctx, p, secrets, existing.ForgeHost, params)
 	if err != nil {

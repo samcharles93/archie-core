@@ -47,22 +47,7 @@ func (a *LocalChatAdapter) Snapshot(ctx context.Context) (ChatSnapshot, error) {
 	s := ChatSnapshot{Sessions: sessions, Models: []string{}, Providers: []string{}, Personas: []string{}, ModelsByProvider: map[string][]string{}, ActivePersonas: map[string]string{}, RestartAvailable: a.Router.Restart != nil, CancellationAvailable: a.Turns != nil, PersonasAvailable: a.Personas != nil, VoiceAvailable: a.VoiceAvailable, Version: a.Router.Version}
 	if a.Models != nil {
 		s.Models = slices.Clone(a.Models.Models())
-		s.ActiveModel = a.Models.ActiveModel()
-		if models, ok := a.Models.(ProviderModelManager); ok {
-			s.ActiveProvider = models.ActiveProvider()
-			s.Providers = slices.Clone(models.Providers())
-			for _, provider := range s.Providers {
-				s.ModelsByProvider[provider] = slices.Clone(models.ModelsForProvider(provider))
-			}
-		} else {
-			for _, model := range s.Models {
-				provider, _, ok := strings.Cut(model, "/")
-				if !ok {
-					provider = ""
-				}
-				s.ModelsByProvider[provider] = append(s.ModelsByProvider[provider], model)
-			}
-		}
+		s.ActiveModel = a.Models.ActiveAlias()
 	}
 	if a.Personas != nil {
 		s.Personas = slices.Clone(a.Personas.List())

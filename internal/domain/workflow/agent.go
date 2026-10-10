@@ -17,9 +17,8 @@ import (
 // own mission, gate and result handler.
 type AgentStage struct {
 	Name string
-	// Role selects the model via cfg.Models[Role]; falls back to
-	// cfg.Models["builder"].
-	Role     string
+	// Model is the model alias; empty means the default alias.
+	Model    string
 	ReadOnly bool
 	// Mission produces the task statement from the current context.
 	Mission func(*TaskContext) string
@@ -76,17 +75,9 @@ func (a AgentStage) Stage() Stage {
 	}}
 }
 
-// resolveModel picks the model reference for this stage's Role, falling
-// back to "builder".
+// resolveModel resolves this stage's model alias.
 func (a AgentStage) resolveModel(tc *TaskContext) (string, error) {
-	modelRef := tc.Cfg.Models[a.Role]
-	if modelRef == "" {
-		modelRef = tc.Cfg.Models["builder"]
-	}
-	if modelRef == "" {
-		return "", fmt.Errorf("no model configured for role %q (set [models] in config)", a.Role)
-	}
-	return modelRef, nil
+	return config.ResolveModel(tc.Cfg.Models, a.Model, config.PurposeAgent)
 }
 
 // buildRequest assembles the agentrun.Request for this stage's run.

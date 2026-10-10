@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
-  validateModelRoles,
+  validateModelAliases,
   validateSchedules,
   validateSchedulingPolicy,
   type DraftValidator,
@@ -44,7 +44,7 @@ const fixture = JSON.parse(
 
 /** The dashboard's rule for each kind, keyed to match the fixture. */
 const validators: Record<string, DraftValidator> = {
-  "model-role-assignments": validateModelRoles,
+  "model-aliases": validateModelAliases,
   "scheduling-policy": validateSchedulingPolicy,
   schedules: validateSchedules,
 };

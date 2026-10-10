@@ -17,7 +17,7 @@ import WorkflowPicker from "./WorkflowPicker.vue";
 import { stepTitle } from "./workflow-graph";
 import { settingsProblem, type SettingsSchema, type StepTypeInfo } from "./workflow-yaml";
 
-const props = defineProps<{ yaml: string; path: StepPath; vocabulary: StepTypeInfo[]; workflows: WorkflowDefinitionEntry[] }>();
+const props = defineProps<{ yaml: string; path: StepPath; vocabulary: StepTypeInfo[]; workflows: WorkflowDefinitionEntry[]; modelAliases: string[] }>();
 const emit = defineEmits<{ "update:yaml": [string]; close: []; remove: [] }>();
 
 const step = computed<StepRecord>(() => stepAt(props.yaml, props.path) ?? {});
@@ -55,6 +55,7 @@ const longText = /mission|body|detail|plan|rules/;
 
 function kindOf(key: string, schema: SettingsSchema): Kind {
   if ((["workflow.call", "workflow.handoff"].includes(type.value) && key === "workflow") || (type.value === "human.approve" && key === "then")) return "workflow";
+  if (type.value === "agent.run" && key === "model") return "select";
   if (schema.type === "string") return schema.enum ? "select" : longText.test(key) ? "text" : "line";
   if (schema.type === "boolean") return "boolean";
   if (schema.type === "integer" || schema.type === "number") return "number";
@@ -67,7 +68,7 @@ function kindOf(key: string, schema: SettingsSchema): Kind {
 const fields = computed(() => {
   const entries = Object.entries(info.value?.settings?.properties ?? {})
     .filter(([key]) => type.value !== "workflow.call" || !["inputs", "outputs"].includes(key))
-    .map(([key, schema]) => ({ key, schema, kind: kindOf(key, schema) }));
+    .map(([key, schema]) => ({ key, schema, kind: kindOf(key, schema), options: type.value === "agent.run" && key === "model" ? props.modelAliases : (schema.enum ?? []) }));
   const lead = entries.filter((field) => LEAD.includes(field.key) && field.kind !== "boolean").sort((a, b) => LEAD.indexOf(a.key) - LEAD.indexOf(b.key))[0];
   const rest = entries.filter((field) => field !== lead);
   return {
@@ -198,7 +199,7 @@ const text = (key: string) => (typeof settings.value[key] === "string" ? (settin
           @change="setSetting(fields.lead.key, ($event.target as HTMLSelectElement).value || undefined)"
         >
           <option value="">Default</option>
-          <option v-for="option in fields.lead.schema.enum" :key="option" :value="option">{{ option }}</option>
+          <option v-for="option in fields.lead.options" :key="option" :value="option">{{ option }}</option>
         </select>
         <Textarea
           v-else-if="fields.lead.kind === 'text'"
@@ -241,7 +242,7 @@ const text = (key: string) => (typeof settings.value[key] === "string" ? (settin
             @change="setSetting(field.key, ($event.target as HTMLSelectElement).value || undefined)"
           >
             <option value="">Default</option>
-            <option v-for="option in field.schema.enum" :key="option" :value="option">{{ option }}</option>
+            <option v-for="option in field.options" :key="option" :value="option">{{ option }}</option>
           </select>
           <input
             v-else-if="field.kind === 'number'"

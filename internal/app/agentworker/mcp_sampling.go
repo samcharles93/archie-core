@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/samcharles93/ai-sdk/core"
 	"github.com/samcharles93/ai-sdk/runtime"
@@ -14,11 +13,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/tools/mcp"
 )
 
-// taskSamplingModel returns the task's builder model, or "".
-func taskSamplingModel(cfg config.TaskConfig) string {
-	return strings.TrimSpace(cfg.Models["builder"])
-}
-
 // taskSamplingHandler answers MCP sampling requests with the task's model.
 // Without a runtime or model the request is refused.
 func taskSamplingHandler(llm *runtime.Runtime, cfg config.TaskConfig) mcp.SamplingHandler {
@@ -26,9 +20,9 @@ func taskSamplingHandler(llm *runtime.Runtime, cfg config.TaskConfig) mcp.Sampli
 		if llm == nil {
 			return mcp.SamplingResult{}, errors.New("mcp sampling: no model runtime is configured")
 		}
-		model := taskSamplingModel(cfg)
-		if model == "" {
-			return mcp.SamplingResult{}, errors.New("mcp sampling: no builder model is configured")
+		model, err := config.ResolveModel(cfg.Models, "", config.PurposeAgent)
+		if err != nil {
+			return mcp.SamplingResult{}, fmt.Errorf("mcp sampling: %w", err)
 		}
 		messages, err := modelloop.SamplingMessages(req)
 		if err != nil {

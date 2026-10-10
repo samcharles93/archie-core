@@ -7,7 +7,6 @@ steps:
   - id: plan
     type: agent.run
     settings:
-      role: planner
       read_only: true
       mission: |
         Produce a concrete implementation plan for this {{ task.kind }} on the repository {{ task.repository }}.

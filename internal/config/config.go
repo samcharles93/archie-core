@@ -348,8 +348,8 @@ type Config struct {
 	Dispatch Dispatch `toml:"dispatch" yaml:"dispatch"`
 	Review   Review   `toml:"review" yaml:"review"`
 
-	// Models maps a role ("planner", "builder", "triage") to a runtime
-	// model ref ("provider/model").
+	// Models maps a model alias ("default", "fast", "embedding") to a
+	// runtime model ref ("provider/model"). Resolve it with ResolveModel.
 	Models map[string]string `toml:"models" yaml:"models"`
 
 	Providers map[string]Provider `toml:"providers" yaml:"providers"`
@@ -513,7 +513,6 @@ func (c Config) Clone() Config {
 	c.Providers = maps.Clone(c.Providers)
 	c.Repos = cloneRepos(c.Repos)
 	c.Identities = cloneIdentities(c.Identities)
-	c.Chat.Models = append([]string(nil), c.Chat.Models...)
 	c.Chat.Telegram.AllowedUserIDs = append([]int64(nil), c.Chat.Telegram.AllowedUserIDs...)
 	c.Bindings.PreviousEncryptionKeys = append([]SecretRef(nil), c.Bindings.PreviousEncryptionKeys...)
 	c.Tools.MCPServers = cloneMCPServers(c.Tools.MCPServers)
@@ -864,11 +863,7 @@ type ChatConfig struct {
 	// channel. Off by default.
 	ShowToolCalls bool `toml:"show_tool_calls" yaml:"show_tool_calls"`
 	// MaxSteps caps model/tool round-trips per chat turn. Zero uses the default.
-	MaxSteps int `toml:"max_steps" yaml:"max_steps"`
-	// Models is the optional interactive-chat model catalog. When empty,
-	// chat falls back to the distinct model references assigned to workflow
-	// roles in the top-level [models] table.
-	Models   []string       `toml:"models" yaml:"models"`
+	MaxSteps int            `toml:"max_steps" yaml:"max_steps"`
 	Telegram TelegramConfig `toml:"telegram" yaml:"telegram"`
 	// RateLimit budgets inbound messages per channel and sender. Off unless set.
 	// Seeds the channel-settings resource.

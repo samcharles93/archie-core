@@ -19,7 +19,7 @@ import { SettingRow } from "@/components/ui/setting-row";
 import { resourcesForPage, useControlPlaneStore } from "@/stores/control-plane";
 import DraftHint from "./DraftHint.vue";
 import HistoryLink from "./HistoryLink.vue";
-import { availableProviders, roleModelOptions } from "./model-choices";
+import { availableProviders, aliasModelOptions } from "./model-choices";
 import SecretRefField from "./SecretRefField.vue";
 import { config, loadConfig } from "./state";
 
@@ -30,8 +30,9 @@ interface Provider {
   base_url?: string;
 }
 
-// The roles the daemon reads; others come from workflow steps that name one.
-const KNOWN_ROLES = ["builder", "planner", "triage", "embedding"];
+// default runs agent steps and chat when none is named; embedding and
+// transcription serve their own purposes. Others are named by steps and chat.
+const KNOWN_ALIASES = ["default", "embedding", "transcription"];
 // Provider classes the runtime SDK registers.
 const CLASSES = ["openai", "anthropic", "azure", "cohere", "deepseek", "gemini", "groq", "mistral", "ollama", "perplexity", "xai"];
 
@@ -41,25 +42,25 @@ onMounted(() => Promise.all([store.load(), loadConfig()]));
 
 const resources = computed(() => resourcesForPage(resourceCatalog.value, "models"));
 const providers = computed(() => store.drafts["provider-settings"]?.value as Record<string, Provider> | undefined);
-const roles = computed(() => store.drafts["model-role-assignments"]?.value as Record<string, string> | undefined);
+const aliases = computed(() => store.drafts["model-aliases"]?.value as Record<string, string> | undefined);
 const errors = computed(() =>
-  ["provider-settings", "model-role-assignments"].map((k) => store.pageErrorFor(k)).filter(Boolean),
+  ["provider-settings", "model-aliases"].map((k) => store.pageErrorFor(k)).filter(Boolean),
 );
 
 const modelCatalog = computed(() => config.value?.catalog ?? []);
 const configuredIds = computed(() => Object.keys(providers.value ?? {}));
-const modelOptions = computed(() => roleModelOptions(modelCatalog.value, configuredIds.value));
+const modelOptions = computed(() => aliasModelOptions(modelCatalog.value, configuredIds.value));
 const available = computed(() => availableProviders(modelCatalog.value, configuredIds.value));
 
-const roleNames = computed(() => [
-  ...KNOWN_ROLES,
-  ...Object.keys(roles.value ?? {}).filter((r) => !KNOWN_ROLES.includes(r)),
+const aliasNames = computed(() => [
+  ...KNOWN_ALIASES,
+  ...Object.keys(aliases.value ?? {}).filter((a) => !KNOWN_ALIASES.includes(a)),
 ]);
-// An unset role is an absent key: the server refuses an empty model.
-function setRole(role: string, model: string) {
-  if (!roles.value) return;
-  if (model.trim()) roles.value[role] = model.trim();
-  else delete roles.value[role];
+// An unset alias is an absent key: the server refuses an empty model.
+function setAlias(alias: string, model: string) {
+  if (!aliases.value) return;
+  if (model.trim()) aliases.value[alias] = model.trim();
+  else delete aliases.value[alias];
 }
 // Embedding runs through the SDK's embed package, which only these classes
 // implement (internal/infrastructure/embedding).
@@ -69,12 +70,12 @@ const embeddingProviders = computed(() =>
     .filter(([, p]) => EMBED_CLASSES.includes(p.class))
     .map(([id]) => id),
 );
-// The provider is held locally until a model is typed: the role itself is
+// The provider is held locally until a model is typed: the alias itself is
 // only stored once both halves exist.
 const embeddingProvider = ref("");
 const embeddingModel = ref("");
 watch(
-  () => roles.value?.embedding,
+  () => aliases.value?.embedding,
   (value) => {
     if (!value) return;
     embeddingProvider.value = value.split("/")[0] ?? "";
@@ -85,18 +86,18 @@ watch(
 function setEmbedding(provider: string, model: string) {
   embeddingProvider.value = provider;
   embeddingModel.value = model;
-  setRole("embedding", provider && model ? `${provider}/${model}` : "");
+  setAlias("embedding", provider && model ? `${provider}/${model}` : "");
 }
 const providerKnown = (model: string) => configuredIds.value.includes(model.split("/")[0]!);
-const roleIssues = computed(() => store.issuesFor("model-role-assignments"));
-const roleIssue = (role: string) => roleIssues.value.find((entry) => entry.path === role);
+const aliasIssues = computed(() => store.issuesFor("model-aliases"));
+const aliasIssue = (alias: string) => aliasIssues.value.find((entry) => entry.path === alias);
 
-const newRole = ref("");
-function addRole() {
-  const name = newRole.value.trim();
-  if (!roles.value || !name || roleNames.value.includes(name)) return;
-  roles.value[name] = modelOptions.value[0] ?? "";
-  newRole.value = "";
+const newAlias = ref("");
+function addAlias() {
+  const name = newAlias.value.trim();
+  if (!aliases.value || !name || aliasNames.value.includes(name)) return;
+  aliases.value[name] = modelOptions.value[0] ?? "";
+  newAlias.value = "";
 }
 
 // Adding a provider the catalog found usable carries its class, key variable
@@ -130,15 +131,18 @@ const eyebrow = "mb-2 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
       {{ e }}
     </p>
 
-    <template v-if="roles">
-      <h2 :class="eyebrow">Roles</h2>
-      <datalist id="role-models">
+    <template v-if="aliases">
+      <h2 :class="eyebrow">Aliases</h2>
+      <p v-if="!aliases.default" class="mb-3 text-sm text-warn" role="alert">
+        Set the default alias: agent steps and chat that name no alias cannot run without it.
+      </p>
+      <datalist id="alias-models">
         <option v-for="m in modelOptions" :key="m" :value="m" />
       </datalist>
       <div class="rounded-lg border border-border bg-card">
-        <div v-for="role in roleNames" :key="role" class="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2.5 last-of-type:border-b-0">
-          <label :for="`role-${role}`" class="w-28 text-sm font-medium">{{ role }}</label>
-          <template v-if="role === 'embedding'">
+        <div v-for="alias in aliasNames" :key="alias" class="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2.5 last-of-type:border-b-0">
+          <label :for="`alias-${alias}`" class="w-28 text-sm font-medium">{{ alias }}</label>
+          <template v-if="alias === 'embedding'">
             <Select :model-value="embeddingProvider" @update:model-value="(v) => setEmbedding(String(v), embeddingModel)">
               <SelectTrigger class="w-44 font-mono" aria-label="Embedding provider"><SelectValue placeholder="unset" /></SelectTrigger>
               <SelectContent>
@@ -146,7 +150,7 @@ const eyebrow = "mb-2 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
               </SelectContent>
             </Select>
             <Input
-              :id="`role-${role}`"
+              :id="`alias-${alias}`"
               :model-value="embeddingModel"
               class="max-w-64 font-mono"
               placeholder="model"
@@ -157,25 +161,25 @@ const eyebrow = "mb-2 text-[11px] font-medium tracking-[0.06em] text-fg-subtle u
           </template>
           <template v-else>
             <Input
-              :id="`role-${role}`"
-              :model-value="roles[role] ?? ''"
-              list="role-models"
+              :id="`alias-${alias}`"
+              :model-value="aliases[alias] ?? ''"
+              list="alias-models"
               class="max-w-md flex-1 font-mono"
               placeholder="unset"
-              :aria-invalid="roleIssue(role) ? true : undefined"
-              @update:model-value="(v) => setRole(role, String(v))"
+              :aria-invalid="aliasIssue(alias) ? true : undefined"
+              @update:model-value="(v) => setAlias(alias, String(v))"
             />
-            <DraftHint kind="model-role-assignments" :path="role" />
-            <span v-if="roleIssue(role)" class="text-xs text-danger">{{ roleIssue(role)?.message }}</span>
-            <span v-else-if="roles[role] && !providerKnown(roles[role])" class="text-xs text-warn">Provider not configured.</span>
+            <DraftHint kind="model-aliases" :path="alias" />
+            <span v-if="aliasIssue(alias)" class="text-xs text-danger">{{ aliasIssue(alias)?.message }}</span>
+            <span v-else-if="aliases[alias] && !providerKnown(aliases[alias])" class="text-xs text-warn">Provider not configured.</span>
           </template>
-          <Button v-if="!KNOWN_ROLES.includes(role)" variant="ghost" size="icon" class="ml-auto" :aria-label="`Remove role ${role}`" @click="delete roles[role]">
+          <Button v-if="!KNOWN_ALIASES.includes(alias)" variant="ghost" size="icon" class="ml-auto" :aria-label="`Remove alias ${alias}`" @click="delete aliases[alias]">
             <Trash2 />
           </Button>
         </div>
-        <form class="flex gap-2 border-t border-border px-4 py-3" @submit.prevent="addRole">
-          <Input v-model="newRole" class="max-w-56 font-mono" placeholder="role name" aria-label="New role" />
-          <Button type="submit" variant="outline" size="sm" :disabled="!newRole.trim()"><Plus data-icon="inline-start" />Add role</Button>
+        <form class="flex gap-2 border-t border-border px-4 py-3" @submit.prevent="addAlias">
+          <Input v-model="newAlias" class="max-w-56 font-mono" placeholder="alias" aria-label="New alias" />
+          <Button type="submit" variant="outline" size="sm" :disabled="!newAlias.trim()"><Plus data-icon="inline-start" />Add alias</Button>
         </form>
       </div>
     </template>

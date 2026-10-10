@@ -18,7 +18,6 @@ type ChannelSettings struct {
 	Operator               string            `json:"operator"`
 	ShowToolCalls          bool              `json:"show_tool_calls"`
 	MaxSteps               int               `json:"max_steps"`
-	Models                 []string          `json:"models"`
 	Telegram               TelegramSettings  `json:"telegram"`
 	RateLimit              RateLimitSettings `json:"rate_limit"`
 	UnrestrictedFilesystem bool              `json:"unrestricted_filesystem"`

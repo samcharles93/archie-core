@@ -679,7 +679,7 @@ func (b *boot) publishConfig(ctx context.Context, cfg config.Config) {
 }
 
 func (b *boot) configViewInput() webui.ConfigViewInput {
-	catalog, _ := b.catalogState()
+	catalog := b.catalogState()
 	in := webui.ConfigViewInput{
 		Config:  b.cfgHolder.Get(),
 		Catalog: catalogView(catalog),
@@ -803,7 +803,7 @@ func (b *boot) addCleanup(fn func()) {
 	b.cleanups = append(b.cleanups, fn)
 }
 
-func (b *boot) catalogState() (modelcatalog.Snapshot, []string) { return b.catalog.State() }
+func (b *boot) catalogState() modelcatalog.Snapshot { return b.catalog.State() }
 
 // loadCatalog layers the model catalog under the file config. A catalog that
 // cannot be read leaves the configured providers and models in effect.
@@ -815,7 +815,7 @@ func (b *boot) loadCatalog(ctx context.Context) {
 	}
 	models := modelcatalog.Apply(&b.cfg, snapshot)
 	b.cfgHolder.Set(b.cfg.Clone())
-	b.catalog.Set(snapshot, models)
+	b.catalog.Set(snapshot)
 	b.log.Info("model catalog loaded", "providers", len(snapshot.Providers), "models", len(models))
 }
 
@@ -830,7 +830,7 @@ func (b *boot) refreshModelCatalog(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	b.catalog.Set(snapshot, models)
+	b.catalog.Set(snapshot)
 	b.publishConfig(ctx, cfg)
 	b.log.Info("model catalog refreshed", "providers", len(snapshot.Providers), "models", len(models))
 	return nil

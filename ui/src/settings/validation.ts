@@ -102,25 +102,29 @@ export function validateSchedules(value: unknown): FieldIssue[] {
   return issues;
 }
 
-/** validateModelRoles mirrors validateModelRoles exactly: the server's whole
- * predicate is `strings.TrimSpace(role) == "" || !strings.Contains(model,
- * "/")`. It deliberately does not impose a stricter shape, such as requiring
- * a non-space provider before the slash -- the dashboard refusing a value the
- * server would accept blocks a legitimate save. */
-export function validateModelRoles(value: unknown): FieldIssue[] {
-  const roles = (value ?? {}) as Record<string, string>;
-  return Object.entries(roles)
-    .filter(([role, model]) => !role.trim() || !String(model).includes("/"))
-    .map(([role]) => ({
-      path: role,
-      label: role.trim() || "Role",
-      message: role.trim() ? "Use provider/model." : "Role name is required.",
-    }));
+const MODEL_ALIAS_NAME = /^[a-z0-9][a-z0-9._-]*$/;
+
+/** validateModelAliases mirrors the server's validateModelAliases: alias
+ * names are lowercase tokens, each value splits on its first slash into a
+ * non-empty provider and model, and a non-empty table has a default alias. */
+export function validateModelAliases(value: unknown): FieldIssue[] {
+  const aliases = (value ?? {}) as Record<string, string>;
+  const issues: FieldIssue[] = Object.entries(aliases).flatMap(([alias, model]): FieldIssue[] => {
+    if (!MODEL_ALIAS_NAME.test(alias))
+      return [{ path: alias, label: alias || "Alias", message: "Use lowercase letters, digits, '.', '_' or '-'." }];
+    const slash = String(model).indexOf("/");
+    if (slash <= 0 || slash === String(model).length - 1)
+      return [{ path: alias, label: alias, message: "Use provider/model." }];
+    return [];
+  });
+  if (Object.keys(aliases).length > 0 && !("default" in aliases))
+    issues.push({ path: "default", label: "default", message: "The default alias is required." });
+  return issues;
 }
 
 /** The rules the store applies to a dirty draft, keyed by resource kind. */
 export const draftValidators: Record<string, DraftValidator> = {
   "scheduling-policy": validateSchedulingPolicy,
   schedules: validateSchedules,
-  "model-role-assignments": validateModelRoles,
+  "model-aliases": validateModelAliases,
 };

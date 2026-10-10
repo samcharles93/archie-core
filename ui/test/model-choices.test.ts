@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { availableProviders, roleModelOptions } from "../src/settings/model-choices.ts";
+import { availableProviders, aliasModelOptions } from "../src/settings/model-choices.ts";
 
 const catalog = [
   { id: "anthropic", name: "Anthropic", class: "anthropic", api_key_env: "ANTHROPIC_API_KEY", models: ["claude-a"] },
@@ -10,8 +10,8 @@ const catalog = [
 ];
 
 test("role models come only from configured providers", () => {
-  assert.deepEqual(roleModelOptions(catalog, ["openai", "deepseek"]), ["openai/gpt-a", "openai/gpt-b"]);
-  assert.deepEqual(roleModelOptions(catalog, []), []);
+  assert.deepEqual(aliasModelOptions(catalog, ["openai", "deepseek"]), ["openai/gpt-a", "openai/gpt-b"]);
+  assert.deepEqual(aliasModelOptions(catalog, []), []);
 });
 
 test("available providers are the catalog's ones not yet configured", () => {

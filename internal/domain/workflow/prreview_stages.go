@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/agentrun"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/prreview"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
@@ -225,7 +226,7 @@ func scoreAIGenerated(ctx context.Context, tc *TaskContext, meta PRMetadata) (fl
 			"with status \"passed\".",
 		meta.Title, meta.Body, strings.Join(meta.Commits, "\n"),
 	)
-	res, err := runPRReviewAgent(ctx, tc, scratch, "intake-ai-score", "classification", mission, 6, []agentrun.CaptureTool{{
+	res, err := runPRReviewAgent(ctx, tc, scratch, "intake-ai-score", mission, 6, []agentrun.CaptureTool{{
 		Name: "score_ai_generated", Description: "Record the machine-written confidence. Call exactly once, before finish.",
 		Parameters: params, RequiredFields: []string{"confidence"}, MaxCalls: 1,
 	}})
@@ -313,7 +314,7 @@ func stagePRAnatomy() Stage {
 			skipPhase(tc, "anatomy")
 			return nil
 		}
-		res, err := runPRReviewAgent(ctx, tc, tc.prReview.snapshotDir, "anatomy", "review", mission, 15, nil)
+		res, err := runPRReviewAgent(ctx, tc, tc.prReview.snapshotDir, "anatomy", mission, 15, nil)
 		if err != nil {
 			return err
 		}
@@ -394,7 +395,7 @@ func runLens(ctx context.Context, tc *TaskContext, name, angle string) ([]prrevi
 		name, angle, tc.prReview.metadata.Title, tc.prReview.metadata.Body, clip(tc.prReview.diff, 60000),
 		operatorInstructionsBlock(tc),
 	)
-	res, err := runPRReviewAgent(ctx, tc, tc.prReview.snapshotDir, "lens-"+name, "review", mission, 15, []agentrun.CaptureTool{{
+	res, err := runPRReviewAgent(ctx, tc, tc.prReview.snapshotDir, "lens-"+name, mission, 15, []agentrun.CaptureTool{{
 		Name: "propose_dimensions", Description: "Record this lens's proposed review dimensions. Call exactly once, before finish.",
 		Parameters: params, RequiredFields: []string{"dimensions"}, MaxCalls: 1,
 	}})
@@ -558,9 +559,9 @@ const prReviewMaxSteps = 25
 func runReviewerAgent(
 	ctx context.Context, tc *TaskContext, name, mission string, captureTools []agentrun.CaptureTool,
 ) (agentrun.Result, error) {
-	modelRef := tc.Cfg.Models["review"]
-	if modelRef == "" {
-		return agentrun.Result{}, fmt.Errorf("no model configured for role %q (set [models] in config)", "review")
+	modelRef, err := config.ResolveModel(tc.Cfg.Models, "", config.PurposeAgent)
+	if err != nil {
+		return agentrun.Result{}, err
 	}
 	req := agentrun.Request{
 		Version: agentrun.ProtocolVersion, TaskID: tc.Task.ID, Attempt: tc.Task.Attempt,
@@ -657,7 +658,7 @@ func polishFinding(ctx context.Context, tc *TaskContext, f prreview.ScoredFindin
 			"call finish with status \"passed\".",
 		f.Title, f.Body,
 	)
-	res, err := runPRReviewAgent(ctx, tc, tc.prReview.snapshotDir, "polish", "classification", mission, 4, []agentrun.CaptureTool{{
+	res, err := runPRReviewAgent(ctx, tc, tc.prReview.snapshotDir, "polish", mission, 4, []agentrun.CaptureTool{{
 		Name: "polish", Description: "Record the tightened comment body. Call exactly once, before finish.",
 		Parameters: params, RequiredFields: []string{"body"}, MaxCalls: 1,
 	}})
@@ -723,9 +724,9 @@ func postPRReview(ctx context.Context, tc *TaskContext) error {
 // runPRReviewAgent runs one read-only agent call in workspace and returns an
 // error for any result that did not pass.
 func runPRReviewAgent(
-	ctx context.Context, tc *TaskContext, workspace, name, role, mission string, maxSteps int, captureTools []agentrun.CaptureTool,
+	ctx context.Context, tc *TaskContext, workspace, name, mission string, maxSteps int, captureTools []agentrun.CaptureTool,
 ) (agentrun.Result, error) {
-	res, err := runPRReviewAgentRecorded(ctx, tc, workspace, name, role, mission, maxSteps, captureTools)
+	res, err := runPRReviewAgentRecorded(ctx, tc, workspace, name, mission, maxSteps, captureTools)
 	if err != nil {
 		return res, err
 	}
@@ -742,11 +743,11 @@ func runPRReviewAgent(
 // runPRReviewAgentRecorded builds the request for a pr-review agent call,
 // records its step, and returns the runtime's result unchanged.
 func runPRReviewAgentRecorded(
-	ctx context.Context, tc *TaskContext, workspace, name, role, mission string, maxSteps int, captureTools []agentrun.CaptureTool,
+	ctx context.Context, tc *TaskContext, workspace, name, mission string, maxSteps int, captureTools []agentrun.CaptureTool,
 ) (agentrun.Result, error) {
-	modelRef := tc.Cfg.Models[role]
-	if modelRef == "" {
-		return agentrun.Result{}, fmt.Errorf("no model configured for role %q (set [models] in config)", role)
+	modelRef, err := config.ResolveModel(tc.Cfg.Models, "", config.PurposeAgent)
+	if err != nil {
+		return agentrun.Result{}, err
 	}
 	req := agentrun.Request{
 		Version: agentrun.ProtocolVersion, TaskID: tc.Task.ID, Attempt: tc.Task.Attempt,

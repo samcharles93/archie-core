@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	ProviderSettingsKind     = "provider-settings"
-	ModelRoleAssignmentsKind = "model-role-assignments"
+	ProviderSettingsKind = "provider-settings"
+	ModelAliasesKind     = "model-aliases"
 )
 
 var bootDerivedProviderEnv = regexp.MustCompile(`^ARCHIE_PROVIDER_[0-9A-F]{16}_API_KEY$`)
@@ -27,7 +27,7 @@ type providerDocument struct {
 func modelDefinitions() []Definition {
 	return []Definition{
 		{Kind: ProviderSettingsKind, Title: "Providers", ApplyMode: "live", Document: map[string]providerDocument{}, Seed: seedProviders, Validate: validateProviders},
-		{Kind: ModelRoleAssignmentsKind, Title: "Model role assignments", ApplyMode: "live", Document: map[string]string{}, Seed: func(cfg config.Config) any { return cfg.Models }, Validate: validateModelRoles},
+		{Kind: ModelAliasesKind, Title: "Model aliases", ApplyMode: "live", Document: map[string]string{}, Seed: func(cfg config.Config) any { return cfg.Models }, Validate: validateModelAliases},
 	}
 }
 
@@ -66,12 +66,20 @@ func rejectBootDerivedProviderEnv(name string, provider providerDocument) error 
 	return nil
 }
 
-func validateModelRoles(input []byte) error {
+var modelAliasName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
+
+func validateModelAliases(input []byte) error {
 	return validateAs(input, func(models map[string]string) error {
-		for role, model := range models {
-			if strings.TrimSpace(role) == "" || !strings.Contains(model, "/") {
-				return fmt.Errorf("model role %q must reference provider/model", role)
+		for alias, model := range models {
+			if !modelAliasName.MatchString(alias) {
+				return fmt.Errorf("model alias %q must be lowercase letters, digits, '.', '_' or '-'", alias)
 			}
+			if provider, name, ok := strings.Cut(model, "/"); !ok || provider == "" || name == "" {
+				return fmt.Errorf("model alias %q must reference provider/model", alias)
+			}
+		}
+		if _, ok := models[config.DefaultModelAlias]; !ok && len(models) > 0 {
+			return fmt.Errorf("model alias %q is required", config.DefaultModelAlias)
 		}
 		return nil
 	})

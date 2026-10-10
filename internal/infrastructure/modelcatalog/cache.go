@@ -21,7 +21,6 @@ type Catalog struct {
 
 	mu       sync.RWMutex
 	snapshot Snapshot
-	models   []string
 }
 
 // NewCatalog caches the catalog beside the config file at cfgPath.
@@ -29,18 +28,18 @@ func NewCatalog(cfgPath string) *Catalog {
 	return &Catalog{cachePath: filepath.Join(filepath.Dir(cfgPath), "models.json")}
 }
 
-// State returns the loaded snapshot and its model references.
-func (c *Catalog) State() (Snapshot, []string) {
+// State returns the loaded snapshot.
+func (c *Catalog) State() Snapshot {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.snapshot, c.models
+	return c.snapshot
 }
 
-// Set records a loaded snapshot and its model references.
-func (c *Catalog) Set(snapshot Snapshot, models []string) {
+// Set records a loaded snapshot.
+func (c *Catalog) Set(snapshot Snapshot) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.snapshot, c.models = snapshot, models
+	c.snapshot = snapshot
 }
 
 // Fetch reads the catalog, resolving provider keys through getenv.

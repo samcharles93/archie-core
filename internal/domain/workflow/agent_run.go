@@ -28,8 +28,8 @@ type agentRunSettings struct {
 	// Mission is what the agent is asked to do. The workflow's inputs are
 	// appended to it as structured data.
 	Mission string `yaml:"mission" doc:"What the agent is asked to do. May reference {{ task.* }}, {{ inputs.* }} and {{ steps.<id>.* }}."`
-	// Role selects the model (cfg.Models[Role]); empty means builder.
-	Role string `yaml:"role" doc:"Which configured model role runs the agent, e.g. builder or planner. Empty means builder."`
+	// Model is the model alias that runs the agent; empty means the default.
+	Model string `yaml:"model" doc:"The model alias that runs the agent, e.g. default or fast. Empty means default."`
 	// ReadOnly restricts the agent to read-only tools.
 	ReadOnly bool `yaml:"read_only" title:"Read only" doc:"Restrict the agent to read-only tools."`
 	// Gate holds the agent to the repository's gate before it may finish:
@@ -65,13 +65,9 @@ func newAgentRunStage(settings yaml.Node) (Stage, error) {
 	if err != nil {
 		return Stage{}, fmt.Errorf("%s: settings.result: %w", AgentRunStepName, err)
 	}
-	role := s.Role
-	if role == "" {
-		role = "builder"
-	}
 	agent := AgentStage{
 		Name:       AgentRunStepName,
-		Role:       role,
+		Model:      s.Model,
 		ReadOnly:   s.ReadOnly,
 		Mission:    func(*TaskContext) string { return s.Mission },
 		ExtraRules: s.ExtraRules,

@@ -23,7 +23,7 @@ const ChannelSettingsKind = controlplanerpc.ChannelSettingsKind
 func seedChannels(cfg config.Config) any {
 	chat := cfg.Chat
 	return channelSettings{
-		Operator: chat.Operator, Workspace: chat.Workspace, UnrestrictedFilesystem: chat.UnrestrictedFilesystem, ShowToolCalls: chat.ShowToolCalls, MaxSteps: chat.MaxSteps, Models: chat.Models,
+		Operator: chat.Operator, Workspace: chat.Workspace, UnrestrictedFilesystem: chat.UnrestrictedFilesystem, ShowToolCalls: chat.ShowToolCalls, MaxSteps: chat.MaxSteps,
 		Telegram:  telegramSettings{AllowedUserIDs: chat.Telegram.AllowedUserIDs, Token: chat.Telegram.Token, CredentialConfigured: chat.Telegram.Token != (config.SecretRef{})},
 		RateLimit: rateLimitSettings{Window: channelDuration(chat.RateLimit.Window), MaxRequests: chat.RateLimit.MaxRequests},
 	}

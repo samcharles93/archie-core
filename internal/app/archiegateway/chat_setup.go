@@ -36,7 +36,7 @@ type chatSetup struct {
 	// than the value captured when the runner was built.
 	ToolLimits func() modelloop.ToolLimits
 	// LLM resolves the provider runtime at each use: a live provider-settings
-	// or model-role-assignments update swaps the runtime wholesale (ai-sdk's
+	// or model-aliases update swaps the runtime wholesale (ai-sdk's
 	// Runtime caches the provider instances it built), so the pointer cannot
 	// be captured at construction. nil means no model runtime is configured.
 	LLM                 func() *runtime.Runtime
