@@ -38,7 +38,7 @@ func (s *EDA) InsertSource(ctx context.Context, src source.Source) error {
 
 // GetSource returns (nil, nil) for an unknown path.
 func (s *EDA) GetSource(ctx context.Context, path string) (*source.Source, error) {
-	r, err := s.q.GetSource(ctx, path)
+	r, err := s.q.GetSource(ctx, postgresdb.GetSourceParams{Path: path, ScopeOrg: scopeOrg(ctx)})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -53,7 +53,7 @@ func (s *EDA) GetSource(ctx context.Context, path string) (*source.Source, error
 }
 
 func (s *EDA) ListSources(ctx context.Context) ([]source.Source, error) {
-	rows, err := s.q.ListSources(ctx)
+	rows, err := s.q.ListSources(ctx, scopeOrg(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("edastore: list sources: %w", err)
 	}
@@ -72,7 +72,7 @@ func (s *EDA) ListSources(ctx context.Context) ([]source.Source, error) {
 // refuses when the stored state is no longer from.
 func (s *EDA) SetSourceSigning(ctx context.Context, path string, from, to source.Signing) error {
 	n, err := s.q.SetSourceSigning(ctx, postgresdb.SetSourceSigningParams{
-		Path: path, FromSigning: string(from), ToSigning: string(to),
+		Path: path, FromSigning: string(from), ToSigning: string(to), ScopeOrg: scopeOrg(ctx),
 	})
 	if err != nil {
 		return fmt.Errorf("edastore: set source signing: %w", err)
@@ -95,7 +95,7 @@ func (s *EDA) SetSourceSecret(ctx context.Context, path, secret string) error {
 	if err != nil {
 		return err
 	}
-	n, err := s.q.SetSourceSecret(ctx, postgresdb.SetSourceSecretParams{Path: path, Secret: sealed})
+	n, err := s.q.SetSourceSecret(ctx, postgresdb.SetSourceSecretParams{Path: path, Secret: sealed, ScopeOrg: scopeOrg(ctx)})
 	if err != nil {
 		return fmt.Errorf("edastore: set source secret: %w", err)
 	}
@@ -107,7 +107,7 @@ func (s *EDA) SetSourceSecret(ctx context.Context, path, secret string) error {
 
 // SetSourceName relabels a source.
 func (s *EDA) SetSourceName(ctx context.Context, path, name string) error {
-	n, err := s.q.SetSourceName(ctx, postgresdb.SetSourceNameParams{Path: path, Name: name})
+	n, err := s.q.SetSourceName(ctx, postgresdb.SetSourceNameParams{Path: path, Name: name, ScopeOrg: scopeOrg(ctx)})
 	if err != nil {
 		return fmt.Errorf("edastore: set source name: %w", err)
 	}
@@ -119,7 +119,7 @@ func (s *EDA) SetSourceName(ctx context.Context, path, name string) error {
 
 // SetSourceDeliveryHeader sets the header that names a source's deliveries.
 func (s *EDA) SetSourceDeliveryHeader(ctx context.Context, path, header string) error {
-	n, err := s.q.SetSourceDeliveryHeader(ctx, postgresdb.SetSourceDeliveryHeaderParams{Path: path, DeliveryHeader: header})
+	n, err := s.q.SetSourceDeliveryHeader(ctx, postgresdb.SetSourceDeliveryHeaderParams{Path: path, DeliveryHeader: header, ScopeOrg: scopeOrg(ctx)})
 	if err != nil {
 		return fmt.Errorf("edastore: set source delivery header: %w", err)
 	}
@@ -131,7 +131,7 @@ func (s *EDA) SetSourceDeliveryHeader(ctx context.Context, path, header string) 
 
 // DeleteSource deletes a source no armed binding fires on.
 func (s *EDA) DeleteSource(ctx context.Context, path string) error {
-	n, err := s.q.DeleteUnboundSource(ctx, path)
+	n, err := s.q.DeleteUnboundSource(ctx, postgresdb.DeleteUnboundSourceParams{Path: path, ScopeOrg: scopeOrg(ctx)})
 	if err != nil {
 		return fmt.Errorf("edastore: delete source: %w", err)
 	}

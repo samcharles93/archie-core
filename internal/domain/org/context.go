@@ -22,3 +22,18 @@ func OrgFromContext(ctx context.Context) OrgID {
 	}
 	return DefaultOrgID
 }
+
+type scopeContextKey struct{}
+
+// WithScope confines a request's reads to one org. A request without a scope
+// is an internal service acting across orgs, such as the daemon running every
+// org's work or webhook intake resolving a source by its path.
+func WithScope(ctx context.Context, id OrgID) context.Context {
+	return context.WithValue(ctx, scopeContextKey{}, id)
+}
+
+// Scope returns the org WithScope confined ctx to.
+func Scope(ctx context.Context) (OrgID, bool) {
+	id, ok := ctx.Value(scopeContextKey{}).(OrgID)
+	return id, ok && id != ""
+}

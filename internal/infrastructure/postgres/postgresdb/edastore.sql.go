@@ -14,8 +14,13 @@ import (
 
 const armedBindingsForSource = `-- name: ArmedBindingsForSource :many
 SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param, org_id
-FROM bindings WHERE source = $1 AND status = 'armed' ORDER BY created_at DESC
+FROM bindings WHERE source = $1 AND status = 'armed' AND ($2::text IS NULL OR org_id = $2) ORDER BY created_at DESC
 `
+
+type ArmedBindingsForSourceParams struct {
+	Source   string
+	ScopeOrg pgtype.Text
+}
 
 type ArmedBindingsForSourceRow struct {
 	ID        string
@@ -35,8 +40,8 @@ type ArmedBindingsForSourceRow struct {
 	OrgID     string
 }
 
-func (q *Queries) ArmedBindingsForSource(ctx context.Context, source string) ([]ArmedBindingsForSourceRow, error) {
-	rows, err := q.db.Query(ctx, armedBindingsForSource, source)
+func (q *Queries) ArmedBindingsForSource(ctx context.Context, arg ArmedBindingsForSourceParams) ([]ArmedBindingsForSourceRow, error) {
+	rows, err := q.db.Query(ctx, armedBindingsForSource, arg.Source, arg.ScopeOrg)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +79,10 @@ func (q *Queries) ArmedBindingsForSource(ctx context.Context, source string) ([]
 const captureRefusalSummary = `-- name: CaptureRefusalSummary :many
 WITH r AS (
     SELECT source, count(*) AS refused, array_agg(DISTINCT addr ORDER BY addr)::text[] AS addrs
-    FROM capture_refusals WHERE refused_at >= $1 GROUP BY source
+    FROM capture_refusals cr WHERE refused_at >= $1
+      AND ($2::text IS NULL
+           OR EXISTS (SELECT 1 FROM sources s WHERE s.path = cr.source AND s.org_id = $2))
+    GROUP BY source
 ), a AS (
     SELECT source, count(*) AS accepted FROM captures WHERE received_at >= $1 GROUP BY source
 )
@@ -83,6 +91,11 @@ FROM r LEFT JOIN a ON a.source = r.source
 ORDER BY r.source
 `
 
+type CaptureRefusalSummaryParams struct {
+	Since    time.Time
+	ScopeOrg pgtype.Text
+}
+
 type CaptureRefusalSummaryRow struct {
 	Source   string
 	Refused  int64
@@ -90,8 +103,8 @@ type CaptureRefusalSummaryRow struct {
 	Addrs    []string
 }
 
-func (q *Queries) CaptureRefusalSummary(ctx context.Context, refusedAt time.Time) ([]CaptureRefusalSummaryRow, error) {
-	rows, err := q.db.Query(ctx, captureRefusalSummary, refusedAt)
+func (q *Queries) CaptureRefusalSummary(ctx context.Context, arg CaptureRefusalSummaryParams) ([]CaptureRefusalSummaryRow, error) {
+	rows, err := q.db.Query(ctx, captureRefusalSummary, arg.Since, arg.ScopeOrg)
 	if err != nil {
 		return nil, err
 	}
@@ -116,11 +129,16 @@ func (q *Queries) CaptureRefusalSummary(ctx context.Context, refusedAt time.Time
 }
 
 const deleteBinding = `-- name: DeleteBinding :execrows
-DELETE FROM bindings WHERE id = $1
+DELETE FROM bindings WHERE id = $1 AND ($2::text IS NULL OR org_id = $2)
 `
 
-func (q *Queries) DeleteBinding(ctx context.Context, id string) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteBinding, id)
+type DeleteBindingParams struct {
+	ID       string
+	ScopeOrg pgtype.Text
+}
+
+func (q *Queries) DeleteBinding(ctx context.Context, arg DeleteBindingParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteBinding, arg.ID, arg.ScopeOrg)
 	if err != nil {
 		return 0, err
 	}
@@ -169,11 +187,16 @@ func (q *Queries) DeleteCapturesOlderThan(ctx context.Context, receivedAt time.T
 }
 
 const deleteEventType = `-- name: DeleteEventType :execrows
-DELETE FROM event_types WHERE id = $1
+DELETE FROM event_types WHERE id = $1 AND ($2::text IS NULL OR org_id = $2)
 `
 
-func (q *Queries) DeleteEventType(ctx context.Context, id string) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteEventType, id)
+type DeleteEventTypeParams struct {
+	ID       string
+	ScopeOrg pgtype.Text
+}
+
+func (q *Queries) DeleteEventType(ctx context.Context, arg DeleteEventTypeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteEventType, arg.ID, arg.ScopeOrg)
 	if err != nil {
 		return 0, err
 	}
@@ -181,11 +204,16 @@ func (q *Queries) DeleteEventType(ctx context.Context, id string) (int64, error)
 }
 
 const deleteMapping = `-- name: DeleteMapping :execrows
-DELETE FROM mappings WHERE id = $1
+DELETE FROM mappings WHERE id = $1 AND ($2::text IS NULL OR org_id = $2)
 `
 
-func (q *Queries) DeleteMapping(ctx context.Context, id string) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteMapping, id)
+type DeleteMappingParams struct {
+	ID       string
+	ScopeOrg pgtype.Text
+}
+
+func (q *Queries) DeleteMapping(ctx context.Context, arg DeleteMappingParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteMapping, arg.ID, arg.ScopeOrg)
 	if err != nil {
 		return 0, err
 	}
@@ -202,14 +230,19 @@ func (q *Queries) DeletePlaybookDispatches(ctx context.Context, playbookID strin
 }
 
 const deleteUnboundSource = `-- name: DeleteUnboundSource :execrows
-DELETE FROM sources s WHERE s.path = $1
+DELETE FROM sources s WHERE s.path = $1 AND ($2::text IS NULL OR s.org_id = $2)
   AND NOT EXISTS (SELECT 1 FROM bindings b WHERE b.source = s.path AND b.status = 'armed')
 `
 
+type DeleteUnboundSourceParams struct {
+	Path     string
+	ScopeOrg pgtype.Text
+}
+
 // A source an armed binding fires on is not deleted: the binding would
 // silently stop receiving events.
-func (q *Queries) DeleteUnboundSource(ctx context.Context, path string) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteUnboundSource, path)
+func (q *Queries) DeleteUnboundSource(ctx context.Context, arg DeleteUnboundSourceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteUnboundSource, arg.Path, arg.ScopeOrg)
 	if err != nil {
 		return 0, err
 	}
@@ -262,8 +295,13 @@ func (q *Queries) EventTypesForSource(ctx context.Context, source string) ([]Eve
 
 const getBinding = `-- name: GetBinding :one
 SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param, org_id
-FROM bindings WHERE id = $1
+FROM bindings WHERE id = $1 AND ($2::text IS NULL OR org_id = $2)
 `
+
+type GetBindingParams struct {
+	ID       string
+	ScopeOrg pgtype.Text
+}
 
 type GetBindingRow struct {
 	ID        string
@@ -283,8 +321,8 @@ type GetBindingRow struct {
 	OrgID     string
 }
 
-func (q *Queries) GetBinding(ctx context.Context, id string) (GetBindingRow, error) {
-	row := q.db.QueryRow(ctx, getBinding, id)
+func (q *Queries) GetBinding(ctx context.Context, arg GetBindingParams) (GetBindingRow, error) {
+	row := q.db.QueryRow(ctx, getBinding, arg.ID, arg.ScopeOrg)
 	var i GetBindingRow
 	err := row.Scan(
 		&i.ID,
@@ -308,8 +346,13 @@ func (q *Queries) GetBinding(ctx context.Context, id string) (GetBindingRow, err
 
 const getEventType = `-- name: GetEventType :one
 SELECT id, source, name, rule, schema, created_at, updated_at
-FROM event_types WHERE id = $1
+FROM event_types WHERE id = $1 AND ($2::text IS NULL OR org_id = $2)
 `
+
+type GetEventTypeParams struct {
+	ID       string
+	ScopeOrg pgtype.Text
+}
 
 type GetEventTypeRow struct {
 	ID        string
@@ -321,8 +364,8 @@ type GetEventTypeRow struct {
 	UpdatedAt time.Time
 }
 
-func (q *Queries) GetEventType(ctx context.Context, id string) (GetEventTypeRow, error) {
-	row := q.db.QueryRow(ctx, getEventType, id)
+func (q *Queries) GetEventType(ctx context.Context, arg GetEventTypeParams) (GetEventTypeRow, error) {
+	row := q.db.QueryRow(ctx, getEventType, arg.ID, arg.ScopeOrg)
 	var i GetEventTypeRow
 	err := row.Scan(
 		&i.ID,
@@ -340,8 +383,13 @@ const getMapping = `-- name: GetMapping :one
 SELECT mappings.id, mappings.name, mappings.source_hint, mappings.fields, mappings.created_at, mappings.updated_at, mappings.event_type, mappings.org_id, mappings.workspace_id,
 	(SELECT count(*) FROM mapping_matches mm WHERE mm.mapping = mappings.id)::bigint AS match_count,
 	COALESCE((SELECT max(mm.matched_at) FROM mapping_matches mm WHERE mm.mapping = mappings.id), 'epoch')::timestamptz AS last_matched_at
-FROM mappings WHERE id = $1
+FROM mappings WHERE id = $1 AND ($2::text IS NULL OR org_id = $2)
 `
+
+type GetMappingParams struct {
+	ID       string
+	ScopeOrg pgtype.Text
+}
 
 type GetMappingRow struct {
 	Mapping       Mapping
@@ -349,8 +397,8 @@ type GetMappingRow struct {
 	LastMatchedAt time.Time
 }
 
-func (q *Queries) GetMapping(ctx context.Context, id string) (GetMappingRow, error) {
-	row := q.db.QueryRow(ctx, getMapping, id)
+func (q *Queries) GetMapping(ctx context.Context, arg GetMappingParams) (GetMappingRow, error) {
+	row := q.db.QueryRow(ctx, getMapping, arg.ID, arg.ScopeOrg)
 	var i GetMappingRow
 	err := row.Scan(
 		&i.Mapping.ID,
@@ -369,11 +417,16 @@ func (q *Queries) GetMapping(ctx context.Context, id string) (GetMappingRow, err
 }
 
 const getSource = `-- name: GetSource :one
-SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id, name, delivery_header FROM sources WHERE path = $1
+SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id, name, delivery_header FROM sources WHERE path = $1 AND ($2::text IS NULL OR org_id = $2)
 `
 
-func (q *Queries) GetSource(ctx context.Context, path string) (Source, error) {
-	row := q.db.QueryRow(ctx, getSource, path)
+type GetSourceParams struct {
+	Path     string
+	ScopeOrg pgtype.Text
+}
+
+func (q *Queries) GetSource(ctx context.Context, arg GetSourceParams) (Source, error) {
+	row := q.db.QueryRow(ctx, getSource, arg.Path, arg.ScopeOrg)
 	var i Source
 	err := row.Scan(
 		&i.Path,
@@ -390,8 +443,8 @@ func (q *Queries) GetSource(ctx context.Context, path string) (Source, error) {
 }
 
 const insertBinding = `-- name: InsertBinding :exec
-INSERT INTO bindings (id, name, source, mapping, filter, workflow, owner, repo, version, status, inputs, repo_param)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, $10, $11)
+INSERT INTO bindings (id, name, source, mapping, filter, workflow, owner, repo, version, status, inputs, repo_param, org_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, $10, $11, $12)
 `
 
 type InsertBindingParams struct {
@@ -406,6 +459,7 @@ type InsertBindingParams struct {
 	Status    string
 	Inputs    string
 	RepoParam string
+	OrgID     string
 }
 
 func (q *Queries) InsertBinding(ctx context.Context, arg InsertBindingParams) error {
@@ -421,6 +475,7 @@ func (q *Queries) InsertBinding(ctx context.Context, arg InsertBindingParams) er
 		arg.Status,
 		arg.Inputs,
 		arg.RepoParam,
+		arg.OrgID,
 	)
 	return err
 }
@@ -513,8 +568,8 @@ func (q *Queries) InsertCaptureRefusal(ctx context.Context, arg InsertCaptureRef
 }
 
 const insertEventType = `-- name: InsertEventType :exec
-INSERT INTO event_types (id, source, name, rule, schema)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO event_types (id, source, name, rule, schema, org_id)
+VALUES ($1, $2, $3, $4, $5, $6)
 `
 
 type InsertEventTypeParams struct {
@@ -523,6 +578,7 @@ type InsertEventTypeParams struct {
 	Name   string
 	Rule   string
 	Schema string
+	OrgID  string
 }
 
 func (q *Queries) InsertEventType(ctx context.Context, arg InsertEventTypeParams) error {
@@ -532,13 +588,14 @@ func (q *Queries) InsertEventType(ctx context.Context, arg InsertEventTypeParams
 		arg.Name,
 		arg.Rule,
 		arg.Schema,
+		arg.OrgID,
 	)
 	return err
 }
 
 const insertMapping = `-- name: InsertMapping :exec
-INSERT INTO mappings (id, name, source_hint, event_type, fields)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO mappings (id, name, source_hint, event_type, fields, org_id)
+VALUES ($1, $2, $3, $4, $5, $6)
 `
 
 type InsertMappingParams struct {
@@ -547,6 +604,7 @@ type InsertMappingParams struct {
 	SourceHint string
 	EventType  string
 	Fields     string
+	OrgID      string
 }
 
 func (q *Queries) InsertMapping(ctx context.Context, arg InsertMappingParams) error {
@@ -556,6 +614,7 @@ func (q *Queries) InsertMapping(ctx context.Context, arg InsertMappingParams) er
 		arg.SourceHint,
 		arg.EventType,
 		arg.Fields,
+		arg.OrgID,
 	)
 	return err
 }
@@ -649,16 +708,18 @@ func (q *Queries) InsertToolCall(ctx context.Context, arg InsertToolCallParams) 
 }
 
 const listBindingDispatches = `-- name: ListBindingDispatches :many
-SELECT binding, binding_version, capture, task_id, reason, dispatched_at
-FROM binding_dispatches
-WHERE ($1::text IS NULL OR binding = $1)
-  AND ($2::text IS NULL OR capture = $2)
-  AND ($3::bigint IS NULL OR task_id = $3)
-ORDER BY dispatched_at DESC
-LIMIT $4
+SELECT d.binding, d.binding_version, d.capture, d.task_id, d.reason, d.dispatched_at
+FROM binding_dispatches d JOIN bindings b ON b.id = d.binding
+WHERE ($1::text IS NULL OR b.org_id = $1)
+  AND ($2::text IS NULL OR d.binding = $2)
+  AND ($3::text IS NULL OR d.capture = $3)
+  AND ($4::bigint IS NULL OR d.task_id = $4)
+ORDER BY d.dispatched_at DESC
+LIMIT $5
 `
 
 type ListBindingDispatchesParams struct {
+	ScopeOrg   pgtype.Text
 	Binding    pgtype.Text
 	Capture    pgtype.Text
 	TaskID     pgtype.Int8
@@ -676,6 +737,7 @@ type ListBindingDispatchesRow struct {
 
 func (q *Queries) ListBindingDispatches(ctx context.Context, arg ListBindingDispatchesParams) ([]ListBindingDispatchesRow, error) {
 	rows, err := q.db.Query(ctx, listBindingDispatches,
+		arg.ScopeOrg,
 		arg.Binding,
 		arg.Capture,
 		arg.TaskID,
@@ -708,7 +770,7 @@ func (q *Queries) ListBindingDispatches(ctx context.Context, arg ListBindingDisp
 
 const listBindings = `-- name: ListBindings :many
 SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param, org_id
-FROM bindings ORDER BY created_at DESC
+FROM bindings WHERE ($1::text IS NULL OR org_id = $1) ORDER BY created_at DESC
 `
 
 type ListBindingsRow struct {
@@ -729,8 +791,8 @@ type ListBindingsRow struct {
 	OrgID     string
 }
 
-func (q *Queries) ListBindings(ctx context.Context) ([]ListBindingsRow, error) {
-	rows, err := q.db.Query(ctx, listBindings)
+func (q *Queries) ListBindings(ctx context.Context, scopeOrg pgtype.Text) ([]ListBindingsRow, error) {
+	rows, err := q.db.Query(ctx, listBindings, scopeOrg)
 	if err != nil {
 		return nil, err
 	}
@@ -814,11 +876,11 @@ func (q *Queries) ListCaptures(ctx context.Context, arg ListCapturesParams) ([]C
 
 const listEventTypes = `-- name: ListEventTypes :many
 SELECT id, source, name, rule, schema, created_at, updated_at, org_id, workspace_id
-FROM event_types ORDER BY source, name
+FROM event_types WHERE ($1::text IS NULL OR org_id = $1) ORDER BY source, name
 `
 
-func (q *Queries) ListEventTypes(ctx context.Context) ([]EventType, error) {
-	rows, err := q.db.Query(ctx, listEventTypes)
+func (q *Queries) ListEventTypes(ctx context.Context, scopeOrg pgtype.Text) ([]EventType, error) {
+	rows, err := q.db.Query(ctx, listEventTypes, scopeOrg)
 	if err != nil {
 		return nil, err
 	}
@@ -851,7 +913,7 @@ const listMappings = `-- name: ListMappings :many
 SELECT mappings.id, mappings.name, mappings.source_hint, mappings.fields, mappings.created_at, mappings.updated_at, mappings.event_type, mappings.org_id, mappings.workspace_id,
 	(SELECT count(*) FROM mapping_matches mm WHERE mm.mapping = mappings.id)::bigint AS match_count,
 	COALESCE((SELECT max(mm.matched_at) FROM mapping_matches mm WHERE mm.mapping = mappings.id), 'epoch')::timestamptz AS last_matched_at
-FROM mappings ORDER BY created_at DESC
+FROM mappings WHERE ($1::text IS NULL OR org_id = $1) ORDER BY created_at DESC
 `
 
 type ListMappingsRow struct {
@@ -860,8 +922,8 @@ type ListMappingsRow struct {
 	LastMatchedAt time.Time
 }
 
-func (q *Queries) ListMappings(ctx context.Context) ([]ListMappingsRow, error) {
-	rows, err := q.db.Query(ctx, listMappings)
+func (q *Queries) ListMappings(ctx context.Context, scopeOrg pgtype.Text) ([]ListMappingsRow, error) {
+	rows, err := q.db.Query(ctx, listMappings, scopeOrg)
 	if err != nil {
 		return nil, err
 	}
@@ -893,11 +955,11 @@ func (q *Queries) ListMappings(ctx context.Context) ([]ListMappingsRow, error) {
 }
 
 const listSources = `-- name: ListSources :many
-SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id, name, delivery_header FROM sources ORDER BY created_at DESC, path
+SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id, name, delivery_header FROM sources WHERE ($1::text IS NULL OR org_id = $1) ORDER BY created_at DESC, path
 `
 
-func (q *Queries) ListSources(ctx context.Context) ([]Source, error) {
-	rows, err := q.db.Query(ctx, listSources)
+func (q *Queries) ListSources(ctx context.Context, scopeOrg pgtype.Text) ([]Source, error) {
+	rows, err := q.db.Query(ctx, listSources, scopeOrg)
 	if err != nil {
 		return nil, err
 	}
@@ -992,11 +1054,16 @@ func (q *Queries) LockEventTypeSource(ctx context.Context, source string) error 
 }
 
 const setBindingArmed = `-- name: SetBindingArmed :execrows
-UPDATE bindings SET status = 'armed', updated_at = now() WHERE id = $1
+UPDATE bindings SET status = 'armed', updated_at = now() WHERE id = $1 AND ($2::text IS NULL OR org_id = $2)
 `
 
-func (q *Queries) SetBindingArmed(ctx context.Context, id string) (int64, error) {
-	result, err := q.db.Exec(ctx, setBindingArmed, id)
+type SetBindingArmedParams struct {
+	ID       string
+	ScopeOrg pgtype.Text
+}
+
+func (q *Queries) SetBindingArmed(ctx context.Context, arg SetBindingArmedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setBindingArmed, arg.ID, arg.ScopeOrg)
 	if err != nil {
 		return 0, err
 	}
@@ -1019,16 +1086,17 @@ func (q *Queries) SetBindingDispatchTask(ctx context.Context, arg SetBindingDisp
 }
 
 const setSourceDeliveryHeader = `-- name: SetSourceDeliveryHeader :execrows
-UPDATE sources SET delivery_header = $2, updated_at = now() WHERE path = $1
+UPDATE sources SET delivery_header = $1, updated_at = now() WHERE path = $2 AND ($3::text IS NULL OR org_id = $3)
 `
 
 type SetSourceDeliveryHeaderParams struct {
-	Path           string
 	DeliveryHeader string
+	Path           string
+	ScopeOrg       pgtype.Text
 }
 
 func (q *Queries) SetSourceDeliveryHeader(ctx context.Context, arg SetSourceDeliveryHeaderParams) (int64, error) {
-	result, err := q.db.Exec(ctx, setSourceDeliveryHeader, arg.Path, arg.DeliveryHeader)
+	result, err := q.db.Exec(ctx, setSourceDeliveryHeader, arg.DeliveryHeader, arg.Path, arg.ScopeOrg)
 	if err != nil {
 		return 0, err
 	}
@@ -1036,16 +1104,17 @@ func (q *Queries) SetSourceDeliveryHeader(ctx context.Context, arg SetSourceDeli
 }
 
 const setSourceName = `-- name: SetSourceName :execrows
-UPDATE sources SET name = $2, updated_at = now() WHERE path = $1
+UPDATE sources SET name = $1, updated_at = now() WHERE path = $2 AND ($3::text IS NULL OR org_id = $3)
 `
 
 type SetSourceNameParams struct {
-	Path string
-	Name string
+	Name     string
+	Path     string
+	ScopeOrg pgtype.Text
 }
 
 func (q *Queries) SetSourceName(ctx context.Context, arg SetSourceNameParams) (int64, error) {
-	result, err := q.db.Exec(ctx, setSourceName, arg.Path, arg.Name)
+	result, err := q.db.Exec(ctx, setSourceName, arg.Name, arg.Path, arg.ScopeOrg)
 	if err != nil {
 		return 0, err
 	}
@@ -1053,16 +1122,17 @@ func (q *Queries) SetSourceName(ctx context.Context, arg SetSourceNameParams) (i
 }
 
 const setSourceSecret = `-- name: SetSourceSecret :execrows
-UPDATE sources SET secret = $2, updated_at = now() WHERE path = $1
+UPDATE sources SET secret = $1, updated_at = now() WHERE path = $2 AND ($3::text IS NULL OR org_id = $3)
 `
 
 type SetSourceSecretParams struct {
-	Path   string
-	Secret string
+	Secret   string
+	Path     string
+	ScopeOrg pgtype.Text
 }
 
 func (q *Queries) SetSourceSecret(ctx context.Context, arg SetSourceSecretParams) (int64, error) {
-	result, err := q.db.Exec(ctx, setSourceSecret, arg.Path, arg.Secret)
+	result, err := q.db.Exec(ctx, setSourceSecret, arg.Secret, arg.Path, arg.ScopeOrg)
 	if err != nil {
 		return 0, err
 	}
@@ -1071,17 +1141,23 @@ func (q *Queries) SetSourceSecret(ctx context.Context, arg SetSourceSecretParams
 
 const setSourceSigning = `-- name: SetSourceSigning :execrows
 UPDATE sources SET signing = $1, updated_at = now()
-WHERE path = $2 AND signing = $3
+WHERE path = $2 AND signing = $3 AND ($4::text IS NULL OR org_id = $4)
 `
 
 type SetSourceSigningParams struct {
 	ToSigning   string
 	Path        string
 	FromSigning string
+	ScopeOrg    pgtype.Text
 }
 
 func (q *Queries) SetSourceSigning(ctx context.Context, arg SetSourceSigningParams) (int64, error) {
-	result, err := q.db.Exec(ctx, setSourceSigning, arg.ToSigning, arg.Path, arg.FromSigning)
+	result, err := q.db.Exec(ctx, setSourceSigning,
+		arg.ToSigning,
+		arg.Path,
+		arg.FromSigning,
+		arg.ScopeOrg,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -1144,17 +1220,23 @@ func (q *Queries) TaskToolCalls(ctx context.Context, taskID int64) ([]TaskToolCa
 
 const transitionBindingStatus = `-- name: TransitionBindingStatus :execrows
 UPDATE bindings SET status = $1, updated_at = now()
-WHERE id = $2 AND status = $3
+WHERE id = $2 AND status = $3 AND ($4::text IS NULL OR org_id = $4)
 `
 
 type TransitionBindingStatusParams struct {
 	ToStatus   string
 	ID         string
 	FromStatus string
+	ScopeOrg   pgtype.Text
 }
 
 func (q *Queries) TransitionBindingStatus(ctx context.Context, arg TransitionBindingStatusParams) (int64, error) {
-	result, err := q.db.Exec(ctx, transitionBindingStatus, arg.ToStatus, arg.ID, arg.FromStatus)
+	result, err := q.db.Exec(ctx, transitionBindingStatus,
+		arg.ToStatus,
+		arg.ID,
+		arg.FromStatus,
+		arg.ScopeOrg,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -1163,13 +1245,13 @@ func (q *Queries) TransitionBindingStatus(ctx context.Context, arg TransitionBin
 
 const updateBinding = `-- name: UpdateBinding :execrows
 UPDATE bindings
-SET name = $2, source = $3, mapping = $4, filter = $5, workflow = $6, owner = $7, repo = $8,
-    version = version + 1, status = $9, inputs = $10, repo_param = $11, updated_at = now()
-WHERE id = $1
+SET name = $1, source = $2, mapping = $3, filter = $4,
+    workflow = $5, owner = $6, repo = $7,
+    version = version + 1, status = $8, inputs = $9, repo_param = $10, updated_at = now()
+WHERE id = $11 AND ($12::text IS NULL OR org_id = $12)
 `
 
 type UpdateBindingParams struct {
-	ID        string
 	Name      string
 	Source    string
 	Mapping   string
@@ -1180,11 +1262,12 @@ type UpdateBindingParams struct {
 	Status    string
 	Inputs    string
 	RepoParam string
+	ID        string
+	ScopeOrg  pgtype.Text
 }
 
 func (q *Queries) UpdateBinding(ctx context.Context, arg UpdateBindingParams) (int64, error) {
 	result, err := q.db.Exec(ctx, updateBinding,
-		arg.ID,
 		arg.Name,
 		arg.Source,
 		arg.Mapping,
@@ -1195,6 +1278,8 @@ func (q *Queries) UpdateBinding(ctx context.Context, arg UpdateBindingParams) (i
 		arg.Status,
 		arg.Inputs,
 		arg.RepoParam,
+		arg.ID,
+		arg.ScopeOrg,
 	)
 	if err != nil {
 		return 0, err
@@ -1203,17 +1288,24 @@ func (q *Queries) UpdateBinding(ctx context.Context, arg UpdateBindingParams) (i
 }
 
 const updateEventType = `-- name: UpdateEventType :execrows
-UPDATE event_types SET name = $2, rule = $3, updated_at = now() WHERE id = $1
+UPDATE event_types SET name = $1, rule = $2, updated_at = now()
+WHERE id = $3 AND ($4::text IS NULL OR org_id = $4)
 `
 
 type UpdateEventTypeParams struct {
-	ID   string
-	Name string
-	Rule string
+	Name     string
+	Rule     string
+	ID       string
+	ScopeOrg pgtype.Text
 }
 
 func (q *Queries) UpdateEventType(ctx context.Context, arg UpdateEventTypeParams) (int64, error) {
-	result, err := q.db.Exec(ctx, updateEventType, arg.ID, arg.Name, arg.Rule)
+	result, err := q.db.Exec(ctx, updateEventType,
+		arg.Name,
+		arg.Rule,
+		arg.ID,
+		arg.ScopeOrg,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -1222,25 +1314,27 @@ func (q *Queries) UpdateEventType(ctx context.Context, arg UpdateEventTypeParams
 
 const updateMapping = `-- name: UpdateMapping :execrows
 UPDATE mappings
-SET name = $2, source_hint = $3, event_type = $4, fields = $5, updated_at = now()
-WHERE id = $1
+SET name = $1, source_hint = $2, event_type = $3, fields = $4, updated_at = now()
+WHERE id = $5 AND ($6::text IS NULL OR org_id = $6)
 `
 
 type UpdateMappingParams struct {
-	ID         string
 	Name       string
 	SourceHint string
 	EventType  string
 	Fields     string
+	ID         string
+	ScopeOrg   pgtype.Text
 }
 
 func (q *Queries) UpdateMapping(ctx context.Context, arg UpdateMappingParams) (int64, error) {
 	result, err := q.db.Exec(ctx, updateMapping,
-		arg.ID,
 		arg.Name,
 		arg.SourceHint,
 		arg.EventType,
 		arg.Fields,
+		arg.ID,
+		arg.ScopeOrg,
 	)
 	if err != nil {
 		return 0, err

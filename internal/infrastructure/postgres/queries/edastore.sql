@@ -42,64 +42,65 @@ WHERE c.org_id = (SELECT m.org_id FROM captures AS m WHERE m.id = sqlc.arg(captu
 );
 
 -- name: InsertMapping :exec
-INSERT INTO mappings (id, name, source_hint, event_type, fields)
-VALUES ($1, $2, $3, $4, $5);
+INSERT INTO mappings (id, name, source_hint, event_type, fields, org_id)
+VALUES ($1, $2, $3, $4, $5, $6);
 
 -- name: GetMapping :one
 SELECT sqlc.embed(mappings),
 	(SELECT count(*) FROM mapping_matches mm WHERE mm.mapping = mappings.id)::bigint AS match_count,
 	COALESCE((SELECT max(mm.matched_at) FROM mapping_matches mm WHERE mm.mapping = mappings.id), 'epoch')::timestamptz AS last_matched_at
-FROM mappings WHERE id = $1;
+FROM mappings WHERE id = sqlc.arg(id) AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org));
 
 -- name: ListMappings :many
 SELECT sqlc.embed(mappings),
 	(SELECT count(*) FROM mapping_matches mm WHERE mm.mapping = mappings.id)::bigint AS match_count,
 	COALESCE((SELECT max(mm.matched_at) FROM mapping_matches mm WHERE mm.mapping = mappings.id), 'epoch')::timestamptz AS last_matched_at
-FROM mappings ORDER BY created_at DESC;
+FROM mappings WHERE (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org)) ORDER BY created_at DESC;
 
 -- name: UpdateMapping :execrows
 UPDATE mappings
-SET name = $2, source_hint = $3, event_type = $4, fields = $5, updated_at = now()
-WHERE id = $1;
+SET name = sqlc.arg(name), source_hint = sqlc.arg(source_hint), event_type = sqlc.arg(event_type), fields = sqlc.arg(fields), updated_at = now()
+WHERE id = sqlc.arg(id) AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org));
 
 -- name: InsertMappingMatch :exec
 INSERT INTO mapping_matches (mapping, capture) VALUES ($1, $2)
 ON CONFLICT DO NOTHING;
 
 -- name: DeleteMapping :execrows
-DELETE FROM mappings WHERE id = $1;
+DELETE FROM mappings WHERE id = sqlc.arg(id) AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org));
 
 -- name: InsertBinding :exec
-INSERT INTO bindings (id, name, source, mapping, filter, workflow, owner, repo, version, status, inputs, repo_param)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, $10, $11);
+INSERT INTO bindings (id, name, source, mapping, filter, workflow, owner, repo, version, status, inputs, repo_param, org_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, $10, $11, $12);
 
 -- name: GetBinding :one
 SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param, org_id
-FROM bindings WHERE id = $1;
+FROM bindings WHERE id = sqlc.arg(id) AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org));
 
 -- name: ListBindings :many
 SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param, org_id
-FROM bindings ORDER BY created_at DESC;
+FROM bindings WHERE (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org)) ORDER BY created_at DESC;
 
 -- name: ArmedBindingsForSource :many
 SELECT id, name, source, mapping, workflow, owner, repo, version, status, created_at, updated_at, filter, inputs, repo_param, org_id
-FROM bindings WHERE source = $1 AND status = 'armed' ORDER BY created_at DESC;
+FROM bindings WHERE source = sqlc.arg(source) AND status = 'armed' AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org)) ORDER BY created_at DESC;
 
 -- name: UpdateBinding :execrows
 UPDATE bindings
-SET name = $2, source = $3, mapping = $4, filter = $5, workflow = $6, owner = $7, repo = $8,
-    version = version + 1, status = $9, inputs = $10, repo_param = $11, updated_at = now()
-WHERE id = $1;
+SET name = sqlc.arg(name), source = sqlc.arg(source), mapping = sqlc.arg(mapping), filter = sqlc.arg(filter),
+    workflow = sqlc.arg(workflow), owner = sqlc.arg(owner), repo = sqlc.arg(repo),
+    version = version + 1, status = sqlc.arg(status), inputs = sqlc.arg(inputs), repo_param = sqlc.arg(repo_param), updated_at = now()
+WHERE id = sqlc.arg(id) AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org));
 
 -- name: SetBindingArmed :execrows
-UPDATE bindings SET status = 'armed', updated_at = now() WHERE id = $1;
+UPDATE bindings SET status = 'armed', updated_at = now() WHERE id = sqlc.arg(id) AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org));
 
 -- name: TransitionBindingStatus :execrows
 UPDATE bindings SET status = @to_status, updated_at = now()
-WHERE id = @id AND status = @from_status;
+WHERE id = @id AND status = @from_status AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org));
 
 -- name: DeleteBinding :execrows
-DELETE FROM bindings WHERE id = $1;
+DELETE FROM bindings WHERE id = sqlc.arg(id) AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org));
 
 -- name: InsertBindingDispatch :execrows
 INSERT INTO binding_dispatches (binding, binding_version, capture, task_id, reason, delivery)
@@ -110,12 +111,13 @@ FROM captures c WHERE c.id = @capture;
 UPDATE binding_dispatches SET task_id = $3 WHERE binding = $1 AND capture = $2;
 
 -- name: ListBindingDispatches :many
-SELECT binding, binding_version, capture, task_id, reason, dispatched_at
-FROM binding_dispatches
-WHERE (sqlc.narg(binding)::text IS NULL OR binding = sqlc.narg(binding))
-  AND (sqlc.narg(capture)::text IS NULL OR capture = sqlc.narg(capture))
-  AND (sqlc.narg(task_id)::bigint IS NULL OR task_id = sqlc.narg(task_id))
-ORDER BY dispatched_at DESC
+SELECT d.binding, d.binding_version, d.capture, d.task_id, d.reason, d.dispatched_at
+FROM binding_dispatches d JOIN bindings b ON b.id = d.binding
+WHERE (sqlc.narg(scope_org)::text IS NULL OR b.org_id = sqlc.narg(scope_org))
+  AND (sqlc.narg(binding)::text IS NULL OR d.binding = sqlc.narg(binding))
+  AND (sqlc.narg(capture)::text IS NULL OR d.capture = sqlc.narg(capture))
+  AND (sqlc.narg(task_id)::bigint IS NULL OR d.task_id = sqlc.narg(task_id))
+ORDER BY d.dispatched_at DESC
 LIMIT @entry_limit;
 
 -- name: InsertPlaybookDispatch :exec
@@ -134,26 +136,27 @@ SELECT id, task_id, attempt, tool, result, error, called_at
 FROM tool_calls WHERE task_id = $1 ORDER BY called_at ASC;
 
 -- name: InsertEventType :exec
-INSERT INTO event_types (id, source, name, rule, schema)
-VALUES ($1, $2, $3, $4, $5);
+INSERT INTO event_types (id, source, name, rule, schema, org_id)
+VALUES ($1, $2, $3, $4, $5, $6);
 
 -- name: GetEventType :one
 SELECT id, source, name, rule, schema, created_at, updated_at
-FROM event_types WHERE id = $1;
+FROM event_types WHERE id = sqlc.arg(id) AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org));
 
 -- name: ListEventTypes :many
 SELECT id, source, name, rule, schema, created_at, updated_at, org_id, workspace_id
-FROM event_types ORDER BY source, name;
+FROM event_types WHERE (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org)) ORDER BY source, name;
 
 -- name: EventTypesForSource :many
 SELECT id, source, name, rule, schema, created_at, updated_at, org_id, workspace_id
 FROM event_types WHERE source = $1 ORDER BY name;
 
 -- name: UpdateEventType :execrows
-UPDATE event_types SET name = $2, rule = $3, updated_at = now() WHERE id = $1;
+UPDATE event_types SET name = sqlc.arg(name), rule = sqlc.arg(rule), updated_at = now()
+WHERE id = sqlc.arg(id) AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org));
 
 -- name: DeleteEventType :execrows
-DELETE FROM event_types WHERE id = $1;
+DELETE FROM event_types WHERE id = sqlc.arg(id) AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org));
 
 -- name: LockEventTypeSource :exec
 -- Serialises saves per source so two concurrent saves cannot each pass the
@@ -163,28 +166,28 @@ SELECT pg_advisory_xact_lock(hashtext('event_types:' || sqlc.arg(source)::text))
 INSERT INTO sources (path, signing, secret, org_id, workspace_id) VALUES ($1, $2, $3, $4, $5);
 
 -- name: GetSource :one
-SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id, name, delivery_header FROM sources WHERE path = $1;
+SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id, name, delivery_header FROM sources WHERE path = sqlc.arg(path) AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org));
 
 -- name: ListSources :many
-SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id, name, delivery_header FROM sources ORDER BY created_at DESC, path;
+SELECT path, signing, secret, created_at, updated_at, org_id, workspace_id, name, delivery_header FROM sources WHERE (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org)) ORDER BY created_at DESC, path;
 
 -- name: SetSourceSigning :execrows
 UPDATE sources SET signing = sqlc.arg(to_signing), updated_at = now()
-WHERE path = sqlc.arg(path) AND signing = sqlc.arg(from_signing);
+WHERE path = sqlc.arg(path) AND signing = sqlc.arg(from_signing) AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org));
 
 -- name: SetSourceSecret :execrows
-UPDATE sources SET secret = $2, updated_at = now() WHERE path = $1;
+UPDATE sources SET secret = sqlc.arg(secret), updated_at = now() WHERE path = sqlc.arg(path) AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org));
 
 -- name: SetSourceName :execrows
-UPDATE sources SET name = $2, updated_at = now() WHERE path = $1;
+UPDATE sources SET name = sqlc.arg(name), updated_at = now() WHERE path = sqlc.arg(path) AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org));
 
 -- name: SetSourceDeliveryHeader :execrows
-UPDATE sources SET delivery_header = $2, updated_at = now() WHERE path = $1;
+UPDATE sources SET delivery_header = sqlc.arg(delivery_header), updated_at = now() WHERE path = sqlc.arg(path) AND (sqlc.narg(scope_org)::text IS NULL OR org_id = sqlc.narg(scope_org));
 
 -- name: DeleteUnboundSource :execrows
 -- A source an armed binding fires on is not deleted: the binding would
 -- silently stop receiving events.
-DELETE FROM sources s WHERE s.path = $1
+DELETE FROM sources s WHERE s.path = sqlc.arg(path) AND (sqlc.narg(scope_org)::text IS NULL OR s.org_id = sqlc.narg(scope_org))
   AND NOT EXISTS (SELECT 1 FROM bindings b WHERE b.source = s.path AND b.status = 'armed');
 
 -- name: SourceExists :one
@@ -202,9 +205,12 @@ DELETE FROM capture_refusals WHERE refused_at < $1;
 -- name: CaptureRefusalSummary :many
 WITH r AS (
     SELECT source, count(*) AS refused, array_agg(DISTINCT addr ORDER BY addr)::text[] AS addrs
-    FROM capture_refusals WHERE refused_at >= $1 GROUP BY source
+    FROM capture_refusals cr WHERE refused_at >= sqlc.arg(since)
+      AND (sqlc.narg(scope_org)::text IS NULL
+           OR EXISTS (SELECT 1 FROM sources s WHERE s.path = cr.source AND s.org_id = sqlc.narg(scope_org)))
+    GROUP BY source
 ), a AS (
-    SELECT source, count(*) AS accepted FROM captures WHERE received_at >= $1 GROUP BY source
+    SELECT source, count(*) AS accepted FROM captures WHERE received_at >= sqlc.arg(since) GROUP BY source
 )
 SELECT r.source, r.refused, COALESCE(a.accepted, 0)::bigint AS accepted, r.addrs
 FROM r LEFT JOIN a ON a.source = r.source

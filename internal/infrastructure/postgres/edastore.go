@@ -225,6 +225,7 @@ func (s *EDA) InsertMapping(ctx context.Context, m mapping.Mapping) (string, err
 	}
 	id := newRecordID()
 	if err := s.q.InsertMapping(ctx, postgresdb.InsertMappingParams{
+		OrgID:      string(org.OrgFromContext(ctx)),
 		ID:         id,
 		Name:       m.Name,
 		SourceHint: m.SourceHint,
@@ -240,7 +241,7 @@ func (s *EDA) InsertMapping(ctx context.Context, m mapping.Mapping) (string, err
 // GetMapping returns (nil, nil) for an absent mapping, the found=false
 // convention the gRPC layer translates.
 func (s *EDA) GetMapping(ctx context.Context, id string) (*mapping.Mapping, error) {
-	r, err := s.q.GetMapping(ctx, id)
+	r, err := s.q.GetMapping(ctx, postgresdb.GetMappingParams{ID: id, ScopeOrg: scopeOrg(ctx)})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -255,7 +256,7 @@ func (s *EDA) GetMapping(ctx context.Context, id string) (*mapping.Mapping, erro
 }
 
 func (s *EDA) ListMappings(ctx context.Context) ([]mapping.Mapping, error) {
-	rows, err := s.q.ListMappings(ctx)
+	rows, err := s.q.ListMappings(ctx, scopeOrg(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("edastore: list mappings: %w", err)
 	}
@@ -276,6 +277,7 @@ func (s *EDA) UpdateMapping(ctx context.Context, m mapping.Mapping) error {
 		return err
 	}
 	n, err := s.q.UpdateMapping(ctx, postgresdb.UpdateMappingParams{
+		ScopeOrg:   scopeOrg(ctx),
 		ID:         m.ID,
 		Name:       m.Name,
 		SourceHint: m.SourceHint,
@@ -293,7 +295,7 @@ func (s *EDA) UpdateMapping(ctx context.Context, m mapping.Mapping) error {
 }
 
 func (s *EDA) DeleteMapping(ctx context.Context, id string) error {
-	n, err := s.q.DeleteMapping(ctx, id)
+	n, err := s.q.DeleteMapping(ctx, postgresdb.DeleteMappingParams{ID: id, ScopeOrg: scopeOrg(ctx)})
 	if err != nil {
 		return err
 	}
@@ -363,6 +365,7 @@ func (s *EDA) InsertBinding(ctx context.Context, b binding.Binding) (string, err
 		return "", err
 	}
 	err = s.q.InsertBinding(ctx, postgresdb.InsertBindingParams{
+		OrgID:     string(org.OrgFromContext(ctx)),
 		ID:        id,
 		Name:      b.Name,
 		Source:    b.Matcher.Source,
@@ -385,7 +388,7 @@ func (s *EDA) InsertBinding(ctx context.Context, b binding.Binding) (string, err
 // GetBinding returns (nil, nil) for an absent binding, the found=false
 // convention the gRPC layer translates.
 func (s *EDA) GetBinding(ctx context.Context, id string) (*binding.Binding, error) {
-	r, err := s.q.GetBinding(ctx, id)
+	r, err := s.q.GetBinding(ctx, postgresdb.GetBindingParams{ID: id, ScopeOrg: scopeOrg(ctx)})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -400,7 +403,7 @@ func (s *EDA) GetBinding(ctx context.Context, id string) (*binding.Binding, erro
 }
 
 func (s *EDA) ListBindings(ctx context.Context) ([]binding.Binding, error) {
-	rows, err := s.q.ListBindings(ctx)
+	rows, err := s.q.ListBindings(ctx, scopeOrg(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("edastore: list bindings: %w", err)
 	}
@@ -417,7 +420,7 @@ func (s *EDA) ListBindings(ctx context.Context) ([]binding.Binding, error) {
 
 // ArmedBindingsForSource returns the armed bindings a source can dispatch.
 func (s *EDA) ArmedBindingsForSource(ctx context.Context, source string) ([]binding.Binding, error) {
-	rows, err := s.q.ArmedBindingsForSource(ctx, source)
+	rows, err := s.q.ArmedBindingsForSource(ctx, postgresdb.ArmedBindingsForSourceParams{Source: source, ScopeOrg: scopeOrg(ctx)})
 	if err != nil {
 		return nil, fmt.Errorf("edastore: list armed bindings: %w", err)
 	}
@@ -440,6 +443,7 @@ func (s *EDA) UpdateBinding(ctx context.Context, b binding.Binding) error {
 		return err
 	}
 	n, err := s.q.UpdateBinding(ctx, postgresdb.UpdateBindingParams{
+		ScopeOrg:  scopeOrg(ctx),
 		ID:        b.ID,
 		Name:      b.Name,
 		Source:    b.Matcher.Source,
@@ -463,7 +467,7 @@ func (s *EDA) UpdateBinding(ctx context.Context, b binding.Binding) error {
 }
 
 func (s *EDA) DeleteBinding(ctx context.Context, id string) error {
-	n, err := s.q.DeleteBinding(ctx, id)
+	n, err := s.q.DeleteBinding(ctx, postgresdb.DeleteBindingParams{ID: id, ScopeOrg: scopeOrg(ctx)})
 	if err != nil {
 		return err
 	}
@@ -476,7 +480,7 @@ func (s *EDA) DeleteBinding(ctx context.Context, id string) error {
 
 // ApproveBinding is the only transition that arms a binding.
 func (s *EDA) ApproveBinding(ctx context.Context, id string) error {
-	r, err := s.q.GetBinding(ctx, id)
+	r, err := s.q.GetBinding(ctx, postgresdb.GetBindingParams{ID: id, ScopeOrg: scopeOrg(ctx)})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return storecontract.ErrBindingNotFound
 	}
@@ -486,7 +490,7 @@ func (s *EDA) ApproveBinding(ctx context.Context, id string) error {
 	if r.Status != string(binding.StatusPendingApproval) {
 		return storecontract.ErrBindingTransition
 	}
-	n, err := s.q.SetBindingArmed(ctx, id)
+	n, err := s.q.SetBindingArmed(ctx, postgresdb.SetBindingArmedParams{ID: id, ScopeOrg: scopeOrg(ctx)})
 	if err != nil {
 		return err
 	}
@@ -510,13 +514,13 @@ func (s *EDA) ResumeBinding(ctx context.Context, id string) error {
 
 func (s *EDA) transitionBinding(ctx context.Context, id string, from, to binding.Status, verb string) error {
 	n, err := s.q.TransitionBindingStatus(ctx, postgresdb.TransitionBindingStatusParams{
-		ID: id, FromStatus: string(from), ToStatus: string(to),
+		ID: id, FromStatus: string(from), ToStatus: string(to), ScopeOrg: scopeOrg(ctx),
 	})
 	if err != nil {
 		return err
 	}
 	if n == 0 {
-		if _, err := s.q.GetBinding(ctx, id); errors.Is(err, pgx.ErrNoRows) {
+		if _, err := s.q.GetBinding(ctx, postgresdb.GetBindingParams{ID: id, ScopeOrg: scopeOrg(ctx)}); errors.Is(err, pgx.ErrNoRows) {
 			return storecontract.ErrBindingNotFound
 		}
 		return storecontract.ErrBindingTransition
@@ -685,7 +689,7 @@ func (s *EDA) RecordCaptureRefusal(ctx context.Context, source, addr string, at 
 // CaptureRefusals summarises refusals since a time for every source that had
 // one, beside the captures it accepted in the same window.
 func (s *EDA) CaptureRefusals(ctx context.Context, since time.Time) ([]storecontract.CaptureRefusals, error) {
-	rows, err := s.q.CaptureRefusalSummary(ctx, since.UTC())
+	rows, err := s.q.CaptureRefusalSummary(ctx, postgresdb.CaptureRefusalSummaryParams{Since: since.UTC(), ScopeOrg: scopeOrg(ctx)})
 	if err != nil {
 		return nil, fmt.Errorf("store: capture refusals: %w", err)
 	}

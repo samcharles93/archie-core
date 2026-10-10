@@ -12,6 +12,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/access"
 	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/org"
+	"github.com/samcharles93/archie-core/internal/domain/presence"
 )
 
 // CallerKey names the service making the call.
@@ -36,8 +37,8 @@ func Outgoing(ctx context.Context, caller string) context.Context {
 // Callers resolves who a call is made by. It runs after authentication,
 // which is what makes the metadata trustworthy: only holders of the instance
 // credential reach it with their metadata intact (a task grant's is
-// stripped). A call naming a principal acts in that principal's org; any
-// other acts in the default org.
+// stripped). A call naming a principal acts in, and reads only, that principal's
+// org; any other acts in the default org.
 type Callers struct {
 	Principals access.PrincipalSource
 }
@@ -50,6 +51,9 @@ func (c Callers) resolve(ctx context.Context) (context.Context, error) {
 	}
 	id := first(md, PrincipalKey)
 	if id == "" {
+		if servesChannels(caller) {
+			ctx = org.WithScope(ctx, org.DefaultOrgID)
+		}
 		return ctx, nil
 	}
 	if c.Principals == nil {
@@ -59,7 +63,8 @@ func (c Callers) resolve(ctx context.Context) (context.Context, error) {
 	if err != nil {
 		return nil, status.Errorf(codes.Unavailable, "resolve principal: %v", err)
 	}
-	return org.WithOrg(access.WithActor(access.WithPrincipal(ctx, p), id), p.Org), nil
+	ctx = org.WithScope(org.WithOrg(access.WithActor(access.WithPrincipal(ctx, p), id), p.Org), p.Org)
+	return ctx, nil
 }
 
 // Unary attributes unary calls.
@@ -96,4 +101,10 @@ func first(md metadata.MD, key string) string {
 		return values[0]
 	}
 	return ""
+}
+
+// servesChannels reports whether caller serves chat channels. A channel call
+// acting for no one, such as a Telegram message, reads only the system org.
+func servesChannels(caller string) bool {
+	return caller == presence.Gateway || caller == presence.Messaging
 }

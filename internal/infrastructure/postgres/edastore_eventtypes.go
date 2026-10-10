@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/samcharles93/archie-core/internal/domain/eventtype"
+	"github.com/samcharles93/archie-core/internal/domain/org"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/infrastructure/postgres/postgresdb"
 )
@@ -101,6 +102,7 @@ func (s *EDA) InsertEventType(ctx context.Context, t eventtype.EventType) (strin
 	err = s.saveEventType(ctx, t, func(q *postgresdb.Queries, rule string) error {
 		return q.InsertEventType(ctx, postgresdb.InsertEventTypeParams{
 			ID: id, Source: t.Source, Name: t.Name, Rule: rule, Schema: string(schema),
+			OrgID: string(org.OrgFromContext(ctx)),
 		})
 	})
 	if err != nil {
@@ -112,7 +114,7 @@ func (s *EDA) InsertEventType(ctx context.Context, t eventtype.EventType) (strin
 // UpdateEventType rewrites a type's name and rule. Its source and schema are
 // the stored ones.
 func (s *EDA) UpdateEventType(ctx context.Context, t eventtype.EventType) error {
-	stored, err := s.q.GetEventType(ctx, t.ID)
+	stored, err := s.q.GetEventType(ctx, postgresdb.GetEventTypeParams{ID: t.ID, ScopeOrg: scopeOrg(ctx)})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return storecontract.ErrEventTypeNotFound
 	}
@@ -132,7 +134,7 @@ func (s *EDA) UpdateEventType(ctx context.Context, t eventtype.EventType) error 
 // DeleteEventType removes a type. Captures already identified as it keep the
 // ID they were stored with.
 func (s *EDA) DeleteEventType(ctx context.Context, id string) error {
-	n, err := s.q.DeleteEventType(ctx, id)
+	n, err := s.q.DeleteEventType(ctx, postgresdb.DeleteEventTypeParams{ID: id, ScopeOrg: scopeOrg(ctx)})
 	if err != nil {
 		return err
 	}
@@ -144,7 +146,7 @@ func (s *EDA) DeleteEventType(ctx context.Context, id string) error {
 
 // ListEventTypes returns every event type, by source then name.
 func (s *EDA) ListEventTypes(ctx context.Context) ([]eventtype.EventType, error) {
-	rows, err := s.q.ListEventTypes(ctx)
+	rows, err := s.q.ListEventTypes(ctx, scopeOrg(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("edastore: list event types: %w", err)
 	}
