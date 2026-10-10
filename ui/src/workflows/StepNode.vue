@@ -4,7 +4,7 @@ import { Handle, Position } from "@vue-flow/core";
 import { Flag, Play, Repeat, SkipForward, Webhook, CircleDot, BookOpen, Workflow } from "@lucide/vue";
 
 import { stepIcon } from "./step-icons";
-import type { StepNodeData } from "./workflow-graph";
+import { stepTitle, type StepNodeData } from "./workflow-graph";
 
 const props = defineProps<{ data: StepNodeData }>();
 
@@ -58,7 +58,7 @@ function duration(ms?: number): string {
       <span v-if="data.step" class="font-mono text-[11px] text-fg-subtle">{{ data.step }}</span>
       <span class="truncate text-sm font-medium" :title="data.title">{{ data.title }}</span>
     </div>
-    <div v-if="data.type && data.type !== data.title" class="truncate font-mono text-[11px] text-fg-subtle">{{ data.type }}</div>
+    <div v-if="data.type && data.title !== stepTitle(data.type)" class="truncate font-mono text-[11px] text-fg-subtle">{{ data.type }}</div>
     <ul v-if="data.kind === 'start' && data.triggers?.length" class="mt-1 space-y-0.5">
       <li v-for="trigger in data.triggers" :key="trigger.kind + trigger.label" class="flex items-center gap-1.5 text-xs" :title="trigger.detail">
         <component :is="TRIGGER_ICONS[trigger.kind]" class="size-3 shrink-0 text-primary" aria-hidden="true" />

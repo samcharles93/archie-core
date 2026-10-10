@@ -74,8 +74,15 @@ const nodes = computed(() =>
 // The run's trace: an edge lights once the run has reached its target, in the
 // colour of how that step went, and moves while the step is running.
 const runs = computed(() => new Map(graph.value.nodes.map((node) => [node.id, node.data.run?.status])));
+// Data edges bundle into noise, so only the hovered or selected step's show.
+const hovered = ref<string | null>(null);
+const focusId = computed(
+  () => hovered.value ?? graph.value.nodes.find((node) => props.selected && JSON.stringify(node.data.path ?? null) === selectedKey.value)?.id,
+);
 const edges = computed(() =>
-  graph.value.edges.map(({ label, offset, insertAfter, otherwise, ...edge }) =>
+  graph.value.edges
+    .filter((edge) => edge.kind === "flow" || edge.source === focusId.value || edge.target === focusId.value)
+    .map(({ label, offset, insertAfter, otherwise, ...edge }) =>
     edge.kind === "flow"
       ? {
           ...edge,
@@ -152,6 +159,8 @@ const beforePath = computed(() => menuPath.value ? [...menuPath.value.slice(0, -
       pan-on-scroll
       @pane-ready="place"
       @node-click="onNodeClick"
+      @node-mouse-enter="hovered = $event.node.id"
+      @node-mouse-leave="hovered = null"
       @node-context-menu="onNodeMenu"
       @pane-context-menu="openMenu($event as MouseEvent)"
     >

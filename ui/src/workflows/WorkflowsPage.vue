@@ -1,6 +1,18 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watchEffect } from "vue";
-import { Plus, RotateCcw } from "@lucide/vue";
+import { Ellipsis, Plus, RotateCcw } from "@lucide/vue";
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 import PageHeader from "@/base/PageHeader.vue";
 import { Button } from "@/components/ui/button";
@@ -18,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { statusLabel } from "@/lib/task-meta";
 import { cloneControlPlaneValue, restoreShippedDefinitions, useControlPlaneStore, type WorkflowDefinitionCollection } from "@/stores/control-plane";
 import { useLiveResource } from "@/stores/live-updates";
+import ApplyStatusRows from "@/settings/ApplyStatusRows.vue";
 import SlowestStagesCard from "./SlowestStagesCard.vue";
 import StageFailuresCard from "./StageFailuresCard.vue";
 import type { StageStats } from "./stages";
@@ -105,6 +118,7 @@ function create() {
   while (stored.value.some((d) => d.id === `workflow-${n}`)) n++;
   selected.value = `workflow-${n}`;
 }
+const confirmRestore = ref(false);
 async function restoreShipped() {
   const shipped = store.shippedWorkflows();
   const restored = restoreShippedDefinitions({ definitions: stored.value }, shipped);
@@ -119,11 +133,31 @@ const rate = (deliveredRuns = 0, total = 0) => (total ? deliveredRuns / total : 
 <template>
   <div>
     <PageHeader title="Workflows">
-      <Button variant="ghost" size="sm" :disabled="!store.shippedWorkflows().definitions.length" @click="restoreShipped">
-        <RotateCcw data-icon="inline-start" /> Restore shipped
-      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger as-child>
+          <Button variant="ghost" size="icon-sm" aria-label="More"><Ellipsis /></Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem :disabled="!store.shippedWorkflows().definitions.length" @select="confirmRestore = true">
+            <RotateCcw />Restore shipped workflows
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <Button size="sm" @click="create"><Plus data-icon="inline-start" />New workflow</Button>
     </PageHeader>
+
+    <AlertDialog v-model:open="confirmRestore">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Restore shipped workflows?</AlertDialogTitle>
+          <AlertDialogDescription>Every shipped workflow is reset to its default, discarding edits to it. Your own workflows are kept.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction @click="restoreShipped">Restore</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
 
     <p v-if="error" class="mb-4 text-sm text-danger" role="alert">Cannot reach archied: {{ error }}</p>
 
@@ -162,10 +196,13 @@ const rate = (deliveredRuns = 0, total = 0) => (total ? deliveredRuns / total : 
         <header class="mb-2 flex flex-wrap items-center gap-2">
           <h2 class="font-mono text-[15px] font-medium">{{ selected }}</h2>
           <StatusPill v-if="provenance">{{ provenance }}</StatusPill>
-          <label v-if="enabled !== undefined" class="ml-auto flex items-center gap-2 text-xs text-fg-muted">
-            Enabled
-            <Switch :model-value="enabled" aria-label="Workflow enabled" @update:model-value="setEnabled" />
-          </label>
+          <div class="ml-auto flex items-center gap-3">
+            <ApplyStatusRows kind="workflow-definitions" compact />
+            <label v-if="enabled !== undefined" class="flex items-center gap-2 text-xs text-fg-muted">
+              Enabled
+              <Switch :model-value="enabled" aria-label="Workflow enabled" @update:model-value="setEnabled" />
+            </label>
+          </div>
         </header>
         <WorkflowEditor v-model:selected="selected" :runs-count="workflowRuns.length">
           <template #performance>

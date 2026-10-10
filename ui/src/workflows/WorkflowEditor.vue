@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import ApplyStatusRows from "@/settings/ApplyStatusRows.vue";
 import { computed, ref, watch } from "vue";
 import { Ellipsis, RotateCcw, Trash2, X } from "@lucide/vue";
 
@@ -198,7 +197,6 @@ function syncScroll(event: Event): void {
 
 <template>
   <form class="space-y-4" @submit.prevent="saveDraft">
-    <ApplyStatusRows kind="workflow-definitions" />
     <Tabs v-model="view" class="space-y-1.5">
       <div class="flex items-center gap-2">
         <TabsList>
@@ -250,7 +248,7 @@ function syncScroll(event: Event): void {
       <TabsContent value="canvas" class="space-y-2">
         <!-- The canvas takes the height the viewport has left, so the page
              itself does not scroll; the canvas pans. -->
-        <div class="relative h-[calc(100dvh-20.5rem)] min-h-[26rem]">
+        <div class="relative h-[calc(100dvh-17rem)] min-h-[26rem]">
           <p v-if="restartError" role="alert" class="absolute bottom-3 left-14 z-10 max-w-xl rounded-md border border-danger/40 bg-card px-3 py-2 text-sm text-danger shadow-lg">{{ restartError }}</p>
           <WorkflowCanvas
             :yaml="yaml"

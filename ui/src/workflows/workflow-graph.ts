@@ -219,7 +219,7 @@ function stepSummary(settings: Mapping): string | undefined {
     const value = settings[key];
     if (typeof value !== "string" || !value.trim()) continue;
     return value
-      .replace(/\{\{\s*([^}]+?)\s*\}\}/g, "‹$1›")
+      .replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, ref: string) => `‹${ref.replace(/^steps\./, "").replace(/\.result\b/, "")}›`)
       .split("\n")
       .find((line) => line.trim())
       ?.trim();
