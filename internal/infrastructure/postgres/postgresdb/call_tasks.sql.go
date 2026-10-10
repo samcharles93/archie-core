@@ -24,7 +24,7 @@ func (q *Queries) CallStatusDetail(ctx context.Context, taskID int64) (string, e
 
 const enqueueCallTask = `-- name: EnqueueCallTask :one
 WITH caller AS (
-    SELECT t.id, t.owner, t.repo, t.issue_number, t.title, t.body, t.labels, t.status, t.workflow, t.branch, t.plan, t.notes, t.pr_number, t.tokens_used, t.iterations, t.attempt, t.park_reason, t.watch_comment_id, t.park_class, t.remediation_rounds, t.retry_count, t.source, t.identity, t.binding_id, t.binding_version, t.review_payload, t.workflow_definition_version, t.workflow_definition_digest, t.workflow_definition_yaml, t.created_at, t.updated_at, t.review_cursor, t.inputs, t.org_id, t.workspace_id, t.call_parent_task_id, t.call_depth, t.outputs, t.review_gate, t.rereview_rounds, t.retry_mode, t.resume_from, t.resume_results, t.pending_reviews, t.origin, t.call_key FROM tasks t WHERE t.id = $1 FOR UPDATE
+    SELECT t.id, t.owner, t.repo, t.issue_number, t.title, t.body, t.labels, t.status, t.workflow, t.branch, t.plan, t.notes, t.pr_number, t.tokens_used, t.iterations, t.attempt, t.park_reason, t.watch_comment_id, t.park_class, t.remediation_rounds, t.retry_count, t.source, t.identity, t.binding_id, t.binding_version, t.review_payload, t.workflow_definition_version, t.workflow_definition_digest, t.workflow_definition_yaml, t.created_at, t.updated_at, t.review_cursor, t.inputs, t.org_id, t.workspace_id, t.call_parent_task_id, t.call_depth, t.outputs, t.review_gate, t.rereview_rounds, t.retry_mode, t.resume_from, t.resume_results, t.pending_reviews, t.origin, t.call_key, t.outcome_posted FROM tasks t WHERE t.id = $1 FOR UPDATE
 )
 INSERT INTO tasks (owner, repo, issue_number, title, body, labels, workflow, source, identity, org_id, workspace_id, inputs, call_parent_task_id, call_depth, call_key)
 SELECT
@@ -42,7 +42,7 @@ SELECT
 FROM caller
 WHERE caller.status = 'running' AND caller.call_depth + 1 <= $8::int
 ON CONFLICT (call_parent_task_id, call_key) WHERE call_key <> '' AND status NOT IN ('dead', 'closed_wont_do') DO UPDATE SET call_key = EXCLUDED.call_key
-RETURNING id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth, outputs, review_gate, rereview_rounds, retry_mode, resume_from, resume_results, pending_reviews, origin, call_key
+RETURNING id, owner, repo, issue_number, title, body, labels, status, workflow, branch, plan, notes, pr_number, tokens_used, iterations, attempt, park_reason, watch_comment_id, park_class, remediation_rounds, retry_count, source, identity, binding_id, binding_version, review_payload, workflow_definition_version, workflow_definition_digest, workflow_definition_yaml, created_at, updated_at, review_cursor, inputs, org_id, workspace_id, call_parent_task_id, call_depth, outputs, review_gate, rereview_rounds, retry_mode, resume_from, resume_results, pending_reviews, origin, call_key, outcome_posted
 `
 
 type EnqueueCallTaskParams struct {
@@ -124,6 +124,7 @@ func (q *Queries) EnqueueCallTask(ctx context.Context, arg EnqueueCallTaskParams
 		&i.PendingReviews,
 		&i.Origin,
 		&i.CallKey,
+		&i.OutcomePosted,
 	)
 	return i, err
 }

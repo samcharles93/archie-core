@@ -54,6 +54,10 @@ service StateStoreService {
   rpc EnqueueIssue(EnqueueIssueRequest) returns (EnqueueIssueResponse);
   rpc EnqueueChatTask(EnqueueChatTaskRequest) returns (EnqueueChatTaskResponse);
   rpc ActiveTasksByOrigin(ActiveTasksByOriginRequest) returns (ActiveTasksByOriginResponse);
+  // UnpostedOutcomes lists finished chat tasks whose outcome has not yet been
+  // posted to their conversation; MarkOutcomePosted records that it was.
+  rpc UnpostedOutcomes(UnpostedOutcomesRequest) returns (UnpostedOutcomesResponse);
+  rpc MarkOutcomePosted(MarkOutcomePostedRequest) returns (MarkOutcomePostedResponse);
   rpc ClaimNext(ClaimNextRequest) returns (ClaimNextResponse);
   rpc ClaimByIssue(ClaimByIssueRequest) returns (ClaimByIssueResponse);
   rpc Transition(TransitionRequest) returns (TransitionResponse);
@@ -443,6 +447,8 @@ message Task {
   // stage. resume_results are the step results (JSON) it starts with.
   string resume_from = 42;
   bytes resume_results = 43;
+  // origin names the conversation that created the task; empty for none.
+  string origin = 44;
 }
 
 // Event mirrors internal/events.Event. Data is carried as a JSON object
@@ -630,6 +636,11 @@ message EnqueueIssueResponse { bool inserted = 1; }
 
 message ActiveTasksByOriginRequest { string origin = 1; }
 message ActiveTasksByOriginResponse { repeated Task tasks = 1; }
+
+message UnpostedOutcomesRequest {}
+message UnpostedOutcomesResponse { repeated Task tasks = 1; }
+message MarkOutcomePostedRequest { int64 task_id = 1; }
+message MarkOutcomePostedResponse {}
 
 message EnqueueChatTaskRequest {
   string owner = 1;

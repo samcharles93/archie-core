@@ -45,6 +45,8 @@ const (
 	StateStoreService_EnqueueIssue_FullMethodName               = "/state.v1.StateStoreService/EnqueueIssue"
 	StateStoreService_EnqueueChatTask_FullMethodName            = "/state.v1.StateStoreService/EnqueueChatTask"
 	StateStoreService_ActiveTasksByOrigin_FullMethodName        = "/state.v1.StateStoreService/ActiveTasksByOrigin"
+	StateStoreService_UnpostedOutcomes_FullMethodName           = "/state.v1.StateStoreService/UnpostedOutcomes"
+	StateStoreService_MarkOutcomePosted_FullMethodName          = "/state.v1.StateStoreService/MarkOutcomePosted"
 	StateStoreService_ClaimNext_FullMethodName                  = "/state.v1.StateStoreService/ClaimNext"
 	StateStoreService_ClaimByIssue_FullMethodName               = "/state.v1.StateStoreService/ClaimByIssue"
 	StateStoreService_Transition_FullMethodName                 = "/state.v1.StateStoreService/Transition"
@@ -200,6 +202,10 @@ type StateStoreServiceClient interface {
 	EnqueueIssue(ctx context.Context, in *EnqueueIssueRequest, opts ...grpc.CallOption) (*EnqueueIssueResponse, error)
 	EnqueueChatTask(ctx context.Context, in *EnqueueChatTaskRequest, opts ...grpc.CallOption) (*EnqueueChatTaskResponse, error)
 	ActiveTasksByOrigin(ctx context.Context, in *ActiveTasksByOriginRequest, opts ...grpc.CallOption) (*ActiveTasksByOriginResponse, error)
+	// UnpostedOutcomes lists finished chat tasks whose outcome has not yet been
+	// posted to their conversation; MarkOutcomePosted records that it was.
+	UnpostedOutcomes(ctx context.Context, in *UnpostedOutcomesRequest, opts ...grpc.CallOption) (*UnpostedOutcomesResponse, error)
+	MarkOutcomePosted(ctx context.Context, in *MarkOutcomePostedRequest, opts ...grpc.CallOption) (*MarkOutcomePostedResponse, error)
 	ClaimNext(ctx context.Context, in *ClaimNextRequest, opts ...grpc.CallOption) (*ClaimNextResponse, error)
 	ClaimByIssue(ctx context.Context, in *ClaimByIssueRequest, opts ...grpc.CallOption) (*ClaimByIssueResponse, error)
 	Transition(ctx context.Context, in *TransitionRequest, opts ...grpc.CallOption) (*TransitionResponse, error)
@@ -655,6 +661,26 @@ func (c *stateStoreServiceClient) ActiveTasksByOrigin(ctx context.Context, in *A
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ActiveTasksByOriginResponse)
 	err := c.cc.Invoke(ctx, StateStoreService_ActiveTasksByOrigin_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) UnpostedOutcomes(ctx context.Context, in *UnpostedOutcomesRequest, opts ...grpc.CallOption) (*UnpostedOutcomesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UnpostedOutcomesResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_UnpostedOutcomes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) MarkOutcomePosted(ctx context.Context, in *MarkOutcomePostedRequest, opts ...grpc.CallOption) (*MarkOutcomePostedResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MarkOutcomePostedResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_MarkOutcomePosted_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1750,6 +1776,10 @@ type StateStoreServiceServer interface {
 	EnqueueIssue(context.Context, *EnqueueIssueRequest) (*EnqueueIssueResponse, error)
 	EnqueueChatTask(context.Context, *EnqueueChatTaskRequest) (*EnqueueChatTaskResponse, error)
 	ActiveTasksByOrigin(context.Context, *ActiveTasksByOriginRequest) (*ActiveTasksByOriginResponse, error)
+	// UnpostedOutcomes lists finished chat tasks whose outcome has not yet been
+	// posted to their conversation; MarkOutcomePosted records that it was.
+	UnpostedOutcomes(context.Context, *UnpostedOutcomesRequest) (*UnpostedOutcomesResponse, error)
+	MarkOutcomePosted(context.Context, *MarkOutcomePostedRequest) (*MarkOutcomePostedResponse, error)
 	ClaimNext(context.Context, *ClaimNextRequest) (*ClaimNextResponse, error)
 	ClaimByIssue(context.Context, *ClaimByIssueRequest) (*ClaimByIssueResponse, error)
 	Transition(context.Context, *TransitionRequest) (*TransitionResponse, error)
@@ -2028,6 +2058,12 @@ func (UnimplementedStateStoreServiceServer) EnqueueChatTask(context.Context, *En
 }
 func (UnimplementedStateStoreServiceServer) ActiveTasksByOrigin(context.Context, *ActiveTasksByOriginRequest) (*ActiveTasksByOriginResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ActiveTasksByOrigin not implemented")
+}
+func (UnimplementedStateStoreServiceServer) UnpostedOutcomes(context.Context, *UnpostedOutcomesRequest) (*UnpostedOutcomesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UnpostedOutcomes not implemented")
+}
+func (UnimplementedStateStoreServiceServer) MarkOutcomePosted(context.Context, *MarkOutcomePostedRequest) (*MarkOutcomePostedResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method MarkOutcomePosted not implemented")
 }
 func (UnimplementedStateStoreServiceServer) ClaimNext(context.Context, *ClaimNextRequest) (*ClaimNextResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ClaimNext not implemented")
@@ -2817,6 +2853,42 @@ func _StateStoreService_ActiveTasksByOrigin_Handler(srv interface{}, ctx context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StateStoreServiceServer).ActiveTasksByOrigin(ctx, req.(*ActiveTasksByOriginRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_UnpostedOutcomes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnpostedOutcomesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).UnpostedOutcomes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_UnpostedOutcomes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).UnpostedOutcomes(ctx, req.(*UnpostedOutcomesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_MarkOutcomePosted_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MarkOutcomePostedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).MarkOutcomePosted(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_MarkOutcomePosted_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).MarkOutcomePosted(ctx, req.(*MarkOutcomePostedRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -4728,6 +4800,14 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ActiveTasksByOrigin",
 			Handler:    _StateStoreService_ActiveTasksByOrigin_Handler,
+		},
+		{
+			MethodName: "UnpostedOutcomes",
+			Handler:    _StateStoreService_UnpostedOutcomes_Handler,
+		},
+		{
+			MethodName: "MarkOutcomePosted",
+			Handler:    _StateStoreService_MarkOutcomePosted_Handler,
 		},
 		{
 			MethodName: "ClaimNext",

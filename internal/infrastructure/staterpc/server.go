@@ -206,6 +206,25 @@ func (s *server) ActiveTasksByOrigin(ctx context.Context, r *pb.ActiveTasksByOri
 	return &pb.ActiveTasksByOriginResponse{Tasks: out}, nil
 }
 
+func (s *server) UnpostedOutcomes(ctx context.Context, _ *pb.UnpostedOutcomesRequest) (*pb.UnpostedOutcomesResponse, error) {
+	tasks, err := s.deps.Tasks.UnpostedOutcomes(ctx)
+	if err != nil {
+		return nil, s.logErr("UnpostedOutcomes", err)
+	}
+	out := make([]*pb.Task, 0, len(tasks))
+	for _, t := range tasks {
+		out = append(out, taskProto(t))
+	}
+	return &pb.UnpostedOutcomesResponse{Tasks: out}, nil
+}
+
+func (s *server) MarkOutcomePosted(ctx context.Context, r *pb.MarkOutcomePostedRequest) (*pb.MarkOutcomePostedResponse, error) {
+	if err := s.deps.Tasks.MarkOutcomePosted(ctx, r.TaskId); err != nil {
+		return nil, s.logErr("MarkOutcomePosted", err)
+	}
+	return &pb.MarkOutcomePostedResponse{}, nil
+}
+
 func (s *server) EnqueueChatTask(ctx context.Context, r *pb.EnqueueChatTaskRequest) (*pb.EnqueueChatTaskResponse, error) {
 	inputs, err := task.DecodeInputs(r.InputsJson)
 	if err != nil {

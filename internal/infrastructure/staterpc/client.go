@@ -88,6 +88,19 @@ func (c *Client) ActiveTasksByOrigin(ctx context.Context, origin string) ([]*tas
 	return mapValues(r.Tasks, taskValue), nil
 }
 
+func (c *Client) UnpostedOutcomes(ctx context.Context) ([]*task.Task, error) {
+	r, err := c.client.UnpostedOutcomes(ctx, &pb.UnpostedOutcomesRequest{})
+	if err != nil {
+		return nil, unmapError(err)
+	}
+	return mapValues(r.Tasks, taskValue), nil
+}
+
+func (c *Client) MarkOutcomePosted(ctx context.Context, taskID int64) error {
+	_, err := c.client.MarkOutcomePosted(ctx, &pb.MarkOutcomePostedRequest{TaskId: taskID})
+	return unmapError(err)
+}
+
 func (c *Client) EnqueueChatTask(ctx context.Context, owner, repo, title, body, wf, identity, origin string, inputs map[string]any) (*task.Task, error) {
 	encoded, err := task.EncodeInputs(inputs)
 	if err != nil {
