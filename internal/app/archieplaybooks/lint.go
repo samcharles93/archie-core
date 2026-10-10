@@ -8,7 +8,6 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/domain/eda/module"
 	"github.com/samcharles93/archie-core/internal/domain/eda/playbook"
-	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 // Result is the outcome of one lint run: the exit code for the process and
@@ -16,25 +15,6 @@ import (
 type Result struct {
 	ExitCode int
 	Findings []string
-}
-
-// Lint validates playbook directories with workflow.LoadPlaybookDirs and
-// reports every finding. It returns 0 when clean, 1 otherwise.
-func Lint(dirs []string, stderr io.Writer) Result {
-	var findings []string
-
-	_, _, err := workflow.LoadPlaybookDirs(dirs)
-	if err != nil {
-		findings = append(findings, err.Error())
-	}
-
-	if len(findings) > 0 {
-		for _, f := range findings {
-			fmt.Fprintln(stderr, f)
-		}
-		return Result{ExitCode: 1, Findings: findings}
-	}
-	return Result{ExitCode: 0, Findings: nil}
 }
 
 // LintEDA validates a directory of EDA playbook documents with the compiler

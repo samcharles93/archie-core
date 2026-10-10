@@ -36,32 +36,21 @@ func Run(args []string, stderr io.Writer) int {
 	return cmd(args[1:], stderr)
 }
 
-// runLint validates routing binding directories (-dir) and an EDA playbook
-// directory (-eda-dir) against the loaders the daemon runs at startup.
-// Exit codes: 0 clean, 1 findings, 2 usage error.
+// runLint validates an EDA playbook directory against the compiler the daemon
+// runs. Exit codes: 0 clean, 1 findings, 2 usage error.
 func runLint(args []string, stderr io.Writer) int {
 	flags := flag.NewFlagSet("archied playbooks lint", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	var dirs multiFlag
-	flags.Var(&dirs, "dir", "routing binding directory to lint (repeatable)")
 	edaDir := flags.String("eda-dir", "", "EDA playbook directory to lint")
 	if err := flags.Parse(args); err != nil {
 		return 2 // flag.ContinueOnError already printed the message
 	}
-	if len(dirs) == 0 && *edaDir == "" {
-		fmt.Fprintln(stderr, "lint: at least one -dir or an -eda-dir is required")
+	if *edaDir == "" {
+		fmt.Fprintln(stderr, "lint: -eda-dir is required")
 		flags.Usage()
 		return 2
 	}
-
-	code := 0
-	if len(dirs) > 0 {
-		code = max(code, Lint(dirs, stderr).ExitCode)
-	}
-	if *edaDir != "" {
-		code = max(code, LintEDA(*edaDir, stderr).ExitCode)
-	}
-	return code
+	return LintEDA(*edaDir, stderr).ExitCode
 }
 
 // runServe runs the language server on stdin/stdout until the editor
@@ -87,13 +76,3 @@ type stdio struct{}
 func (stdio) Read(p []byte) (int, error)  { return os.Stdin.Read(p) }
 func (stdio) Write(p []byte) (int, error) { return os.Stdout.Write(p) }
 func (stdio) Close() error                { return os.Stdin.Close() }
-
-// multiFlag collects repeated -dir flags.
-type multiFlag []string
-
-func (m *multiFlag) String() string { return fmt.Sprint([]string(*m)) }
-
-func (m *multiFlag) Set(v string) error {
-	*m = append(*m, v)
-	return nil
-}

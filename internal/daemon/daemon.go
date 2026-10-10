@@ -191,10 +191,6 @@ type Daemon struct {
 	IdentityRepository identity.Repository
 	RootIdentityID     identity.IdentityID
 
-	// KindWorkflows and LabelWorkflows are the routing bindings loaded at
-	// startup, sent to the agent. Nil means defaults.
-	KindWorkflows  workflow.KindWorkflows
-	LabelWorkflows workflow.LabelWorkflows
 	// Playbooks are the loaded EDA playbooks, consulted before kind/label
 	// bindings when pinning a workflow. Nil means none.
 	Playbooks interface {
@@ -1957,8 +1953,6 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo conf
 		Providers:          agentexec.ProvidersFromConfig(cfg.Providers),
 		MCPServers:         cfg.Tools.MCPServers,
 		RunCredential:      credential,
-		KindWorkflows:      d.KindWorkflows,
-		LabelWorkflows:     d.LabelWorkflows,
 		WorkflowDefinition: task.WorkflowDefinitionYAML,
 		Tools:              profile.Tools,
 		Harness:            harness,
@@ -2136,14 +2130,14 @@ func (d *Daemon) runActionPlaybooks(ctx context.Context, task *workflow.Task) {
 }
 
 // resolveWorkflowID picks the definition to pin: a matching playbook, then
-// the kind/label bindings. A task already naming a workflow keeps it.
+// the kind defaults. A task already naming a workflow keeps it.
 func (d *Daemon) resolveWorkflowID(task *workflow.Task, available map[string]struct{}) (string, error) {
 	if d.Playbooks == nil || task.Workflow != "" {
-		return workflow.ResolveWorkflowID(task, available, d.KindWorkflows, d.LabelWorkflows)
+		return workflow.ResolveWorkflowID(task, available)
 	}
 	decision, matched := d.Playbooks.Dispatch(playbookInput(task))
 	if !matched {
-		return workflow.ResolveWorkflowID(task, available, d.KindWorkflows, d.LabelWorkflows)
+		return workflow.ResolveWorkflowID(task, available)
 	}
 	if _, defined := available[decision.Workflow]; !defined {
 		// Reported, not silently downgraded to the binding's choice: the

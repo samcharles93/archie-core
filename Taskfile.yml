@@ -125,11 +125,6 @@ tasks:
     cmds:
       - golangci-lint run ./...
 
-  lint:playbooks:
-    desc: Validate playbook bindings
-    cmds:
-      - go run ./cmd/archied playbooks lint -dir ./playbooks
-
   vuln:
     desc: Scan for known vulnerabilities (requires network access)
     cmds:

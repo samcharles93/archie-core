@@ -1,10 +1,8 @@
 package archieplaybooks
 
 import (
-	"bytes"
 	"context"
 	"io"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -14,7 +12,6 @@ import (
 	"go.lsp.dev/jsonrpc2"
 	"go.lsp.dev/protocol"
 	"go.lsp.dev/uri"
-	"gopkg.in/yaml.v3"
 )
 
 // Serve runs the language server over rwc until the client disconnects or ctx
@@ -87,12 +84,7 @@ func diagnose(u uri.URI) *protocol.PublishDiagnosticsParams {
 		return out
 	}
 	path := u.FsPath()
-	var result Result
-	if isEDAPlaybook(path) {
-		result = LintEDA(filepath.Dir(path), io.Discard)
-	} else {
-		result = Lint([]string{filepath.Dir(path)}, io.Discard)
-	}
+	result := LintEDA(filepath.Dir(path), io.Discard)
 	for _, finding := range result.Findings {
 		line, ok := findingLine(finding, path)
 		if !ok {
@@ -106,21 +98,6 @@ func diagnose(u uri.URI) *protocol.PublishDiagnosticsParams {
 		})
 	}
 	return out
-}
-
-// isEDAPlaybook reports whether the file is an EDA playbook document (it has
-// a top-level `trigger` key) rather than a routing binding file.
-func isEDAPlaybook(path string) bool {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return false
-	}
-	var doc map[string]yaml.Node
-	if yaml.NewDecoder(bytes.NewReader(data)).Decode(&doc) != nil {
-		return false
-	}
-	_, ok := doc["trigger"]
-	return ok
 }
 
 // findingLine places a finding on path. A compiler-style `path:line:` prefix

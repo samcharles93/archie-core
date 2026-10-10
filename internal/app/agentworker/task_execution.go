@@ -198,8 +198,6 @@ func stageRunners(req taskrun.Request, mcpSet *mcpProviderSet, newRunner runnerF
 // routeTask remains available for routing-only callers. Production execution
 // compiles the request's pinned YAML directly.
 func routeTask(req taskrun.Request, registry workflow.Registry) workflow.Workflow {
-	workflow.SetKindWorkflows(req.KindWorkflows)
-	workflow.SetLabelWorkflows(req.LabelWorkflows)
 	return workflow.Route(req.Task, registry)
 }
 

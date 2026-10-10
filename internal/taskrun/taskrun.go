@@ -22,10 +22,6 @@ type Request struct {
 	// transports, discover tools, and register them locally. Absent/empty
 	// means no MCP servers (backward compatible).
 	MCPServers []config.MCPServer `json:"mcp_servers,omitempty"`
-	// KindWorkflows and LabelWorkflows are the daemon's loaded routing bindings.
-	// Nil means defaults.
-	KindWorkflows  workflow.KindWorkflows  `json:"kind_workflows,omitempty"`
-	LabelWorkflows workflow.LabelWorkflows `json:"label_workflows,omitempty"`
 	// RunCredential is the task's run credential: it authorizes the push of
 	// this task's branch and forge calls on its own repository. Repository
 	// coordinates never cross back from the sandbox as authority.

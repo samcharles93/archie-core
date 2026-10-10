@@ -2,24 +2,12 @@ package workflow
 
 import (
 	"fmt"
-	"maps"
-	"os"
-	"path/filepath"
-	"sort"
-	"strings"
-
-	"gopkg.in/yaml.v3"
 
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 )
 
-// KindWorkflows maps an intake kind to the registered workflow name it
-// prefers. The zero value is not itself a valid override -- pass the result
-// of LoadKindWorkflowsYAML to SetKindWorkflows, or nil to restore defaults.
-type KindWorkflows map[workintake.Kind]string
-
 // defaultKindWorkflows maps each intake kind to its default workflow.
-var defaultKindWorkflows = KindWorkflows{
+var defaultKindWorkflows = map[workintake.Kind]string{
 	workintake.KindBug:     "tdd",
 	workintake.KindFeature: "feasibility",
 }
@@ -35,205 +23,12 @@ func IntakeRoutes() map[string]string {
 	return routes
 }
 
-// activeKindWorkflows overrides defaultKindWorkflows. Set once at startup by
-// SetKindWorkflows; nil uses the defaults.
-var activeKindWorkflows KindWorkflows
-
-// SetKindWorkflows overrides the kind-to-workflow-name bindings Route()
-// consults, e.g. from a file loaded by LoadKindWorkflowsYAML.
-func SetKindWorkflows(kw KindWorkflows) {
-	activeKindWorkflows = kw
-}
-
-// LoadKindWorkflowsYAML reads a kind-to-workflow binding file. An empty path
-// returns (nil, nil). An unknown kind is an error.
-func LoadKindWorkflowsYAML(path string) (KindWorkflows, error) {
-	if path == "" {
-		return nil, nil
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read kind-workflows file %s: %w", path, err)
-	}
-	bindings, err := decodeBindings(data)
-	if err != nil {
-		return nil, fmt.Errorf("parse kind-workflows file %s: %w", path, err)
-	}
-	kw := make(KindWorkflows, len(bindings))
-	for _, b := range bindings {
-		kind := workintake.Kind(b.key)
-		if err := kind.Validate(); err != nil {
-			return nil, fmt.Errorf("kind-workflows file %s:%d: %w", path, b.line, err)
-		}
-		kw[kind] = b.value
-	}
-	return kw, nil
-}
-
-// LoadPlaybookDirs reads every *.yaml / *.yml file in the configured
-// directories as a binding file and merges them into one kind map and one
-// label map. A key declared by more than one file is a load failure: the
-// colliding definitions are dropped and the error returned. Sources are read in
-// configured directory order, then filename order. An empty list or missing
-// directories return (nil, nil).
-func LoadPlaybookDirs(dirs []string) (KindWorkflows, LabelWorkflows, error) {
-	kw := make(KindWorkflows)
-	lw := make(LabelWorkflows)
-	for _, dir := range dirs {
-		names, err := sortedPlaybookFilenames(dir)
-		if err != nil {
-			return nil, nil, err
-		}
-		for _, name := range names {
-			if err := loadPlaybookFile(filepath.Join(dir, name), kw, lw); err != nil {
-				return nil, nil, err
-			}
-		}
-	}
-
-	if len(kw) == 0 {
-		kw = nil
-	}
-	if len(lw) == 0 {
-		lw = nil
-	}
-	return kw, lw, nil
-}
-
-// sortedPlaybookFilenames lists the *.yaml / *.yml files directly inside dir,
-// sorted so LoadPlaybookDirs' source order is deterministic. A missing
-// directory is not an error -- it contributes no filenames, matching
-// LoadPlaybookDirs' "no playbook dir configured" convention.
-func sortedPlaybookFilenames(dir string) ([]string, error) {
-	entries, err := os.ReadDir(dir)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read playbook dir %s: %w", dir, err)
-	}
-
-	var names []string
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		if ext := strings.ToLower(filepath.Ext(e.Name())); ext == ".yaml" || ext == ".yml" {
-			names = append(names, e.Name())
-		}
-	}
-	sort.Strings(names)
-	return names, nil
-}
-
-// loadPlaybookFile reads one playbook binding file and merges its keys into
-// kw/lw via bindPlaybookKey, mutating both in place.
-func loadPlaybookFile(path string, kw KindWorkflows, lw LabelWorkflows) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("read playbook file %s: %w", path, err)
-	}
-	bindings, err := decodeBindings(data)
-	if err != nil {
-		return fmt.Errorf("parse playbook file %s: %w", path, err)
-	}
-	for _, b := range bindings {
-		if err := bindPlaybookKey(fmt.Sprintf("%s:%d", path, b.line), b.key, b.value, kw, lw); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// bindPlaybookKey classifies one playbook binding key as a closed-vocabulary
-// kind or an arbitrary label, then merges it into kw/lw -- applying the same
-// collision and empty-value rules LoadPlaybookDirs' doc comment describes.
-// pos is the key's file:line, which every finding leads with.
-func bindPlaybookKey(pos, key, value string, kw KindWorkflows, lw LabelWorkflows) error {
-	trimmed := strings.TrimSpace(key)
-	if trimmed == "" {
-		return fmt.Errorf("playbook file %s: empty binding key", pos)
-	}
-	if value == "" {
-		return fmt.Errorf("playbook file %s: key %q has no workflow name", pos, trimmed)
-	}
-	if err := workintake.Kind(trimmed).Validate(); err == nil {
-		// It is a kind binding: the closed Kind vocabulary accepts it.
-		if existing, ok := kw[workintake.Kind(trimmed)]; ok {
-			return fmt.Errorf("playbook file %s: kind %q bound in two sources (%q and %q)", pos, trimmed, existing, value)
-		}
-		kw[workintake.Kind(trimmed)] = value
-		return nil
-	}
-	// Otherwise it is an arbitrary-label binding. Reject kind-owned labels
-	// and empty labels with the same rules the single-file loader applies.
-	if _, ok := defaultKindWorkflows[workintake.Kind(trimmed)]; ok {
-		return fmt.Errorf("playbook file %s: label %q is already owned by the kind routing layer", pos, trimmed)
-	}
-	if existing, ok := lw[trimmed]; ok {
-		return fmt.Errorf("playbook file %s: label %q bound in two sources (%q and %q)", pos, trimmed, existing, value)
-	}
-	lw[trimmed] = value
-	return nil
-}
-
-// MergeKindWorkflows merges extra into base and fails on a key bound by both.
-// Returns nil only when both are empty.
-func MergeKindWorkflows(base, extra KindWorkflows) (KindWorkflows, error) {
-	merged := make(KindWorkflows, len(base)+len(extra))
-	maps.Copy(merged, base)
-	for k, v := range extra {
-		if _, exists := merged[k]; exists {
-			return nil, fmt.Errorf("workflow binding collision: kind %q bound in two sources", k)
-		}
-		merged[k] = v
-	}
-	if len(merged) == 0 {
-		return nil, nil
-	}
-	return merged, nil
-}
-
-// MergeLabelWorkflows is the label counterpart of MergeKindWorkflows.
-func MergeLabelWorkflows(base, extra LabelWorkflows) (LabelWorkflows, error) {
-	merged := make(LabelWorkflows, len(base)+len(extra))
-	maps.Copy(merged, base)
-	for k, v := range extra {
-		if _, exists := merged[k]; exists {
-			return nil, fmt.Errorf("workflow binding collision: label %q bound in two sources", k)
-		}
-		merged[k] = v
-	}
-	if len(merged) == 0 {
-		return nil, nil
-	}
-	return merged, nil
-}
-
 // workflowForLabels returns the registered workflow name for a task's
 // labels, trying each recognised kind in label order so a "bug,feature" task
 // still reaches feasibility when no tdd workflow is registered.
 func workflowForLabels(reg Registry, labels string) (Workflow, bool) {
-	// Arbitrary-label bindings first: a playbook-declared label is an
-	// explicit, load-time-error-checked signal, so it wins over the kind
-	// defaults (which cover only bug/feature).
-	if lb := activeLabelWorkflows; lb != nil {
-		for _, label := range workintake.SplitLabels(labels) {
-			name, ok := lb[label]
-			if !ok {
-				continue
-			}
-			if wf, ok := reg[name]; ok {
-				return wf, true
-			}
-		}
-	}
-	kw := activeKindWorkflows
-	if kw == nil {
-		kw = defaultKindWorkflows
-	}
 	for _, kind := range workintake.KindsForLabels(workintake.SplitLabels(labels)) {
-		name, ok := kw[kind]
+		name, ok := defaultKindWorkflows[kind]
 		if !ok {
 			continue
 		}
@@ -246,25 +41,15 @@ func workflowForLabels(reg Registry, labels string) (Workflow, bool) {
 
 // ResolveWorkflowID deterministically selects a definition without compiling
 // or executing it. It is used before worker dispatch to pin the exact YAML.
-func ResolveWorkflowID(t *Task, available map[string]struct{}, kinds KindWorkflows, labels LabelWorkflows) (string, error) {
+func ResolveWorkflowID(t *Task, available map[string]struct{}) (string, error) {
 	if t.Workflow != "" {
 		if _, ok := available[t.Workflow]; ok {
 			return t.Workflow, nil
 		}
 		return "", fmt.Errorf("workflow %q is not defined", t.Workflow)
 	}
-	for _, label := range workintake.SplitLabels(t.Labels) {
-		if id := labels[label]; id != "" {
-			if _, ok := available[id]; ok {
-				return id, nil
-			}
-		}
-	}
-	if kinds == nil {
-		kinds = defaultKindWorkflows
-	}
 	for _, kind := range workintake.KindsForLabels(workintake.SplitLabels(t.Labels)) {
-		if id := kinds[kind]; id != "" {
+		if id := defaultKindWorkflows[kind]; id != "" {
 			if _, ok := available[id]; ok {
 				return id, nil
 			}
@@ -277,93 +62,4 @@ func ResolveWorkflowID(t *Task, available map[string]struct{}, kinds KindWorkflo
 		return "implement", nil
 	}
 	return "", fmt.Errorf("no routable workflow definition")
-}
-
-// LabelWorkflows maps a forge issue label to the registered workflow name it
-// prefers. The closed Kind/NATS-subject set (workintake) is deliberately
-// untouched; this map only extends binding authority for labels the kind layer
-// does not own.
-type LabelWorkflows map[string]string
-
-// activeLabelWorkflows maps arbitrary labels to workflows. Set once at startup
-// by SetLabelWorkflows; nil means none.
-var activeLabelWorkflows LabelWorkflows
-
-// SetLabelWorkflows overrides the label-to-workflow-name bindings Route()
-// consults, e.g. from a file loaded by LoadLabelWorkflowsYAML. Passing nil
-// restores kind-only routing.
-func SetLabelWorkflows(lw LabelWorkflows) {
-	activeLabelWorkflows = lw
-}
-
-// LoadLabelWorkflowsYAML reads a label-to-workflow binding file. An empty path
-// returns (nil, nil). Labels owned by the kind set, empty labels and empty
-// workflow names are errors.
-func LoadLabelWorkflowsYAML(path string) (LabelWorkflows, error) {
-	if path == "" {
-		return nil, nil
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read label-workflows file %s: %w", path, err)
-	}
-	bindings, err := decodeBindings(data)
-	if err != nil {
-		return nil, fmt.Errorf("parse label-workflows file %s: %w", path, err)
-	}
-	lw := make(LabelWorkflows, len(bindings))
-	for _, b := range bindings {
-		path := fmt.Sprintf("%s:%d", path, b.line)
-		name := b.value
-		trimmed := strings.TrimSpace(b.key)
-		if trimmed == "" {
-			return nil, fmt.Errorf("label-workflows file %s: empty label is not a valid binding", path)
-		}
-		if name == "" {
-			return nil, fmt.Errorf("label-workflows file %s: label %q has no workflow name", path, trimmed)
-		}
-		if _, ok := defaultKindWorkflows[workintake.Kind(trimmed)]; ok {
-			return nil, fmt.Errorf("label-workflows file %s: label %q is already owned by the kind routing layer", path, trimmed)
-		}
-		if _, exists := lw[trimmed]; exists {
-			return nil, fmt.Errorf("label-workflows file %s: duplicate binding for label %q", path, trimmed)
-		}
-		lw[trimmed] = name
-	}
-	return lw, nil
-}
-
-// binding is one key of a routing file with the line it was declared on.
-type binding struct {
-	key, value string
-	line       int
-}
-
-// decodeBindings decodes a routing file's top-level string map in document
-// order, so the first finding is the same on every run and each can name
-// its key's line. Values decode exactly as they did into map[string]string,
-// including yaml.v3's duplicate-key refusal.
-func decodeBindings(data []byte) ([]binding, error) {
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return nil, err
-	}
-	if len(doc.Content) == 0 {
-		return nil, nil
-	}
-	root := doc.Content[0]
-	values := map[string]string{}
-	if err := root.Decode(&values); err != nil {
-		return nil, err
-	}
-	bindings := make([]binding, 0, len(values))
-	for i := 0; i+1 < len(root.Content); i += 2 {
-		keyNode := root.Content[i]
-		var key string
-		if err := keyNode.Decode(&key); err != nil {
-			return nil, err
-		}
-		bindings = append(bindings, binding{key: key, value: values[key], line: keyNode.Line})
-	}
-	return bindings, nil
 }
